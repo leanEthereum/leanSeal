@@ -33,7 +33,7 @@ Set `CHAINSEAL_BACKEND` to force one. The tool refuses a backend that this build
 
 ```sh
 # Sender: build a puzzle ahead of time. 64 chains of 2^28 steps is about
-# 6.6 minutes of sequential work on an Apple M4, and about 40 s to build there.
+# 6.7 minutes of sequential work on an Apple M4, and about 43 s to build there.
 chainseal gen -n 64 -m 2^28 -o tx.secret
 
 # When the message is ready, encrypt it under the stored puzzle.
@@ -74,12 +74,12 @@ These are from `chainseal bench all` and `demo.sh` on an Apple M4 (MacBook Air, 
 
 | Quantity | Value |
 |---|---|
-| One chain | 23.3 ns/step (median of 5 runs), 23.1 ns/step (best) |
-| All cores, independent chains | 465 M steps/s |
-| Build speedup over one solver | 9.6 at n = 16, 9.9 at n = 64, 10.8 to 11.3 from n = 128 up |
-| Demo: n = 512, m = 2^25 (17.2 G steps) | built in 36.9 s, opened with the key in 7 ms, solved without it in 6 min 37 s |
+| One chain | 23.3 ns/step (median of 5 runs), 23.2 ns/step (best) |
+| All cores, independent chains | 474 M steps/s |
+| Build speedup over one solver | 9.2 to 9.5 for n = 16 to 64, 10.3 to 11.4 from n = 128 up |
+| Demo: n = 512, m = 2^25 (17.2 G steps) | built in 37.1 s, opened with the key in 9 ms, solved without it in 6 min 44 s |
 
-The build speedup is how much faster the sender builds a puzzle than a single-core solver opens it. It approaches the all-core rate over the one-chain rate, about 10.8 here. Each core computes two chains at once, so the builder hands out chains in pairs, and it needs `n` to be several times the number of cores to keep every core busy until the end.
+The build speedup is how much faster the sender builds a puzzle than a single-core solver opens it. It approaches the all-core rate over the one-chain rate, about 11 here. Each core computes two chains at once, so the builder hands out chains in pairs, and it needs `n` to be several times the number of cores to keep every core busy until the end.
 
 ## Threat model
 

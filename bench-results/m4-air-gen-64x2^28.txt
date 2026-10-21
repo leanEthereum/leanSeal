@@ -1,0 +1,5 @@
+puzzle: n = 64 chains, m = 268435456 steps each, b = 12-byte links, 836 bytes
+built in 42.6 s on 10 threads (armv8-sha2), 403.0 M steps/s
+solving takes n*m = 17.2 G steps: 6 min 41 s at 23.4 ns/step (one chain on this machine)
+wrote /tmp/claude-501/b64.secret (keep it private until you use it)
+./chainseal gen -n 64 -m 2^28 -o /tmp/claude-501/b64.secret  334.49s user 0.82s system 781% cpu 42.882 total
