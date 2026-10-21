@@ -6,6 +6,7 @@ An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited chainseal fo
 |---|---|---|---|
 | 1 | `dd063aa` | [round-1.md](round-1.md) | fix first: 4 blockers, 3 major, 5 minor |
 | 2 | `6e764bd` | [round-2.md](round-2.md) | fix first: 9 of the 12 resolved, 3 partly; 4 new blockers, 4 new minor |
+| 3 | `8e04201` | [round-3.md](round-3.md) | fix first: 6 of the 8 resolved, 2 partly; 1 new blocker, 3 new minor |
 
 ## What changed after round 1
 
@@ -30,11 +31,20 @@ Two test gaps the report named are closed: the C vector check feeds every invali
 
 | # | Finding | Change |
 |---|---|---|
-| R2-1 | `open --solve -o FILE.ckpt` deleted its own output. | `open` refuses an output path that names the checkpoint file, before doing any work. A CLI test covers it. |
+| R2-1 | `open --solve -o FILE.ckpt` deleted its own output. | `open` refuses an output path that names the checkpoint file, before doing any work. A CLI test covers it. This check missed aliases on case-insensitive filesystems; see R3-1. |
 | R2-2 | Checkpoint inspection accepted positions no valid puzzle can reach. | `cs_checkpoint_peek` also requires `i·j ≤ 2^60`. Unit and CLI tests cover `(4097, 2^48)` and the boundary `(4096, 2^48)`. |
 | R2-3 | Comparisons with other attacks were stated without support. | README and SPEC now say that guessing the last link leaves the least work among link guesses, say why earlier links do no better, and state that no proof covers other strategies. Cross-puzzle reuse is qualified by fresh random salts. |
 | R2-4 | The README said the latency median was over 9 runs. | It is over 5 runs, as the benchmark code does. |
 | R2-5 | A huge finite step time overflowed and gave `m = 1`. | The delay is divided in an order that cannot overflow. A CLI test checks the result. |
-| R2-6 | The interrupt tests depended on timing. | A real SIGINT now goes to a solve that cannot finish (its `m` is patched to 2^40). The checkpoint-and-resume tests use a test hook, `CHAINSEAL_TEST_STOP_AFTER`, that stops a solve after a set number of steps. |
+| R2-6 | The interrupt tests depended on timing. | A real SIGINT now goes to a solve that cannot finish (its `m` is patched to 2^40). The checkpoint-and-resume tests use a test hook, `CHAINSEAL_TEST_STOP_AFTER`, that stops a solve after a set number of steps. The signal could still arrive too early; see R3-3. |
 | R2-7 | Sanitizer builds on Linux aarch64 dropped the ARMv8 backend. | The architecture flag is in its own `ARCH` variable, which the sanitizer builds keep. |
 | R2-8 | This file overstated the test coverage. | The paragraph above now says which gaps are closed and which remain. |
+
+## What changed after round 3
+
+| # | Finding | Change |
+|---|---|---|
+| R3-1 | On a case-insensitive filesystem, `-o ALIAS.ENV.CKPT` still deleted the output when no checkpoint existed yet. | After writing the output, `open` removes the checkpoint only if it is a different file from the output, compared by device and inode. The early refusal stays. A CLI test covers the case alias when the filesystem is case-insensitive, as it is on macOS by default. |
+| R3-2 | Subnormal times gave the wrong `m`. | The delay is divided by the step time before the units are converted, so an underflow can only happen when one step already covers the delay. CLI tests cover two subnormal pairs. |
+| R3-3 | The SIGINT test could signal before the handler was installed, and then wait forever. | A second test hook, `CHAINSEAL_TEST_READY=FILE`, creates `FILE` once the handler is installed. The test waits for it before signalling, and a watchdog kills the solve after 60 s. |
+| R3-4 | The test suite needed `perl`, which the README listed only for the demo. | The tests patch bytes with Python, which the suite already needs. |

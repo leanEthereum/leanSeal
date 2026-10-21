@@ -1,5 +1,6 @@
 // chainseal command-line tool.
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <math.h>
 #include <pthread.h>
@@ -121,7 +122,9 @@ static int build(params *P, cs_puzzle *p, uint8_t key[32]) {
   if (!P->m) {
     if (!(P->delay > 0)) return usage_error("give the work per chain (-m STEPS) or a delay (-d SECONDS)");
     if (!(P->step_ns > 0)) P->step_ns = measure_latency_ns(be, 0.3), measured = 1;
-    double m = ceil(P->delay / (P->step_ns * 1e-9) / P->n);  // this order cannot overflow for valid inputs
+    // Divide the two times first: an overflow becomes inf and is rejected, and an
+    // underflow only happens when one chain step already covers the delay.
+    double m = ceil(P->delay / P->step_ns * 1e9 / P->n);
     if (!(m <= (double)CS_MAX_M)) return fail("delay", CS_ERANGE);
     P->m = m < 1 ? 1 : (uint64_t)m;
   }
@@ -291,8 +294,10 @@ static int save_checkpoint(solve_job *s, const cs_cursor *c) {
 }
 
 // For tests: CHAINSEAL_TEST_STOP_AFTER=STEPS stops every solve after about
-// that many steps, as if interrupted.
+// that many steps, as if interrupted, and CHAINSEAL_TEST_READY=FILE creates
+// FILE once a solve will save a checkpoint on SIGINT.
 static uint64_t g_stop_after;
+static const char *g_ready_file;
 
 static int solve_progress(void *arg, const cs_cursor *c) {
   solve_job *s = arg;
@@ -394,6 +399,10 @@ static int solve_all(solve_job *jobs, int k, int quiet) {
   sa.sa_handler = on_signal;
   sigaction(SIGINT, &sa, NULL);
   sigaction(SIGTERM, &sa, NULL);
+  if (g_ready_file) {
+    int fd = open(g_ready_file, O_WRONLY | O_CREAT, 0600);
+    if (fd >= 0) close(fd);
+  }
   pthread_t *tid = calloc((size_t)k, sizeof *tid);
   if (!tid) return fail("solve", CS_ENOMEM);
   int started = 0;
@@ -530,7 +539,9 @@ static int cmd_open(int argc, char **argv) {
     int err = msg ? cs_open(&s.env, s.key, msg) : CS_ENOMEM;
     if (err) rc = fail(s.path, err);
     else if (write_file(out, msg, s.env.ct_len, 0)) rc = fail_errno(out);
-    else if (solve && s.ckpt[0]) unlink(s.ckpt);
+    // On a case-insensitive filesystem the check above can miss an alias, so
+    // compare the files themselves now that the output exists.
+    else if (solve && s.ckpt[0] && (!strcmp(out, "-") || !same_path(out, s.ckpt))) unlink(s.ckpt);
     if (msg) secure_zero(msg, s.env.ct_len), free(msg);
   }
   if (s.data) solve_close(&s);
@@ -657,6 +668,7 @@ int main(int argc, char **argv) {
   set_fast_qos();
   const char *stop_after = getenv("CHAINSEAL_TEST_STOP_AFTER");
   if (stop_after && parse_u64(stop_after, &g_stop_after)) return usage_error("bad CHAINSEAL_TEST_STOP_AFTER");
+  g_ready_file = getenv("CHAINSEAL_TEST_READY");
   const char *forced = getenv("CHAINSEAL_BACKEND");
   if (forced && !chain_find(forced)) {
     fprintf(stderr, "chainseal: CHAINSEAL_BACKEND=%s is not available on this machine; available:", forced);

@@ -6,7 +6,7 @@ It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (C
 
 Authors: Vitalik Buterin, Quang Dao and Justin Drake.
 
-**Status: proof of concept.** The format is versioned and fully specified. It has test vectors and a second implementation, in Python, that shares no code with the C one. An AI model audited the code in two rounds; the reports and the fixes are in [audit/](audit/). No human cryptographer has reviewed it. Do not protect anything valuable with it.
+**Status: proof of concept.** The format is versioned and fully specified. It has test vectors and a second implementation, in Python, that shares no code with the C one. An AI model audited the code in several rounds; the reports and the fixes are in [audit/](audit/). No human cryptographer has reviewed it. Do not protect anything valuable with it.
 
 ## Build and test
 

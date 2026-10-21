@@ -11,6 +11,10 @@ expect_exit() {  # expect_exit CODE command...
   set +e; "$@" >/dev/null 2>&1; got=$?; set -e
   [ "$got" = "$want" ] || fail "'$*' exited $got, wanted $want"
 }
+poke() {  # poke FILE OFFSET FORMAT VALUE...: overwrite bytes with struct.pack(FORMAT, VALUE...)
+  python3 -c 'import struct, sys
+f = open(sys.argv[1], "r+b"); f.seek(int(sys.argv[2])); f.write(struct.pack(sys.argv[3], *map(int, sys.argv[4:])))' "$@"
+}
 flip() {  # flip FILE OFFSET: XOR one bit of the byte at OFFSET, so the file always changes
   v=$(dd if="$1" bs=1 skip="$2" count=1 2>/dev/null | od -An -tu1 | tr -d ' ')
   printf "\\$(printf %03o $((v ^ 1)))" | dd of="$1" bs=1 seek="$2" conv=notrunc 2>/dev/null
@@ -72,13 +76,26 @@ set +e; "$CS" solve -q p1 p2.bad > keys 2>/dev/null; code=$?; set -e
 [ ! -e p1.ckpt ] && [ ! -e p2.bad.ckpt ] || fail "checkpoint left after a finished solve"
 
 # A real SIGINT stops a solve and saves a checkpoint. The puzzle's m is
-# patched to 2^40, so the solve cannot finish before the signal arrives.
-cp p1 endless && perl -e 'open F, "+<", "endless" or die; seek F, 8 + 12, 0; print F pack("Q>", 1 << 40)'
-"$CS" solve -q endless > /dev/null 2>&1 &
+# patched to 2^40, so the solve cannot finish before the signal arrives. The
+# signal is sent once the solver says its handler is installed, and a
+# watchdog kills the solver if the signal is lost.
+cp p1 endless && poke endless $((8 + 12)) '>Q' $((1 << 40))
+rm -f ready
+CHAINSEAL_TEST_READY=ready "$CS" solve -q endless > /dev/null 2>&1 &
 PID=$!
-sleep 0.5
+(sleep 60; kill -KILL $PID 2>/dev/null) &
+WATCHDOG=$!
+tries=0
+until [ -e ready ]; do
+  tries=$((tries + 1))
+  [ $tries -le 600 ] || fail "the solve never installed its signal handler"
+  sleep 0.1
+done
 kill -INT $PID || fail "could not signal the solve"
 set +e; wait $PID; code=$?; set -e
+kill $WATCHDOG 2>/dev/null || true
+wait $WATCHDOG 2>/dev/null || true
+rm -f ready
 [ "$code" = 130 ] || fail "interrupted solve exited $code, wanted 130"
 [ -s endless.ckpt ] || fail "no checkpoint after SIGINT"
 rm -f endless endless.ckpt
@@ -93,7 +110,7 @@ set +e; CHAINSEAL_TEST_STOP_AFTER=2^21 "$CS" solve -q long > /dev/null 2>&1; cod
 cp long.ckpt bad.ckpt && printf '\002' | dd of=bad.ckpt bs=1 seek=4 conv=notrunc 2>/dev/null
 expect_exit 1 "$CS" info bad.ckpt
 # Position (4097, 2^48) fits each field's range but no puzzle with n*m <= 2^60.
-cp long.ckpt bad.ckpt && perl -e 'open F, "+<", "bad.ckpt" or die; seek F, 40, 0; print F pack("NQ>", 4097, 1 << 48)'
+cp long.ckpt bad.ckpt && poke bad.ckpt 40 '>IQ' 4097 $((1 << 48))
 expect_exit 1 "$CS" info bad.ckpt
 # The plaintext output may not be the checkpoint file.
 expect_exit 2 "$CS" open long --solve -q -o long.ckpt
@@ -113,5 +130,22 @@ rm -f p1.ckpt
 # 1e307 ns per step over 64 chains is m = ceil(100 / 64) = 2.
 "$CS" gen -n 64 -d 1e300 --step-ns 1e307 -o big.sec 2> log
 grep -q "m = 2 steps" log || fail "delay with a huge step time: $(head -1 log)"
+# Tiny times are converted without underflow. These are the stored values of
+# the decimals: 5e-324 s at 3e-315 ns per step is m = ceil(1.647) = 2, and
+# 1e-320 s at 1e-314 ns per step is m = ceil(999.989) = 1000.
+"$CS" gen -n 1 -d 5e-324 --step-ns 3e-315 -o tiny.sec 2> log
+grep -q "m = 2 steps" log || fail "delay with a tiny step time: $(head -1 log)"
+"$CS" gen -n 1 -d 1e-320 --step-ns 1e-314 -o tiny.sec 2> log
+grep -q "m = 1000 steps" log || fail "delay with tiny times: $(head -1 log)"
+
+# On a case-insensitive filesystem, an output named like the checkpoint in
+# another case is the checkpoint file. The solve must keep its output.
+touch casetest
+if [ -e CASETEST ]; then
+  "$CS" encrypt -q -n 2 -m 1000 -i msg -o alias.env
+  "$CS" open alias.env --solve -q -o ALIAS.ENV.CKPT
+  cmp -s msg ALIAS.ENV.CKPT || fail "open removed its own output"
+fi
+rm -f casetest
 
 echo "cli tests: ok"
