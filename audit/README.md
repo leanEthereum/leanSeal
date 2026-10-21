@@ -12,6 +12,7 @@ An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited chainseal fo
 | 6 | `1893160` | [round-6.md](round-6.md) | fix first, after the key was changed to depend on every chain end: 1 new blocker, 1 new major |
 | 7 | `2dd794c` | [round-7.md](round-7.md) | fix first: R6-2 resolved, R6-1 partly; 1 new blocker in the security argument, 1 minor, 1 nit |
 | 8 | `c33fa59` | [round-8.md](round-8.md) | fix first: R7-2 and R7-3 resolved, R7-1 partly; 1 new blocker in the security argument, 2 minor |
+| 9 | `e042e8c` | [round-9.md](round-9.md) | ready: R8-1 to R8-3 resolved; 2 new minor |
 
 ## What changed after round 1
 
@@ -89,3 +90,12 @@ Round 8 audited `c33fa59` and found no attack that beats `Q/(min(d,m)·2^(8b))` 
 | R8-1 | The guide said that saving more than half needs two right guesses, so the chance is about the square of the one-chain figure. An attacker can instead prepare short starts for every value of a link, which needs no luck. With 2-byte links this beat the squared figure by a factor of about 3,200. The argument also charged each guess the whole saving, though an attack can combine several smaller gains. | The squared figure and the "below 10^-27" estimate are gone from the guide. The guide and SPEC now charge one run's gain `a` at least `min(a, m)` steps, say that this does not prove the bound because gains can combine, and give no separate bound for saving more than half. SPEC and README say what saving more than half needs, without a probability. |
 | R8-2 | The guide said merging pays only when an attacker tries a sizable fraction of all link values, but sharing also grows with the number of chains each run covers. | The guide now says that sharing grows with both, and never reaches a run's first chain. |
 | R8-3 | The guide gave the honest opener `N + n + 2` rounds, leaving out the mask and accumulator hashes. | It now gives `N + 3n + 1` hash calls, as SPEC does. |
+
+## What changed after round 9
+
+Round 9 audited `e042e8c`, with the new hardware section of the guide, and found no blocker or major finding.
+
+| # | Finding | Change |
+|---|---|---|
+| R9-1 | Some sentences still moved from one guessed run's cost to the general bound. | The guide's claim box is labelled "not yet proved", the "Guess ahead" bullet states the bound as the claim about every attack, and "Status" names the two sharper formulas the audit defeated. SPEC introduces the `d`-steps-ahead sentence as the single-run case. |
+| R9-2 | The circuit model mixed FO4 delays with logic levels and its endpoints could not be reproduced from the stated inputs. | The guide defines FO4, splits the 10–17 FO4 per round into the adder and the assumed rest, shows the arithmetic from 2.75–5.11 ns through 2.85–5.41 ns to 2.9–9.7 ns, and marks the one-FO4-per-level conversion of Intel's 13 levels as optimistic. |
