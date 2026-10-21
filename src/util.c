@@ -119,6 +119,12 @@ int same_path(const char *a, const char *b) {
   return !strcmp(ra, rb);
 }
 
+int is_output(const char *out, const char *path) {
+  if (strcmp(out, "-")) return same_path(out, path);
+  struct stat so, sp;
+  return !fstat(STDOUT_FILENO, &so) && !stat(path, &sp) && so.st_dev == sp.st_dev && so.st_ino == sp.st_ino;
+}
+
 void hex_encode(char *out, const uint8_t *in, size_t len) {
   static const char digits[] = "0123456789abcdef";
   for (size_t i = 0; i < len; i++) out[2 * i] = digits[in[i] >> 4], out[2 * i + 1] = digits[in[i] & 15];

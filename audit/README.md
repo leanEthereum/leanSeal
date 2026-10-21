@@ -7,6 +7,7 @@ An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited chainseal fo
 | 1 | `dd063aa` | [round-1.md](round-1.md) | fix first: 4 blockers, 3 major, 5 minor |
 | 2 | `6e764bd` | [round-2.md](round-2.md) | fix first: 9 of the 12 resolved, 3 partly; 4 new blockers, 4 new minor |
 | 3 | `8e04201` | [round-3.md](round-3.md) | fix first: 6 of the 8 resolved, 2 partly; 1 new blocker, 3 new minor |
+| 4 | `634982f` | [round-4.md](round-4.md) | fix first: R3-1 to R3-4 and R2-6 resolved, R2-1 partly; 1 new blocker, 1 nit |
 
 ## What changed after round 1
 
@@ -44,7 +45,14 @@ Two test gaps the report named are closed: the C vector check feeds every invali
 
 | # | Finding | Change |
 |---|---|---|
-| R3-1 | On a case-insensitive filesystem, `-o ALIAS.ENV.CKPT` still deleted the output when no checkpoint existed yet. | After writing the output, `open` removes the checkpoint only if it is a different file from the output, compared by device and inode. The early refusal stays. A CLI test covers the case alias when the filesystem is case-insensitive, as it is on macOS by default. |
+| R3-1 | On a case-insensitive filesystem, `-o ALIAS.ENV.CKPT` still deleted the output when no checkpoint existed yet. | After writing the output, `open` removes the checkpoint only if it is a different file from the output, compared by device and inode. This missed output sent to stdout; see R4-1. The early refusal stays. A CLI test covers the case alias when the filesystem is case-insensitive, as it is on macOS by default. |
 | R3-2 | Subnormal times gave the wrong `m`. | The delay is divided by the step time before the units are converted, so an underflow can only happen when one step already covers the delay. CLI tests cover two subnormal pairs. |
 | R3-3 | The SIGINT test could signal before the handler was installed, and then wait forever. | A second test hook, `CHAINSEAL_TEST_READY=FILE`, creates `FILE` once the handler is installed. The test waits for it before signalling, and a watchdog kills the solve after 60 s. |
 | R3-4 | The test suite needed `perl`, which the README listed only for the demo. | The tests patch bytes with Python, which the suite already needs. |
+
+## What changed after round 4
+
+| # | Finding | Change |
+|---|---|---|
+| R4-1 | With stdout redirected onto the checkpoint (`>> FILE.ckpt`), `open` deleted the file holding the plaintext. | Both the early refusal and the final cleanup now compare the checkpoint with the output's file, and for stdout that is the file stdout is open on. `open` refuses before solving. A CLI test appends stdout to a valid checkpoint and checks the refusal and that the checkpoint is unchanged. |
+| R4-2 | Cancelling the test watchdog left its `sleep` running. | The watchdog is one Python process, and an exit trap kills it and the solve if the test stops early. |

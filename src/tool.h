@@ -18,6 +18,7 @@ void set_fast_qos(void);  // ask macOS for a performance core; no-op elsewhere
 int read_file(const char *path, uint8_t **out, size_t *len);
 int write_file(const char *path, const uint8_t *data, size_t len, int private_);
 int same_path(const char *a, const char *b);  // 1 if both names lead to the same file
+int is_output(const char *out, const char *path);  // 1 if OUT ("-" for stdout) is the file PATH
 
 void hex_encode(char *out, const uint8_t *in, size_t len);  // out has 2*len+1 bytes
 int hex_decode(uint8_t *out, size_t len, const char *in);   // 0 if `in` is exactly 2*len hex digits

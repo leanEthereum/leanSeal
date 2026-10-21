@@ -2,7 +2,7 @@
 
 chainseal encrypts a message so that anyone can read it after a fixed amount of sequential SHA-256 work, and the sender can let everyone read it at once by publishing a key. It uses nothing but SHA-256.
 
-It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1), with every random-oracle call replaced by a long SHA-256 chain, as Vitalik Buterin proposed for encrypted mempools. [SPEC.md](SPEC.md) defines the format, and [the guide](https://quangvdao.github.io/chainseal/) explains the idea, the parameters and the measurements.
+It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1, the variant in which each link is a hash iterated many times), instantiated with SHA-256 for encrypted mempools as Vitalik Buterin proposed. [SPEC.md](SPEC.md) defines the format, and [the guide](https://quangvdao.github.io/chainseal/) explains the idea, the parameters and the measurements.
 
 Authors: Vitalik Buterin, Quang Dao and Justin Drake.
 

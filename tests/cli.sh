@@ -83,8 +83,12 @@ cp p1 endless && poke endless $((8 + 12)) '>Q' $((1 << 40))
 rm -f ready
 CHAINSEAL_TEST_READY=ready "$CS" solve -q endless > /dev/null 2>&1 &
 PID=$!
-(sleep 60; kill -KILL $PID 2>/dev/null) &
+python3 -c 'import os, sys, time
+time.sleep(60)
+try: os.kill(int(sys.argv[1]), 9)
+except ProcessLookupError: pass' $PID &
 WATCHDOG=$!
+trap 'kill $WATCHDOG $PID 2>/dev/null; rm -rf "$T"' EXIT
 tries=0
 until [ -e ready ]; do
   tries=$((tries + 1))
@@ -95,6 +99,7 @@ kill -INT $PID || fail "could not signal the solve"
 set +e; wait $PID; code=$?; set -e
 kill $WATCHDOG 2>/dev/null || true
 wait $WATCHDOG 2>/dev/null || true
+trap 'rm -rf "$T"' EXIT
 rm -f ready
 [ "$code" = 130 ] || fail "interrupted solve exited $code, wanted 130"
 [ -s endless.ckpt ] || fail "no checkpoint after SIGINT"
@@ -115,6 +120,11 @@ expect_exit 1 "$CS" info bad.ckpt
 # The plaintext output may not be the checkpoint file.
 expect_exit 2 "$CS" open long --solve -q -o long.ckpt
 [ -s long.ckpt ] || fail "open removed the checkpoint it was asked to write over"
+# Nor may stdout, here appended to the checkpoint so that it stays valid.
+cp long.ckpt saved.ckpt
+set +e; "$CS" open long --solve -q >> long.ckpt 2>/dev/null; code=$?; set -e
+[ "$code" = 2 ] || fail "open with stdout on the checkpoint exited $code, wanted 2"
+cmp -s long.ckpt saved.ckpt || fail "open changed the checkpoint that stdout pointed at"
 "$CS" solve long > keys 2> log
 grep -q resuming log || fail "solve did not resume"
 [ "$(cut -d' ' -f1 keys)" = "$("$CS" key slong)" ] || fail "resumed solve key"

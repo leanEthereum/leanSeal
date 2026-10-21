@@ -521,7 +521,7 @@ static int cmd_open(int argc, char **argv) {
     fprintf(stderr, "chainseal: %s is a bare puzzle, not an envelope\n", s.path);
     rc = 1;
   }
-  if (!rc && s.ckpt[0] && strcmp(out, "-") && same_path(out, s.ckpt))
+  if (!rc && s.ckpt[0] && is_output(out, s.ckpt))
     rc = usage_error("the output file is the checkpoint file; choose another -o or use --no-checkpoint");
   if (!rc) {
     if (solve) {
@@ -541,7 +541,7 @@ static int cmd_open(int argc, char **argv) {
     else if (write_file(out, msg, s.env.ct_len, 0)) rc = fail_errno(out);
     // On a case-insensitive filesystem the check above can miss an alias, so
     // compare the files themselves now that the output exists.
-    else if (solve && s.ckpt[0] && (!strcmp(out, "-") || !same_path(out, s.ckpt))) unlink(s.ckpt);
+    else if (solve && s.ckpt[0] && !is_output(out, s.ckpt)) unlink(s.ckpt);
     if (msg) secure_zero(msg, s.env.ct_len), free(msg);
   }
   if (s.data) solve_close(&s);

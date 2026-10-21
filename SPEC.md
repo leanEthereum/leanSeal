@@ -1,6 +1,6 @@
 # chainseal v1 specification
 
-chainseal is a time-lock encryption scheme built only from SHA-256. A sender encrypts a message so that anyone can decrypt it after doing a fixed amount of sequential hashing, and the sender can also reveal the key early. The construction is the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1), with each random-oracle call replaced by a long SHA-256 chain, as Vitalik Buterin proposed for encrypted mempools.
+chainseal is a time-lock encryption scheme built only from SHA-256. A sender encrypts a message so that anyone can decrypt it after doing a fixed amount of sequential hashing, and the sender can also reveal the key early. The construction is the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1, the variant in which each link is a hash iterated many times), instantiated with SHA-256 for encrypted mempools as Vitalik Buterin proposed.
 
 This document is normative. The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections marked *informative* are not part of the format.
 
