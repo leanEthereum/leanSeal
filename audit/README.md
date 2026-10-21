@@ -8,6 +8,7 @@ An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited chainseal fo
 | 2 | `6e764bd` | [round-2.md](round-2.md) | fix first: 9 of the 12 resolved, 3 partly; 4 new blockers, 4 new minor |
 | 3 | `8e04201` | [round-3.md](round-3.md) | fix first: 6 of the 8 resolved, 2 partly; 1 new blocker, 3 new minor |
 | 4 | `634982f` | [round-4.md](round-4.md) | fix first: R3-1 to R3-4 and R2-6 resolved, R2-1 partly; 1 new blocker, 1 nit |
+| 5 | `2d804be` | [round-5.md](round-5.md) | ready: R4-1, R4-2 and R2-1 resolved; no new findings |
 
 ## What changed after round 1
 
