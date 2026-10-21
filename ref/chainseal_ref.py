@@ -72,6 +72,20 @@ def chain(state, salt, i, steps):
     return state
 
 
+def absorb(acc, end):
+    return th("chainseal/v1/acc", acc + end)
+
+
+def derive_key(ctx, ends):
+    """K = TH(key, ctx || a_n), where a_0 = ctx and a_i = TH(acc, a_(i-1) || y_i)."""
+    acc = ctx
+    accs = []
+    for end in ends:
+        acc = absorb(acc, end)
+        accs.append(acc)
+    return th("chainseal/v1/key", ctx + acc), accs
+
+
 def commitment(ctx, key):
     return th("chainseal/v1/commit", ctx + key)
 
@@ -102,11 +116,11 @@ def generate(n, m, b, salt, links):
     # Serial computation keeps this reference simple; chain independence is
     # preserved even though section 4 recommends parallel generation.
     ends = [chain(s, salt, i, m) for i, s in enumerate(starts, 1)]
-    key = th("chainseal/v1/key", ctx + ends[-1])
+    key, accs = derive_key(ctx, ends)
     commit = commitment(ctx, key)
     hidden = [links[0]] + [xor(ends[i][:b], links[i + 1]) for i in range(n - 1)]
     raw = encode_puzzle(n, m, b, salt, commit, hidden)
-    return {"start": starts, "y": ends, "key": key, "commit": commit,
+    return {"start": starts, "y": ends, "acc": accs, "key": key, "commit": commit,
             "puzzle": raw, "puzzle_id": puzzle_id(raw)}
 
 
@@ -119,10 +133,11 @@ def encode_secret(raw_puzzle, key):
     return b"CSSK\x01\0\0\0" + key + raw_puzzle
 
 
-def encode_checkpoint(raw_puzzle, i, j, state):
+def encode_checkpoint(raw_puzzle, i, j, state, acc):
     fixed(state, 32, "checkpoint state")
+    fixed(acc, 32, "checkpoint accumulator")
     return (b"CSCK\x01\0\0\0" + puzzle_id(raw_puzzle)
-            + i.to_bytes(4, "big") + j.to_bytes(8, "big") + state)
+            + i.to_bytes(4, "big") + j.to_bytes(8, "big") + state + acc)
 
 
 def crypt(message, key, nonce):
@@ -212,36 +227,41 @@ def checkpoint_position(puzzle, i, j):
 
 def decode_checkpoint(data, puzzle):
     header(data, b"CSCK")
-    require(len(data) == 84, "incorrect checkpoint length")
+    require(len(data) == 116, "incorrect checkpoint length")
     require(hmac.compare_digest(data[8:40], puzzle_id(puzzle["raw"])),
             "checkpoint puzzle id mismatch")
     i = int.from_bytes(data[40:44], "big")
     j = int.from_bytes(data[44:52], "big")
     checkpoint_position(puzzle, i, j)
     # SPEC: Section 6.4 specifies ID/position checks but no authentication or
-    # recomputation of the stored state. Decode it literally; a resumed solve
-    # still MUST pass the final commitment check (section 5).
-    return {"puzzle_id": data[8:40], "i": i, "j": j, "state": data[52:84]}
+    # recomputation of the stored state and accumulator. Decode them literally;
+    # a resumed solve still MUST pass the final commitment check (section 5).
+    return {"puzzle_id": data[8:40], "i": i, "j": j, "state": data[52:84],
+            "acc": data[84:116]}
 
 
 def solve_puzzle(puzzle, checkpoint=None):
     if checkpoint is None:
         i, j = 1, 0
         state = start(puzzle["ctx"], i, puzzle["links"][0])
+        acc = puzzle["ctx"]
     else:
         require(hmac.compare_digest(checkpoint["puzzle_id"], puzzle_id(puzzle["raw"])),
                 "checkpoint puzzle id mismatch")
         i, j, state = checkpoint["i"], checkpoint["j"], checkpoint["state"]
+        acc = checkpoint["acc"]
         checkpoint_position(puzzle, i, j)
         fixed(state, 32, "checkpoint state")
+        fixed(acc, 32, "checkpoint accumulator")
     while True:
         y = chain(state, puzzle["salt"], i, puzzle["m"] - j)
+        acc = absorb(acc, y)
         if i == puzzle["n"]:
             break
         link = xor(y[:puzzle["b"]], puzzle["links"][i])
         i, j = i + 1, 0
         state = start(puzzle["ctx"], i, link)
-    key = th("chainseal/v1/key", puzzle["ctx"] + y)
+    key = th("chainseal/v1/key", puzzle["ctx"] + acc)
     check_key(puzzle, key)
     return key
 
@@ -381,14 +401,17 @@ def check_vectors(path):
         checkpoint_position({"n": n, "m": m}, cp["i"], cp["j"])
         state = chain(derived["start"][cp["i"] - 1], salt, cp["i"], cp["j"])
         equal(f"{where}.checkpoint.state", state.hex(), cp["state"])
-        raw_cp = encode_checkpoint(derived["puzzle"], cp["i"], cp["j"], state)
+        acc = derived["acc"][cp["i"] - 2] if cp["i"] > 1 else context(n, m, b, salt)
+        equal(f"{where}.checkpoint.acc", acc.hex(), cp["acc"])
+        raw_cp = encode_checkpoint(derived["puzzle"], cp["i"], cp["j"], state, acc)
         equal(f"{where}.checkpoint.hex", raw_cp.hex(), cp["hex"])
         if puzzle is not None:
             decoded = attempt(f"{where}.decode checkpoint",
                               lambda: decode_checkpoint(unhex(cp["hex"]), puzzle))
             if decoded is not None:
                 for field, expected in (("i", cp["i"]), ("j", cp["j"]),
-                                        ("state", state), ("puzzle_id", derived["puzzle_id"])):
+                                        ("state", state), ("acc", acc),
+                                        ("puzzle_id", derived["puzzle_id"])):
                     equal(f"{where}.decoded checkpoint.{field}", decoded[field], expected)
                 resumed = attempt(f"{where}.resume", lambda: solve_puzzle(puzzle, decoded))
                 equal(f"{where}.resumed key", resumed, derived["key"])

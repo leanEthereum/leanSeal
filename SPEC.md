@@ -17,6 +17,7 @@ Labels used in v1:
 | Label | Used for |
 |---|---|
 | `chainseal/v1/start` | chain start values |
+| `chainseal/v1/acc` | the hash of the chain ends |
 | `chainseal/v1/key` | the session key |
 | `chainseal/v1/commit` | the key commitment |
 | `chainseal/v1/enc` | the encryption subkey |
@@ -34,7 +35,7 @@ Labels used in v1:
 
 In addition, `n·m ≤ 2^60`, so that every step count fits in 64 bits.
 
-An honest solver does `n·m` chain steps in sequence, plus `n` start hashes and two final hashes. Section 8 discusses what this does and does not guarantee.
+An honest solver does `n·m` chain steps in sequence, plus `n` start hashes, `n` hashes of the chain ends and two final hashes. Section 8 discusses what this does and does not guarantee.
 
 ## 3. The chain step
 
@@ -70,22 +71,28 @@ Inputs: parameters `n`, `m`, `b`. The generator MUST draw `salt` and the links `
        y_i = F_i^m(s_i)
 
 3. For each `i` in 1..n−1, hide the next link: `z_i = y_i[0:b] ⊕ x_{i+1}`.
-4. Derive the session key and its commitment:
+4. Hash the chain ends in order, starting from `a_0 = ctx`:
 
-       K = TH("chainseal/v1/key", ctx ‖ y_n)
+       a_i = TH("chainseal/v1/acc", a_{i−1} ‖ y_i)    for i = 1, …, n
+
+5. Derive the session key and its commitment:
+
+       K = TH("chainseal/v1/key", ctx ‖ a_n)
        C = TH("chainseal/v1/commit", ctx ‖ K)
 
-5. The puzzle is the header with commitment `C`, followed by the links `x_1 ‖ z_1 ‖ … ‖ z_{n−1}` (section 6.1).
+6. The puzzle is the header with commitment `C`, followed by the links `x_1 ‖ z_1 ‖ … ‖ z_{n−1}` (section 6.1).
 
-Step 2 is where the generator spends its time. The `n` chains are independent and SHOULD be computed in parallel.
+Step 2 is where the generator spends its time. The `n` chains are independent and SHOULD be computed in parallel. Step 4 is `n` more hashes, done in sequence once all chains have ended.
+
+*Informative.* The key depends on the end of every chain, not only the last. A solver who guesses a hidden link and runs the remaining chains from it still needs the ends of all earlier chains, so a right guess saves time but does not by itself open the puzzle (section 8). Hashing the ends one at a time keeps the state a solver carries between chains to 32 bytes.
 
 ## 5. Solving
 
 Given a valid puzzle:
 
-1. Read `ctx`, `x_1` and `z_1, …, z_{n−1}`. Set `x ← x_1`.
-2. For `i` = 1, …, n: compute `y_i = F_i^m(TH("chainseal/v1/start", ctx ‖ be32(i) ‖ x))`. If `i < n`, set `x ← y_i[0:b] ⊕ z_i`.
-3. Compute `K = TH("chainseal/v1/key", ctx ‖ y_n)`.
+1. Read `ctx`, `x_1` and `z_1, …, z_{n−1}`. Set `x ← x_1` and `a ← ctx`.
+2. For `i` = 1, …, n: compute `y_i = F_i^m(TH("chainseal/v1/start", ctx ‖ be32(i) ‖ x))` and set `a ← TH("chainseal/v1/acc", a ‖ y_i)`. If `i < n`, set `x ← y_i[0:b] ⊕ z_i`.
+3. Compute `K = TH("chainseal/v1/key", ctx ‖ a)`.
 4. Accept `K` only if `TH("chainseal/v1/commit", ctx ‖ K) = C`. Otherwise the puzzle is malformed and MUST be reported as such.
 
 A solver that follows these steps cannot start chain `i + 1` before chain `i` ends, because its start link is hidden under the end of chain `i`. A solver can try to skip ahead by guessing a link instead; section 8 discusses this.
@@ -150,8 +157,9 @@ A decoder MUST check that `K` matches the puzzle's commitment.
 | 40 | 4 | `i`, the current chain, 1 ≤ i ≤ n |
 | 44 | 8 | `j`, steps of chain `i` already done, 0 ≤ j ≤ m |
 | 52 | 32 | state `F_i^j(s_i)` |
+| 84 | 32 | `a_{i−1}`, the hash of the ends of chains 1 to i−1 (`ctx` when i = 1) |
 
-Total length: 84 bytes. A solver resuming from a checkpoint MUST check the puzzle id.
+Total length: 116 bytes. A solver resuming from a checkpoint MUST check the puzzle id. Nothing authenticates the state or `a_{i−1}`; a damaged checkpoint leads to a key that fails the commitment check of section 5.
 
 ## 7. Encryption
 
@@ -177,7 +185,7 @@ A key MAY encrypt several messages, each with its own nonce. All of them open to
 *Informative.*
 
 - **What the delay rests on.** The delay is an assumption about attackers, not a theorem of this document. It assumes nobody computes `m` chained steps much faster than `m·ℓ`, where `ℓ` is the fastest attainable latency of one SHA-256 compression; this covers both the absence of shortcuts for iterating SHA-256 and the circuit speed of the best hardware. It also assumes that the only useful way to skip chains is to guess links, as below. In the random-oracle model, Mahmoody, Moran and Vadhan prove asymptotically that their construction needs about `n·m` sequential rounds, except with negligible probability, and that no hash-only puzzle can provably need more rounds than its generator makes queries. chainseal keeps their dependency structure, but this document gives no concrete security theorem for chainseal itself, and no analysis against quantum attackers.
-- **Guessing a link.** Among guesses of a hidden link, guessing `x_n` leaves the least work: run only the last chain and check the result against the commitment. Each guess costs `m` steps and succeeds with probability `2^(−8b)`. A fleet computing `R` chain steps per second in parallel makes at most `R·T/m` such guesses within time `T`, so its chance of opening one puzzle within `T` this way is at most `R·T / (m·2^(8b))`. This bound covers this attack only. Guessing an earlier link `x_(n−k)` succeeds with the same chance `2^(−8b)` per guess but costs `k + 1` chains, so it does no better. Guessing the key itself succeeds with chance `2^−256` per guess. There is no proof that no other strategy does better. Use `b = 12` unless a smaller value is justified. Against `R = 10^21`, `T = 60 s` and `m = 2^25`, keeping this attack's chance below `2^(−32)` per puzzle needs `b ≥ 11`. With `n = 1` the only link is public, so a one-chain puzzle relies on the chain alone.
+- **Guessing a link.** A solver can skip work only by guessing a hidden link `x_k` and running chains `k, k+1, …` from the guess before chain `k − 1` has ended. Because the key depends on every chain end, a guess is confirmed only when the solver's own chains reach link `k` and reveal `x_k`; until then every guessed run is blind. To finish `d` steps sooner than an honest solver, a guessed run must already be `d` steps ahead when it is confirmed, so each guess costs about `d` steps and is right with probability `2^(−8b)`. An attacker who computes `Q` chain steps in total, across all its hardware, thus saves `d` steps with chance at most about `Q / (d·2^(8b))`, and saving more than half of the `n·m` steps needs two right guesses at once. The cheapest useful saving is one chain, `d = m`: a fleet computing `R` chain steps per second makes `Q = R·T` steps within time `T`, so its chance is at most `R·T / (m·2^(8b))`. Guessing the key itself succeeds with chance `2^−256` per guess. There is no proof that no other strategy does better. Use `b = 12` unless a smaller value is justified. Against `R = 10^21`, `T = 60 s` and `m = 2^25`, keeping the one-chain saving below chance `2^(−32)` per puzzle needs `b ≥ 11`. With `n = 1` the only link is public, so a one-chain puzzle relies on the chain alone.
 - **The delay starts at publication.** Anyone holding a puzzle can start solving it. A puzzle built in advance (a secret file) MUST be kept private until its first envelope is published. From then on the clock runs for every envelope under that puzzle: a message encrypted later under the same puzzle opens at the same time as the first, not one full delay after its own publication. Encrypt together all messages that should open together, then discard the secret.
 - **Malformed puzzles.** Nothing in v1 lets a verifier check, before solving, that a puzzle leads to its commitment. A malformed puzzle is detected only when the solve ends with a commitment mismatch.
 - **What the tag protects.** The tag stops anyone who does not know `K` from changing an envelope. Anyone who knows `K`, because it was revealed or solved, can seal a new message under the same puzzle, with a valid tag. A puzzle or its commitment therefore does not identify a message. A system that orders or references envelopes MUST bind to the whole envelope, for example by its SHA-256 hash.
@@ -193,7 +201,7 @@ For a target delay `T` against an attacker with per-step latency `ℓ`, choose `
 
 `tests/vectors.json` holds deterministic vectors produced by the reference C implementation. It has two lists.
 
-`cases`: valid puzzles. Each entry gives the parameters `n`, `m`, `b`, the random inputs `salt`, `x` (the links `x_1..x_n`), `nonce` and `message`, and the values an implementation must reproduce from them: `start` (the `s_i`), `y` (the `y_i`), `key`, `commit`, `puzzle` (section 6.1), `puzzle_id`, `secret` (section 6.3) and `envelope` (section 6.2, sealed with the given nonce). `checkpoint` gives a position `i`, `j`, the state `F_i^j(s_i)` at that position, and its encoding (section 6.4). All byte strings are lowercase hex.
+`cases`: valid puzzles. Each entry gives the parameters `n`, `m`, `b`, the random inputs `salt`, `x` (the links `x_1..x_n`), `nonce` and `message`, and the values an implementation must reproduce from them: `start` (the `s_i`), `y` (the `y_i`), `acc` (the `a_i` for i = 1..n), `key`, `commit`, `puzzle` (section 6.1), `puzzle_id`, `secret` (section 6.3) and `envelope` (section 6.2, sealed with the given nonce). `checkpoint` gives a position `i`, `j`, the state `F_i^j(s_i)` at that position, the accumulator `a_{i−1}` (`acc`), and its encoding (section 6.4). All byte strings are lowercase hex.
 
 `invalid`: inputs that MUST be rejected. Each entry has a `kind`, the index `case` of the valid case it was derived from, a short `why`, and `hex`:
 

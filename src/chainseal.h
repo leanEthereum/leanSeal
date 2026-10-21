@@ -14,7 +14,7 @@
 #define CS_PUZZLE_HEADER 68u
 #define CS_ENVELOPE_OVERHEAD 60u  // envelope bytes beyond the puzzle and the message
 #define CS_SECRET_HEADER 40u
-#define CS_CHECKPOINT_SIZE 84u
+#define CS_CHECKPOINT_SIZE 116u
 
 enum {
   CS_OK = 0,
@@ -72,6 +72,7 @@ typedef struct {
   uint32_t i;      // current chain, 1..n
   uint64_t j;      // steps of chain i done, 0..m
   uint32_t st[8];  // state after j steps
+  uint8_t acc[32]; // a_{i-1}, the hash of the ends of chains 1..i-1 (SPEC.md section 4)
 } cs_cursor;
 
 // Called every `every` steps and at the end of every chain; return nonzero to stop.
@@ -84,9 +85,11 @@ void cs_cursor_start(const cs_puzzle *p, cs_cursor *c);
 int cs_solve(const cs_puzzle *p, uint8_t key[32], cs_cursor *cur, const chain_backend *be, uint64_t every,
              cs_progress_fn fn, void *arg);
 
-// The last-link attack (SPEC.md section 8): run only chain n from a guessed x_n.
-// Returns 1, with the key, if the guess opens the puzzle.
-int cs_guess_last_link(const cs_puzzle *p, const uint8_t *x_n, const chain_backend *be, uint8_t key[32]);
+// Run chain i alone from a link x_i, known or guessed, and return its end y_i.
+// Guessing ahead (SPEC.md section 8) runs chains from guessed links this way.
+void cs_run_chain(const cs_puzzle *p, uint32_t i, const uint8_t *x, const chain_backend *be, uint8_t y[32]);
+// The key from all n chain ends y (n*32 bytes). Returns 1 if it matches the commitment.
+int cs_key_from_ends(const cs_puzzle *p, const uint8_t *y, uint8_t key[32]);
 
 void cs_checkpoint_encode(const cs_puzzle *p, const cs_cursor *c, uint8_t out[CS_CHECKPOINT_SIZE]);
 int cs_checkpoint_decode(const cs_puzzle *p, cs_cursor *c, const uint8_t *in, size_t len);

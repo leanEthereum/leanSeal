@@ -145,38 +145,49 @@ static int bench_build(uint64_t work, int threads, unsigned b) {
   return 0;
 }
 
-// The last-link attack at toy sizes: guess x_n with b small enough to try a
-// fixed fraction of all values, and compare the success rate with the bound.
+// Guessing ahead at toy sizes. The attacker solves chains 1..n-1 in sequence
+// and meanwhile runs chain n from guesses of x_n; a right guess saves one chain.
+// With b small enough to try a fixed fraction of all values, compare the
+// success rate with the bound.
 static int bench_attack(unsigned b, uint32_t n, uint64_t m, int trials, double fraction) {
   if (b > 3) return fprintf(stderr, "chainseal: attack needs -b 1, 2 or 3\n"), 1;
   uint64_t space = 1ull << (8 * b), budget = (uint64_t)(fraction * space);
   cs_rng rng;
   rng_os(&rng);
+  uint8_t *y = malloc((size_t)n * 32);
+  if (!y) return 1;
   int wins = 0;
   double t0 = now();
   for (int t = 0; t < trials; t++) {
     cs_puzzle p;
-    uint8_t key[32], guess_key[32], g[4];
-    if (cs_generate(&p, key, n, m, b, &rng, NULL)) return 1;
+    uint8_t key[32], guess_key[32], g[4], x[4];
+    if (cs_generate(&p, key, n, m, b, &rng, NULL)) return free(y), 1;
+    memcpy(x, p.links, b);
+    for (uint32_t i = 1; i < n; i++) {  // the honest part: chains 1..n-1
+      cs_run_chain(&p, i, x, NULL, y + 32 * (size_t)(i - 1));
+      for (unsigned k = 0; k < b; k++) x[k] = y[32 * (size_t)(i - 1) + k] ^ p.links[(size_t)i * b + k];
+    }
     uint32_t start;
     rng_bytes(&rng, (uint8_t *)&start, 4);
     for (uint64_t k = 0; k < budget; k++) {
       uint32_t v = (uint32_t)((start + k) & (space - 1));
       for (unsigned i = 0; i < b; i++) g[i] = (uint8_t)(v >> (8 * (b - 1 - i)));
-      if (cs_guess_last_link(&p, g, NULL, guess_key)) {
+      cs_run_chain(&p, n, g, NULL, y + 32 * (size_t)(n - 1));
+      if (cs_key_from_ends(&p, y, guess_key)) {
         wins += !memcmp(key, guess_key, 32);
         break;
       }
     }
     cs_puzzle_free(&p);
   }
+  free(y);
   double dt = now() - t0;
   double expect = (double)budget / space, sd = sqrt(trials * expect * (1 - expect));
-  printf("## last-link guessing attack, b = %u (2^%u values), n = %u, m = %llu\n", b, 8 * b, n,
+  printf("## guessing ahead by one chain, b = %u (2^%u values), n = %u, m = %llu\n", b, 8 * b, n,
          (unsigned long long)m);
   printf("budget per puzzle   %llu guesses = %.3f of all values, %llu steps (honest solve: %llu)\n",
          (unsigned long long)budget, expect, (unsigned long long)(budget * m), (unsigned long long)(n * m));
-  printf("opened              %d of %d puzzles = %.3f; bound R*T/(m*2^(8b)) = %.3f, expected %.1f +- %.1f\n", wins,
+  printf("opened early        %d of %d puzzles = %.3f; bound Q/(m*2^(8b)) = %.3f, expected %.1f +- %.1f\n", wins,
          trials, (double)wins / trials, expect, trials * expect, sd);
   printf("time                %.2f s\n", dt);
   return fabs(wins - trials * expect) <= 4 * sd + 1 ? 0 : 1;

@@ -55,7 +55,7 @@ Instead of `-m`, you can give `-d 10m` to choose `m` for a target delay. By defa
 
 The sender draws random links `x_1 … x_n` and runs `n` independent chains of `m` SHA-256 steps, one per link, all in parallel. Each step hashes the 32-byte state together with the puzzle's salt and the chain's index. That is still one SHA-256 compression, and it ties every step to one chain of one puzzle.
 
-The puzzle publishes `x_1` in the clear. Each later link `x_{i+1}` is published masked with the end of chain `i`. The key is a hash of the end of chain `n`, and the puzzle carries a 32-byte commitment to the key.
+The puzzle publishes `x_1` in the clear. Each later link `x_{i+1}` is published masked with the end of chain `i`. The key is a hash of the ends of all `n` chains, taken in order, and the puzzle carries a 32-byte commitment to the key.
 
 A solver that follows these dependencies must run the chains one after another, because each chain's start is hidden under the end of the previous one. So building costs `n·m` steps spread over the sender's cores, and honest solving costs `n·m` steps in sequence. A solver can skip chains by guessing a hidden link, or the key itself; that is why links are 12 bytes wide and the key is 32 (see the threat model below). The message is encrypted with an HMAC-SHA256 keystream and authenticated with an HMAC-SHA256 tag over the whole envelope.
 
@@ -66,7 +66,7 @@ Sizes:
 | Puzzle | `68 + 12n` bytes with 12-byte links: 836 B for n = 64, 6,212 B for n = 512 |
 | Envelope | the puzzle + 60 bytes + the message |
 | Secret, a puzzle kept with its key | the puzzle + 40 bytes |
-| Checkpoint | 84 bytes |
+| Checkpoint | 116 bytes |
 
 ## Measurements
 
@@ -92,7 +92,7 @@ The build speedup is how much faster the sender builds a puzzle than a single-co
 **What the delay rests on.**
 
 - Nobody computes `m` chained SHA-256 steps much faster than `m·ℓ`, where `ℓ` is the fastest attainable latency of one compression on the best hardware. The delay is a wall-clock estimate, so a faster solver opens the envelope sooner. Set `m` against the fastest attacker you assume, not against your own machine.
-- Guessing does not pay. Among guesses of a hidden link, guessing the last one leaves the least work: one chain. With 12-byte links, an attacker computing `10^21` steps per second has a chance of about `2^-45` of opening a 60-second puzzle with `m = 2^25` this way (SPEC.md section 8; `chainseal bench attack` checks the formula at toy sizes). This figure covers that one attack. Guessing an earlier link is right just as often per guess but costs more chains, and guessing the 32-byte key is right with chance `2^-256` per guess. Nothing here proves that no other strategy does better. A puzzle with `n = 1` has no hidden link, and its delay rests on the one chain alone.
+- Guessing does not pay. A solver can guess a hidden link and run the later chains from the guess before the earlier ones end. Since the key needs every chain's end, a guess is confirmed only when the solver's own chains reach it, so a right guess saves time but opens nothing by itself, and each guess costs as many steps as it would save. With 12-byte links, an attacker computing `10^21` steps per second has a chance of about `2^-45` of saving even one chain of a 60-second puzzle with `m = 2^25`, and a chance of about `Q/(d·2^96)` of saving `d` steps with `Q` steps of work (SPEC.md section 8; `chainseal bench attack` checks the formula at toy sizes). Saving more than half the work needs two right guesses at once. Guessing the 32-byte key is right with chance `2^-256` per guess. Nothing here proves that no other strategy does better. A puzzle with `n = 1` has no hidden link, and its delay rests on the one chain alone.
 - In the random-oracle model, Mahmoody, Moran and Vadhan prove asymptotically that their construction needs about `n·m` sequential rounds. chainseal keeps their dependency structure, but there is no concrete security proof for chainseal itself, and no analysis against quantum attackers.
 - The sender's random number generator is sound.
 

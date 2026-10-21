@@ -99,10 +99,13 @@ void cs_puzzle_id(const cs_puzzle *p, uint8_t id[32]) {
   th(id, "chainseal/v1/puzzle-id", head, 36, p->commit, 32, p->links, (size_t)p->n * p->b, NULL, 0);
 }
 
-static void derive_key(const cs_puzzle *p, const uint8_t y_n[32], uint8_t key[32]) {
+// a_i = TH("chainseal/v1/acc", a_{i-1} || y_i), from a_0 = ctx.
+static void absorb(uint8_t acc[32], const uint8_t y[32]) { th(acc, "chainseal/v1/acc", acc, 32, y, 32, NULL, 0, NULL, 0); }
+
+static void derive_key(const cs_puzzle *p, const uint8_t a_n[32], uint8_t key[32]) {
   uint8_t ctx[32];
   cs_puzzle_ctx(p, ctx);
-  th(key, "chainseal/v1/key", ctx, 32, y_n, 32, NULL, 0, NULL, 0);
+  th(key, "chainseal/v1/key", ctx, 32, a_n, 32, NULL, 0, NULL, 0);
 }
 
 static void commitment(const cs_puzzle *p, const uint8_t key[32], uint8_t c[32]) {
@@ -220,19 +223,21 @@ int cs_generate_from(cs_puzzle *p, uint8_t key[32], uint32_t n, uint64_t m, unsi
   free(tid);
   if (o->progress) o->progress(o->progress_arg, (uint64_t)n * m, (uint64_t)n * m);
 
-  uint8_t yb[32];
+  uint8_t yb[32], acc[32];
+  cs_puzzle_ctx(p, acc);
   memcpy(p->links, x, b);
-  for (uint32_t i = 1; i < n; i++) {  // z_i = y_i[0:b] xor x_{i+1}
+  for (uint32_t i = 1; i <= n; i++) {
     words_to_bytes(yb, y[i - 1]);
-    for (unsigned k = 0; k < b; k++) p->links[(size_t)i * b + k] = yb[k] ^ x[(size_t)i * b + k];
+    absorb(acc, yb);
+    if (i < n)  // z_i = y_i[0:b] xor x_{i+1}
+      for (unsigned k = 0; k < b; k++) p->links[(size_t)i * b + k] = yb[k] ^ x[(size_t)i * b + k];
   }
-  words_to_bytes(yb, y[n - 1]);
-  derive_key(p, yb, key);
+  derive_key(p, acc, key);
   commitment(p, key, p->commit);
   if (o->x_out) memcpy(o->x_out, x, (size_t)n * b);
   if (o->y_out)
     for (uint32_t i = 0; i < n; i++) words_to_bytes(o->y_out + 32 * (size_t)i, y[i]);
-  secure_zero(yb, sizeof yb);
+  secure_zero(yb, sizeof yb), secure_zero(acc, sizeof acc);
   secure_zero(y, (size_t)n * sizeof *y);
   free(y);
   return CS_OK;
@@ -253,22 +258,28 @@ int cs_generate(cs_puzzle *p, uint8_t key[32], uint32_t n, uint64_t m, unsigned 
 
 // ---------------------------------------------------------------- solving
 
-int cs_guess_last_link(const cs_puzzle *p, const uint8_t *x_n, const chain_backend *be, uint8_t key[32]) {
+void cs_run_chain(const cs_puzzle *p, uint32_t i, const uint8_t *x, const chain_backend *be, uint8_t y[32]) {
   if (!be) be = chain_best();
   uint32_t st[8];
-  uint8_t yb[32];
   chain_tail t;
-  chain_start(p, p->n, x_n, st);
-  chain_tail_init(&t, p->salt, p->n);
+  chain_start(p, i, x, st);
+  chain_tail_init(&t, p->salt, i);
   be->run(st, &t, p->m);
-  words_to_bytes(yb, st);
-  derive_key(p, yb, key);
+  words_to_bytes(y, st);
+}
+
+int cs_key_from_ends(const cs_puzzle *p, const uint8_t *y, uint8_t key[32]) {
+  uint8_t acc[32];
+  cs_puzzle_ctx(p, acc);
+  for (uint32_t i = 0; i < p->n; i++) absorb(acc, y + 32 * (size_t)i);
+  derive_key(p, acc, key);
   return cs_check_key(p, key);
 }
 
 void cs_cursor_start(const cs_puzzle *p, cs_cursor *c) {
   c->i = 1, c->j = 0;
   chain_start(p, 1, p->links, c->st);
+  cs_puzzle_ctx(p, c->acc);
 }
 
 int cs_solve(const cs_puzzle *p, uint8_t key[32], cs_cursor *cur, const chain_backend *be, uint64_t every,
@@ -294,15 +305,16 @@ int cs_solve(const cs_puzzle *p, uint8_t key[32], cs_cursor *cur, const chain_ba
         return CS_ESTOPPED;
       }
     }
+    words_to_bytes(yb, c.st);
+    absorb(c.acc, yb);
     if (c.i == p->n) break;
-    words_to_bytes(yb, c.st);  // unhide x_{i+1} = y_i[0:b] xor z_i
+    // unhide x_{i+1} = y_i[0:b] xor z_i
     for (unsigned k = 0; k < p->b; k++) x[k] = yb[k] ^ p->links[(size_t)c.i * p->b + k];
     c.i++, c.j = 0;
     chain_start(p, c.i, x, c.st);
     chain_tail_init(&tail, p->salt, c.i);
   }
-  words_to_bytes(yb, c.st);
-  derive_key(p, yb, key);
+  derive_key(p, c.acc, key);
   if (cur) *cur = c;
   secure_zero(yb, sizeof yb), secure_zero(x, sizeof x), secure_zero(&c, sizeof c);
   return cs_check_key(p, key) ? CS_OK : CS_EPUZZLE;
@@ -315,6 +327,7 @@ void cs_checkpoint_encode(const cs_puzzle *p, const cs_cursor *c, uint8_t out[CS
   store_be32(out + 40, c->i);
   store_be64(out + 44, c->j);
   words_to_bytes(out + 52, c->st);
+  memcpy(out + 84, c->acc, 32);
 }
 
 int cs_checkpoint_peek(const uint8_t *in, size_t len, uint8_t id[32], uint32_t *i, uint64_t *j) {
@@ -335,6 +348,7 @@ int cs_checkpoint_decode(const cs_puzzle *p, cs_cursor *c, const uint8_t *in, si
   if (memcmp(id, want, 32)) return CS_EMISMATCH;
   if (err || c->i > p->n || c->j > p->m) return CS_ERANGE;
   bytes_to_words(c->st, in + 52);
+  memcpy(c->acc, in + 84, 32);
   return CS_OK;
 }
 

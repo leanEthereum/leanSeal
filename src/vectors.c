@@ -112,13 +112,19 @@ int cmd_vectors(int argc, char **argv) {
     snprintf(seed, sizeof seed, "chainseal/v1 vector %zu", k);
     cs_rng rng;
     rng_test(&rng, seed, strlen(seed));
-    uint8_t salt[16], nonce[16], *x = malloc((size_t)n * b), *y = malloc(32 * (size_t)n), *s = malloc(32 * (size_t)n);
+    uint8_t salt[16], nonce[16], *x = malloc((size_t)n * b), *y = malloc(32 * (size_t)n), *s = malloc(32 * (size_t)n),
+            *a = malloc(32 * (size_t)n);
     uint8_t *msg = malloc(ml + 1);
     rng_bytes(&rng, salt, 16), rng_bytes(&rng, x, (size_t)n * b), rng_bytes(&rng, nonce, 16), rng_bytes(&rng, msg, ml);
     built *o = &B[k];
     cs_gen_opts opts = {.threads = 1, .y_out = y};
     if (cs_generate_from(&o->p, o->key, n, m, b, salt, x, &opts)) return 1;
     for (uint32_t i = 1; i <= n; i++) cs_chain_start(&o->p, i, x + (size_t)(i - 1) * b, s + 32 * (i - 1));
+    uint8_t ctx[32];
+    cs_puzzle_ctx(&o->p, ctx);
+    for (uint32_t i = 1; i <= n; i++)  // a_i = TH(acc, a_{i-1} || y_i), a_0 = ctx
+      th(a + 32 * (i - 1), "chainseal/v1/acc", i > 1 ? a + 32 * (i - 2) : ctx, 32, y + 32 * (i - 1), 32, NULL, 0,
+         NULL, 0);
     o->plen = cs_puzzle_size(n, b), o->elen = cs_envelope_size(&o->p, ml), o->slen = cs_secret_size(&o->p);
     o->puzzle = malloc(o->plen), o->envelope = malloc(o->elen), o->secret = malloc(o->slen);
     cs_puzzle_encode(&o->p, o->puzzle);
@@ -132,11 +138,12 @@ int cmd_vectors(int argc, char **argv) {
     cs_checkpoint_encode(&o->p, &cur, o->ckpt);
     if (cs_solve(&o->p, solved, &cur, NULL, 0, NULL, NULL) || memcmp(solved, o->key, 32)) return 1;
     cs_puzzle_id(&o->p, id);
-    uint8_t state[32];
+    uint8_t state[32], acc[32];
     {
       cs_cursor again;
       cs_checkpoint_decode(&o->p, &again, o->ckpt, CS_CHECKPOINT_SIZE);
       for (int w = 0; w < 8; w++) store_be32(state + 4 * w, again.st[w]);
+      memcpy(acc, again.acc, 32);
     }
 
     printf("    {\"n\": %u, \"m\": %llu, \"b\": %u,\n      ", n, (unsigned long long)m, b);
@@ -144,6 +151,7 @@ int cmd_vectors(int argc, char **argv) {
     hex_list("x", x, n, b, ",\n      ");
     hex_list("start", s, n, 32, ",\n      ");
     hex_list("y", y, n, 32, ",\n      ");
+    hex_list("acc", a, n, 32, ",\n      ");
     hex_field("key", o->key, 32, ",\n      ");
     hex_field("commit", o->p.commit, 32, ",\n      ");
     hex_field("puzzle", o->puzzle, o->plen, ",\n      ");
@@ -154,9 +162,10 @@ int cmd_vectors(int argc, char **argv) {
     hex_field("envelope", o->envelope, o->elen, ",\n      ");
     printf("\"checkpoint\": {\"i\": %u, \"j\": %llu, ", at.i, (unsigned long long)at.j);
     hex_field("state", state, 32, ", ");
+    hex_field("acc", acc, 32, ", ");
     hex_field("hex", o->ckpt, CS_CHECKPOINT_SIZE, "}}");
     printf("%s\n", k + 1 < NCASES ? "," : "");
-    free(x), free(y), free(s), free(msg);
+    free(x), free(y), free(s), free(a), free(msg);
   }
 
   printf("  ],\n  \"invalid\": [\n");

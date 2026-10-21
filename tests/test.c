@@ -297,12 +297,23 @@ static void test_checkpoints(void) {
     CHECK(cur.i == stops[t].i, "stopped in chain %u", stops[t].i);
     cs_checkpoint_encode(&p, &cur, buf);
     CHECK(!cs_checkpoint_decode(&p, &back, buf, sizeof buf), "decode checkpoint");
-    CHECK(back.i == cur.i && back.j == cur.j && !memcmp(back.st, cur.st, 32), "checkpoint round trip");
+    CHECK(back.i == cur.i && back.j == cur.j && !memcmp(back.st, cur.st, 32) && !memcmp(back.acc, cur.acc, 32),
+          "checkpoint round trip");
     CHECK(cs_checkpoint_decode(&other, &back, buf, sizeof buf) == CS_EMISMATCH, "other puzzle refused");
     CHECK(cs_checkpoint_decode(&p, &back, buf, sizeof buf - 1) == CS_EFORMAT, "short checkpoint");
     memset(k2, 0, 32);
     CHECK(!cs_solve(&p, k2, &back, NULL, 0, NULL, NULL) && !memcmp(k2, key, 32), "resume from %u/%llu",
           stops[t].i, (unsigned long long)stops[t].j);
+  }
+  // A checkpoint whose accumulator is wrong solves to a key that fails the commitment.
+  {
+    const stop_at at = {3, 7};
+    cs_cursor cur = {0}, back;
+    CHECK(cs_solve(&p, k2, &cur, NULL, 7, stop_when, (void *)&at) == CS_ESTOPPED, "stopped");
+    cs_checkpoint_encode(&p, &cur, buf);
+    buf[CS_CHECKPOINT_SIZE - 1] ^= 1;
+    CHECK(!cs_checkpoint_decode(&p, &back, buf, sizeof buf), "decode");
+    CHECK(cs_solve(&p, k2, &back, NULL, 0, NULL, NULL) == CS_EPUZZLE, "a wrong accumulator is caught");
   }
   cs_cursor cur;
   cs_cursor_start(&p, &cur);
@@ -349,19 +360,37 @@ static void test_checkpoints(void) {
 // ---------------------------------------------------------------- the guessing attack
 
 static void test_guess(void) {
-  uint8_t salt[16], x[3], key[32], gk[32];
+  uint8_t salt[16], x[3], key[32], gk[32], y[3 * 32], ends[3 * 32];
   rng_bytes(&rng, salt, 16), rng_bytes(&rng, x, 3);
   cs_puzzle p;
-  CHECK(!cs_generate_from(&p, key, 3, 10, 1, salt, x, NULL), "build");
-  int wins = 0, winner = -1;
+  cs_gen_opts o = {.y_out = ends};
+  CHECK(!cs_generate_from(&p, key, 3, 10, 1, salt, x, &o), "build");
+  for (uint32_t i = 1; i <= 3; i++) {
+    cs_run_chain(&p, i, &x[i - 1], NULL, y + 32 * (i - 1));
+    CHECK(!memcmp(y + 32 * (i - 1), ends + 32 * (i - 1), 32), "chain %u alone", i);
+  }
+  CHECK(cs_key_from_ends(&p, y, gk) && !memcmp(gk, key, 32), "key from the ends");
+  // Guessing x_3 opens the puzzle only together with the true ends of chains 1 and 2.
+  int wins = 0, winner = -1, alone = 0;
   for (int g = 0; g < 256; g++) {
     uint8_t guess = (uint8_t)g;
-    if (cs_guess_last_link(&p, &guess, NULL, gk)) {
+    cs_run_chain(&p, 3, &guess, NULL, y + 64);
+    if (cs_key_from_ends(&p, y, gk)) {
       wins++, winner = g;
       CHECK(!memcmp(gk, key, 32), "key");
     }
+    uint8_t wrong[3 * 32] = {0};
+    memcpy(wrong + 64, y + 64, 32);
+    alone += cs_key_from_ends(&p, wrong, gk);
   }
   CHECK(wins == 1 && winner == x[2], "exactly the true last link opens a 1-byte-link puzzle");
+  CHECK(alone == 0, "the last chain alone opens nothing");
+  // Every chain end enters the key.
+  for (int i = 0; i < 3; i++) {
+    memcpy(y, ends, sizeof y);
+    y[32 * i + 31] ^= 1;
+    CHECK(!cs_key_from_ends(&p, y, gk), "changing y_%d changes the key", i + 1);
+  }
   cs_puzzle_free(&p);
 }
 
