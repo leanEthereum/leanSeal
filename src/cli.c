@@ -360,11 +360,11 @@ static void solve_close(solve_job *s) {
 }
 
 static void print_progress(solve_job *jobs, int k, double t0) {
-  uint64_t done = 0, total = 0, fresh = 0;
+  double done = 0, total = 0, fresh = 0;  // summed over puzzles: may exceed 64 bits
   int running = 0;
   for (int i = 0; i < k; i++) {
     uint64_t d = atomic_load(&jobs[i].done);
-    done += d, fresh += d - jobs[i].start_done, total += (uint64_t)jobs[i].p->n * jobs[i].p->m;
+    done += (double)d, fresh += (double)(d - jobs[i].start_done), total += (double)jobs[i].p->n * jobs[i].p->m;
     running += !atomic_load(&jobs[i].finished);
   }
   double el = now() - t0, rate = el > 0 ? fresh / el : 0;
@@ -424,7 +424,6 @@ static int solve_all(solve_job *jobs, int k, int quiet) {
     } else if (s->err) {
       rc = fail(s->path, s->err);
     } else {
-      if (s->ckpt[0]) unlink(s->ckpt);
       if (!quiet)
         fprintf(stderr, "%s: solved in %s, %.2f ns/step\n", s->path, fmt_duration(a, el),
                 steps > 0 ? el * 1e9 / steps : 0);
@@ -449,13 +448,15 @@ static int cmd_solve(int argc, char **argv) {
   int rc = 0, opened = 0;
   for (; opened < k && !rc; opened++) rc = solve_open(&jobs[opened], argv[optind + opened], checkpoints);
   if (!rc) rc = solve_all(jobs, k, quiet);
-  // Print every key that was found, even if another job failed: a solved
-  // job's checkpoint is already gone, so its key must not be lost.
+  // Print every key that was found, even if another job failed, and only
+  // then remove its checkpoint.
   for (int i = 0; i < opened; i++) {
     if (jobs[i].solved) {
       char hex[65];
       hex_encode(hex, jobs[i].key, 32);
-      printf("%s  %s\n", hex, jobs[i].path);
+      if (printf("%s  %s\n", hex, jobs[i].path) < 0 || fflush(stdout)) rc = fail_errno("stdout");
+      else if (jobs[i].ckpt[0]) unlink(jobs[i].ckpt);
+      secure_zero(hex, sizeof hex);
     }
     solve_close(&jobs[i]);
   }
@@ -472,6 +473,7 @@ static int read_key(const char *arg, uint8_t key[32]) {
   if (read_file(arg, &data, &len)) return usage_error("-k takes 64 hex digits or a file holding them");
   char text[80] = {0};
   memcpy(text, data, len < sizeof text - 1 ? len : sizeof text - 1);
+  secure_zero(data, len);
   free(data);
   int bad = len >= sizeof text || hex_decode(key, 32, text);
   secure_zero(text, sizeof text);
@@ -521,6 +523,7 @@ static int cmd_open(int argc, char **argv) {
     int err = msg ? cs_open(&s.env, s.key, msg) : CS_ENOMEM;
     if (err) rc = fail(s.path, err);
     else if (write_file(out, msg, s.env.ct_len, 0)) rc = fail_errno(out);
+    else if (solve && s.ckpt[0]) unlink(s.ckpt);
     if (msg) secure_zero(msg, s.env.ct_len), free(msg);
   }
   if (s.data) solve_close(&s);
@@ -645,6 +648,14 @@ int main(int argc, char **argv) {
                   {"open", cmd_open}, {"info", cmd_info},         {"bench", cmd_bench}, {"selftest", cmd_selftest},
                   {"vectors", cmd_vectors}};
   set_fast_qos();
+  const char *forced = getenv("CHAINSEAL_BACKEND");
+  if (forced && !chain_find(forced)) {
+    fprintf(stderr, "chainseal: CHAINSEAL_BACKEND=%s is not available on this machine; available:", forced);
+    const chain_backend *all[4];
+    for (int i = 0, k = chain_backends(all, 4); i < k; i++) fprintf(stderr, " %s", all[i]->name);
+    fprintf(stderr, "\n");
+    return EXIT_USAGE;
+  }
   if (argc < 2) return usage_error(NULL);
   if (!strcmp(argv[1], "help") || !strcmp(argv[1], "--help") || !strcmp(argv[1], "-h")) {
     fputs(USAGE, stdout);

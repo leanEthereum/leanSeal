@@ -2,13 +2,13 @@
 
 chainseal encrypts a message so that anyone can read it after a fixed amount of sequential SHA-256 work, and the sender can let everyone read it at once by publishing a key. It uses nothing but SHA-256.
 
-It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1), with every random-oracle call replaced by a long SHA-256 chain, as Vitalik Buterin proposed for encrypted mempools. [SPEC.md](SPEC.md) defines the format.
+It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1), with every random-oracle call replaced by a long SHA-256 chain, as Vitalik Buterin proposed for encrypted mempools (private communication, October 2026). [SPEC.md](SPEC.md) defines the format.
 
-**Status: proof of concept.** The format is versioned and fully specified. It has test vectors and a second, independent implementation, and an AI model has audited the code. No human cryptographer has reviewed it. Do not protect anything valuable with it.
+**Status: proof of concept.** The format is versioned and fully specified. It has test vectors and a second implementation, in Python, that shares no code with the C one. An AI model audited the code in two rounds; the reports and the fixes are in [audit/](audit/). No human cryptographer has reviewed it. Do not protect anything valuable with it.
 
 ## Build and test
 
-You need a C11 compiler and `make`. For the full test suite you also need `python3`, version 3.11 or later.
+You need a C11 compiler, `make` and a POSIX system with pthreads. For the full test suite you also need `python3`, version 3.11 or later. The demo also uses `xxd` and `perl`. Everything here was run on macOS on an Apple M4; Linux and x86 builds have not been run.
 
 ```sh
 make            # builds ./chainseal
@@ -19,13 +19,13 @@ make bench      # latency, throughput, build time against n, toy attack
 sh demo.sh      # time-lock the EIP-155 example transaction, open it both ways
 ```
 
-The tool picks the fastest SHA-256 backend at run time:
+The tool has three SHA-256 backends and uses the fastest one the CPU supports:
 
-- `armv8-sha2` on Apple silicon and other ARMv8 cores;
-- `x86-sha-ni` on x86 CPUs with the SHA extensions;
-- `portable` otherwise.
+- `armv8-sha2`, for ARMv8 CPUs with the SHA-2 instructions. It is built on Apple silicon, and on Linux aarch64, where the Makefile enables those instructions. At run time the tool uses it only if the CPU reports them.
+- `x86-sha-ni`, for x86-64 CPUs with the SHA extensions, detected with CPUID. Its logic is checked under emulation (`tests/shani_emu`), but it has not been run on an x86 processor.
+- `portable`, everywhere.
 
-Set `CHAINSEAL_BACKEND` to force one. `chainseal selftest` checks every backend against plain SHA-256.
+Set `CHAINSEAL_BACKEND` to force one. The tool refuses a backend that this build or this CPU does not have. `chainseal selftest` checks every available backend against plain SHA-256.
 
 ## Use
 
@@ -55,7 +55,7 @@ The sender draws random links `x_1 … x_n` and runs `n` independent chains of `
 
 The puzzle publishes `x_1` in the clear. Each later link `x_{i+1}` is published masked with the end of chain `i`. The key is a hash of the end of chain `n`, and the puzzle carries a 32-byte commitment to the key.
 
-A solver must run the chains one after another, because each chain's start is hidden under the end of the previous one. So building costs `n·m` steps spread over the sender's cores, and solving costs `n·m` steps in sequence. The message is encrypted with an HMAC-SHA256 keystream and authenticated with an HMAC-SHA256 tag over the whole envelope.
+A solver that follows these dependencies must run the chains one after another, because each chain's start is hidden under the end of the previous one. So building costs `n·m` steps spread over the sender's cores, and honest solving costs `n·m` steps in sequence. The only known way to skip work is to guess a hidden link, which is why links are 12 bytes wide (see the threat model below). The message is encrypted with an HMAC-SHA256 keystream and authenticated with an HMAC-SHA256 tag over the whole envelope.
 
 Sizes:
 
@@ -68,35 +68,40 @@ Sizes:
 
 ## Measurements
 
-These are from `chainseal bench all` and `demo.sh`. The logs are in [bench-results/](bench-results/).
+These are from `chainseal bench all` and `demo.sh` on an Apple M4 (MacBook Air, 10 cores). The logs are in [bench-results/](bench-results/).
 
-| Machine | One chain | All cores | Build/solve ratio |
-|---|---|---|---|
-| Apple M4 (MacBook Air, 10 cores) | 23.1 ns/step | 465 M steps/s | about 11 |
+| Quantity | Value |
+|---|---|
+| One chain | 23.3 ns/step (median of 9 runs), 23.1 ns/step (best) |
+| All cores, independent chains | 465 M steps/s |
+| Build speedup over one solver | 9.6 at n = 16, 9.9 at n = 64, 10.8 to 11.3 from n = 128 up |
+| Demo: n = 512, m = 2^25 (17.2 G steps) | built in 36.9 s, opened with the key in 7 ms, solved without it in 6 min 37 s |
 
-The build/solve ratio is how much faster the sender builds a puzzle than a single-core solver opens it, once `n` is at least the number of cores.
+The build speedup is how much faster the sender builds a puzzle than a single-core solver opens it. It approaches the all-core rate over the one-chain rate, about 10.8 here. Each core computes two chains at once, so the builder hands out chains in pairs, and it needs `n` to be several times the number of cores to keep every core busy until the end.
 
 ## Threat model
 
 **What chainseal is meant to give.**
 
-- *Confidentiality until the work is done.* Nobody learns anything about the message until they have computed `n·m` chain steps in sequence, or the sender reveals the key.
+- *Confidentiality until the work is done.* An honest solver needs `n·m` chain steps in sequence. The design assumes that nobody can open an envelope much sooner, as set out below. This is an assumption, not a proven bound.
 - *Integrity, until the key is known.* Any change to an envelope's puzzle, nonce, ciphertext or tag makes opening fail. Once the key is public, revealed or solved, anyone can seal a different message under the same puzzle. So the puzzle and its commitment do not identify a message: refer to an envelope by a hash of all its bytes.
 - *A checkable fast path.* A revealed key is checked against the commitment before it is used.
 
 **What the delay rests on.**
 
 - Nobody computes `m` chained SHA-256 steps much faster than `m·ℓ`, where `ℓ` is the fastest attainable latency of one compression on the best hardware. The delay is a wall-clock estimate, so a faster solver opens the envelope sooner. Set `m` against the fastest attacker you assume, not against your own machine.
-- The links are wide enough that guessing the last one is hopeless. With 12-byte links, an attacker computing `10^21` steps per second has a chance of about `2^-45` of opening a 60-second puzzle with `m = 2^25` (SPEC.md section 8; `chainseal bench attack` checks the formula at toy sizes).
+- Guessing links does not pay. The attack that skips the most work guesses the last link and runs only the last chain. With 12-byte links, an attacker computing `10^21` steps per second has a chance of about `2^-45` of opening a 60-second puzzle with `m = 2^25` this way (SPEC.md section 8; `chainseal bench attack` checks the formula at toy sizes). This figure covers that one attack. Other shortcuts are much less likely at these parameters, but nothing here proves it. A puzzle with `n = 1` has no hidden link, and its delay rests on the one chain alone.
+- In the random-oracle model, Mahmoody, Moran and Vadhan prove asymptotically that their construction needs about `n·m` sequential rounds. chainseal keeps their dependency structure, but there is no concrete security proof for chainseal itself, and no analysis against quantum attackers.
 - The sender's random number generator is sound.
 
 **What it does not do.**
 
 - *No proof that a puzzle is well formed.* A malformed puzzle wastes the solver's time, and the solver finds out only when the final key fails the commitment check.
 - *No control over when the clock starts.* The delay runs from the moment a puzzle becomes public. A secret file must stay private until its first envelope is published.
-- *No speedup for honest solvers.* Solving one puzzle cannot use more than one core. Many puzzles can be solved at once, one core each.
+- *No parallel honest solving.* The honest solver uses one core per puzzle. More cores help only to solve several puzzles at once.
 - *No hiding of metadata.* The message length and the parameters are public.
-- *No side-channel hardening* beyond constant-time comparison of tags and commitments.
+- *No side-channel hardening* beyond constant-time comparison of tags and commitments. Keys are wiped from memory on the main paths, but not everywhere.
+- *No crash-durable checkpoints.* A checkpoint is replaced atomically, but its directory is not synced, so a power failure can lose the latest one.
 - *No answer to the network questions*: who solves puzzles, who pays for solving, and how spam is limited.
 
 ## Layout
@@ -110,4 +115,6 @@ The build/solve ratio is how much faster the sender builds a puzzle than a singl
 | `src/rng.c` | OS randomness, plus a seeded generator for test vectors only |
 | `src/cli.c`, `src/bench.c`, `src/vectors.c`, `src/util.c` | the command-line tool |
 | `tests/` | unit tests, CLI tests, cross-tests, `vectors.json` |
-| `ref/chainseal_ref.py` | an independent Python implementation, written from SPEC.md alone |
+| `ref/chainseal_ref.py` | a separate Python implementation that shares no code with the C one |
+| `bench-results/` | benchmark and demo logs |
+| `audit/` | the audit reports and what was fixed |

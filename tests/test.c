@@ -266,10 +266,11 @@ static void test_failures(void) {
     uint32_t n;
     uint64_t m;
     unsigned b;
-  } bad[] = {{0, 1, 12}, {CS_MAX_N + 1, 1, 12}, {1, 0, 12}, {1, CS_MAX_M + 1, 12}, {1, 1, 0}, {1, 1, 33}};
+  } bad[] = {{0, 1, 12}, {CS_MAX_N + 1, 1, 12}, {1, 0, 12}, {1, CS_MAX_M + 1, 12}, {1, 1, 0}, {1, 1, 33}, {CS_MAX_N, CS_MAX_WORK / CS_MAX_N + 1, 12}};
   for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++)
     CHECK(cs_generate(&p, key, bad[i].n, bad[i].m, bad[i].b, &rng, NULL) == CS_ERANGE, "range case %zu", i);
-  CHECK(cs_params_ok(CS_MAX_N, CS_MAX_M, CS_MAX_B) && cs_params_ok(1, 1, 1), "range limits allowed");
+  CHECK(cs_params_ok(CS_MAX_N, CS_MAX_WORK / CS_MAX_N, CS_MAX_B) && cs_params_ok(1, CS_MAX_M, 1) && cs_params_ok(1, 1, 1),
+        "range limits allowed");
 }
 
 // ---------------------------------------------------------------- checkpoints and secrets
@@ -430,6 +431,63 @@ static void test_fuzz(int rounds) {
   unmake(&s);
 }
 
+// Mutations of valid puzzle, secret and checkpoint encodings. A decoder must
+// reject every truncation and extension, and whatever it accepts must encode
+// back to the same bytes: one value, one encoding.
+enum { PUZZLE, SECRET, CHECKPOINT };
+
+static int decodes_canonically(int kind, const cs_puzzle *of, const uint8_t *in, size_t len, int *ok) {
+  cs_puzzle p;
+  cs_cursor c;
+  uint8_t key[32], *again = malloc(len + 1);
+  int err;
+  if (kind == PUZZLE) {
+    if (!(err = cs_puzzle_decode(&p, in, len))) cs_puzzle_encode(&p, again), cs_puzzle_free(&p);
+  } else if (kind == SECRET) {
+    if (!(err = cs_secret_decode(&p, key, in, len))) cs_secret_encode(&p, key, again), cs_puzzle_free(&p);
+  } else {
+    if (!(err = cs_checkpoint_decode(of, &c, in, len))) cs_checkpoint_encode(of, &c, again);
+  }
+  *ok = err || !memcmp(again, in, len);
+  free(again);
+  return !err;
+}
+
+static void test_fuzz_decoders(int rounds) {
+  cs_puzzle p;
+  uint8_t key[32], k2[32];
+  CHECK(!cs_generate(&p, key, 3, 20, 12, &rng, NULL), "build");
+  stop_at at = {2, 7};
+  cs_cursor cur = {0};
+  CHECK(cs_solve(&p, k2, &cur, NULL, 1, stop_when, &at) == CS_ESTOPPED, "stop");
+  size_t lens[3] = {cs_puzzle_size(p.n, p.b), cs_secret_size(&p), CS_CHECKPOINT_SIZE};
+  uint8_t *seeds[3], *buf = malloc(lens[1] + 2);
+  for (int k = 0; k < 3; k++) seeds[k] = malloc(lens[k]);
+  cs_puzzle_encode(&p, seeds[PUZZLE]);
+  cs_secret_encode(&p, key, seeds[SECRET]);
+  cs_checkpoint_encode(&p, &cur, seeds[CHECKPOINT]);
+  static const char *names[] = {"puzzle", "secret", "checkpoint"};
+  for (int k = 0; k < 3; k++) {
+    int ok, short_ok = 1, canon = 1, accepted = 0;
+    CHECK(decodes_canonically(k, &p, seeds[k], lens[k], &ok) && ok, "%s seed decodes", names[k]);
+    for (size_t len = 0; len < lens[k]; len++) short_ok &= !decodes_canonically(k, &p, seeds[k], len, &ok);
+    CHECK(short_ok, "every truncated %s is rejected", names[k]);
+    memcpy(buf, seeds[k], lens[k]), buf[lens[k]] = 0;
+    CHECK(!decodes_canonically(k, &p, buf, lens[k] + 1, &ok), "an extended %s is rejected", names[k]);
+    for (int r = 0; r < rounds; r++) {
+      memcpy(buf, seeds[k], lens[k]);
+      for (int e = 1 + (int)rnd(3); e > 0; e--) buf[rnd((uint32_t)lens[k])] ^= (uint8_t)(1 + rnd(255));
+      accepted += decodes_canonically(k, &p, buf, lens[k], &ok);
+      canon &= ok;
+    }
+    CHECK(canon, "mutated %ss that decode re-encode to the same bytes", names[k]);
+    CHECK(accepted > 0 && accepted < rounds, "%s mutations: %d of %d decode", names[k], accepted, rounds);
+  }
+  for (int k = 0; k < 3; k++) free(seeds[k]);
+  free(buf);
+  cs_puzzle_free(&p);
+}
+
 int main(int argc, char **argv) {
   int rounds = argc > 1 ? atoi(argv[1]) : 20000;
   rng_test(&rng, "chainseal unit tests", 20);
@@ -443,6 +501,7 @@ int main(int argc, char **argv) {
   test_checkpoints();
   test_guess();
   test_fuzz(rounds);
+  test_fuzz_decoders(rounds / 4);
   const chain_backend *all[4];
   int k = chain_backends(all, 4);
   printf("unit tests: %d checks, %d failures (backends:", checks, failures);

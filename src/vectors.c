@@ -50,11 +50,36 @@ typedef struct {
   size_t plen, elen, slen;
 } built;
 
-static int first_invalid = 1;
+static built B[sizeof CASES / sizeof CASES[0]];
+
+// Whether this implementation rejects an invalid input as SPEC.md section 10 requires.
+static int rejects(const char *kind, int c, const uint8_t *data, size_t len) {
+  cs_puzzle p;
+  uint8_t key[32];
+  if (!strcmp(kind, "puzzle") || !strcmp(kind, "secret")) {
+    int err = kind[0] == 'p' ? cs_puzzle_decode(&p, data, len) : cs_secret_decode(&p, key, data, len);
+    if (!err) cs_puzzle_free(&p);
+    return err != CS_OK;
+  }
+  if (!strcmp(kind, "envelope")) {
+    cs_envelope e;
+    if (cs_envelope_decode(&e, data, len)) return 1;
+    uint8_t *msg = malloc(e.ct_len + 1);
+    int err = cs_open(&e, B[c].key, msg);
+    free(msg);
+    cs_envelope_free(&e);
+    return err != CS_OK;
+  }
+  cs_cursor cur;
+  return cs_checkpoint_decode(&B[c].p, &cur, data, len) != CS_OK;
+}
+
+static int first_invalid = 1, accepted_invalid = 0;
 static void invalid(const char *kind, int c, const char *why, const uint8_t *data, size_t len) {
   printf("%s    {\"kind\": \"%s\", \"case\": %d, \"why\": \"%s\", ", first_invalid ? "" : ",\n", kind, c, why);
   hex_field("hex", data, len, "}");
   first_invalid = 0;
+  if (!rejects(kind, c, data, len)) fprintf(stderr, "vectors: invalid %s accepted: %s\n", kind, why), accepted_invalid++;
 }
 
 // Copy `src`, apply one edit, and emit it as an invalid input.
@@ -77,7 +102,6 @@ static void set_be(uint8_t *buf, size_t at, uint64_t v, int bytes) {
 
 int cmd_vectors(int argc, char **argv) {
   (void)argc, (void)argv;
-  built B[NCASES];
   printf("{\n  \"spec\": \"chainseal v1\",\n  \"cases\": [\n");
   for (size_t k = 0; k < NCASES; k++) {
     uint32_t n = CASES[k].n;
@@ -94,11 +118,7 @@ int cmd_vectors(int argc, char **argv) {
     built *o = &B[k];
     cs_gen_opts opts = {.threads = 1, .y_out = y};
     if (cs_generate_from(&o->p, o->key, n, m, b, salt, x, &opts)) return 1;
-    for (uint32_t i = 1; i <= n; i++) {
-      uint8_t ib[4];
-      store_be32(ib, i);
-      th(s + 32 * (i - 1), "chainseal/v1/start", salt, 16, ib, 4, x + (size_t)(i - 1) * b, b, NULL, 0);
-    }
+    for (uint32_t i = 1; i <= n; i++) cs_chain_start(&o->p, i, x + (size_t)(i - 1) * b, s + 32 * (i - 1));
     o->plen = cs_puzzle_size(n, b), o->elen = cs_envelope_size(&o->p, ml), o->slen = cs_secret_size(&o->p);
     o->puzzle = malloc(o->plen), o->envelope = malloc(o->elen), o->secret = malloc(o->slen);
     cs_puzzle_encode(&o->p, o->puzzle);
@@ -161,6 +181,15 @@ int cmd_vectors(int argc, char **argv) {
   RESIZE("puzzle", c, "one trailing byte", P, pl, 1);
   RESIZE("puzzle", c, "header only", P, pl, -(ptrdiff_t)(pl - CS_PUZZLE_HEADER));
   RESIZE("puzzle", c, "empty", P, pl, -(ptrdiff_t)pl);
+  {  // from case 0 (b = 1): every field in range, but n*m above 2^60
+    const uint32_t big_n = 4097;
+    size_t len = cs_puzzle_size(big_n, 1);
+    uint8_t *big = calloc(len, 1);
+    memcpy(big, B[0].puzzle, CS_PUZZLE_HEADER);
+    set_be(big, 8, big_n, 4), set_be(big, 12, 1ull << 48, 8);
+    invalid("puzzle", 0, "n*m = 4097 * 2^48, above 2^60", big, len);
+    free(big);
+  }
 
   FLIP("envelope", c, "bad magic", E, el, 0);
   SET("envelope", c, "version 2", E, el, 4, 2);
@@ -206,5 +235,5 @@ int cmd_vectors(int argc, char **argv) {
     cs_puzzle_free(&B[k].p);
     free(B[k].puzzle), free(B[k].envelope), free(B[k].secret);
   }
-  return 0;
+  return accepted_invalid ? 1 : 0;
 }

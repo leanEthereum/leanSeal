@@ -8,6 +8,7 @@
 
 #define CS_MAX_N (1u << 20)
 #define CS_MAX_M (1ull << 48)
+#define CS_MAX_WORK (1ull << 60)  // bound on n*m, so step counts fit in 64 bits
 #define CS_MAX_B 32u
 #define CS_MAX_MSG (1u << 24)
 #define CS_PUZZLE_HEADER 68u
@@ -46,6 +47,8 @@ int cs_puzzle_decode(cs_puzzle *p, const uint8_t *in, size_t len);
 void cs_puzzle_free(cs_puzzle *p);
 void cs_puzzle_id(const cs_puzzle *p, uint8_t id[32]);
 int cs_check_key(const cs_puzzle *p, const uint8_t key[32]);  // 1 if the key matches the commitment
+// The start value s_i of chain i from its link x_i (SPEC.md section 4).
+void cs_chain_start(const cs_puzzle *p, uint32_t i, const uint8_t *x, uint8_t s[32]);
 
 // ---- generation
 typedef struct {

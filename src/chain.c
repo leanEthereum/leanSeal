@@ -124,6 +124,19 @@ static void run_lanes_arm(uint32_t (*st)[8], const chain_tail *tails, int lanes,
 // Two interleaved chains already saturate an Apple M4 core (65 M steps/s against
 // 42 M for one chain; more lanes add nothing), and small groups balance better.
 static const chain_backend BACKEND_ARM = {"armv8-sha2", 2, run_arm, run_lanes_arm};
+
+// The build targets SHA2; check that this CPU has it too.
+#if defined(__APPLE__)
+static int cpu_has_arm_sha2(void) { return 1; }  // every Apple ARM CPU has it
+#elif defined(__linux__)
+#include <sys/auxv.h>
+#ifndef HWCAP_SHA2
+#define HWCAP_SHA2 (1 << 6)
+#endif
+static int cpu_has_arm_sha2(void) { return (getauxval(AT_HWCAP) & HWCAP_SHA2) != 0; }
+#else
+static int cpu_has_arm_sha2(void) { return 0; }  // no known check: use the portable backend
+#endif
 #endif
 
 // ---------------------------------------------------------------- x86 SHA extensions
@@ -164,7 +177,7 @@ static const chain_backend BACKEND_SHANI = {"x86-sha-ni", 2, run_shani, run_lane
 int chain_backends(const chain_backend **out, int max) {
   int k = 0;
 #ifdef HAVE_ARM
-  if (k < max) out[k++] = &BACKEND_ARM;
+  if (k < max && cpu_has_arm_sha2()) out[k++] = &BACKEND_ARM;
 #endif
 #ifdef HAVE_SHANI
   if (k < max && cpu_has_shani()) out[k++] = &BACKEND_SHANI;
@@ -173,12 +186,18 @@ int chain_backends(const chain_backend **out, int max) {
   return k;
 }
 
-const chain_backend *chain_best(void) {
+const chain_backend *chain_find(const char *name) {
   const chain_backend *all[4];
   int k = chain_backends(all, 4);
+  for (int i = 0; i < k; i++)
+    if (!strcmp(all[i]->name, name)) return all[i];
+  return NULL;
+}
+
+const chain_backend *chain_best(void) {
+  const chain_backend *all[4];
+  chain_backends(all, 4);
   const char *want = getenv("CHAINSEAL_BACKEND");
-  if (want)
-    for (int i = 0; i < k; i++)
-      if (!strcmp(all[i]->name, want)) return all[i];
-  return all[0];
+  const chain_backend *forced = want ? chain_find(want) : NULL;
+  return forced ? forced : all[0];
 }

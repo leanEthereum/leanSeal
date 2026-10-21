@@ -42,7 +42,7 @@ static void bytes_to_words(uint32_t w[8], const uint8_t in[32]) {
 // ---------------------------------------------------------------- puzzles
 
 int cs_params_ok(uint32_t n, uint64_t m, unsigned b) {
-  return n >= 1 && n <= CS_MAX_N && m >= 1 && m <= CS_MAX_M && b >= 1 && b <= CS_MAX_B;
+  return n >= 1 && n <= CS_MAX_N && m >= 1 && m <= CS_MAX_M && m <= CS_MAX_WORK / n && b >= 1 && b <= CS_MAX_B;
 }
 
 size_t cs_puzzle_size(uint32_t n, unsigned b) { return CS_PUZZLE_HEADER + (size_t)n * b; }
@@ -117,10 +117,16 @@ int cs_check_key(const cs_puzzle *p, const uint8_t key[32]) {
   return ct_equal(c, p->commit, 32);
 }
 
-static void chain_start(const cs_puzzle *p, uint32_t i, const uint8_t *x, uint32_t st[8]) {
-  uint8_t ib[4], s[32];
+void cs_chain_start(const cs_puzzle *p, uint32_t i, const uint8_t *x, uint8_t s[32]) {
+  uint8_t ctx[32], ib[4];
+  cs_puzzle_ctx(p, ctx);
   store_be32(ib, i);
-  th(s, "chainseal/v1/start", p->salt, 16, ib, 4, x, p->b, NULL, 0);
+  th(s, "chainseal/v1/start", ctx, 32, ib, 4, x, p->b, NULL, 0);
+}
+
+static void chain_start(const cs_puzzle *p, uint32_t i, const uint8_t *x, uint32_t st[8]) {
+  uint8_t s[32];
+  cs_chain_start(p, i, x, s);
   bytes_to_words(st, s);
 }
 

@@ -15,6 +15,7 @@ import os
 
 MAX_CHAINS = 1 << 20
 MAX_STEPS = 1 << 48
+MAX_WORK = 1 << 60
 MAX_MESSAGE = 1 << 24
 
 
@@ -30,6 +31,7 @@ def require(condition, reason):
 def parameters(n, m, b):
     require(type(n) is int and 1 <= n <= MAX_CHAINS, "n out of range")
     require(type(m) is int and 1 <= m <= MAX_STEPS, "m out of range")
+    require(n * m <= MAX_WORK, "n*m out of range")
     require(type(b) is int and 1 <= b <= 32, "b out of range")
 
 
@@ -59,8 +61,8 @@ def context(n, m, b, salt):
     return b"\x01" + bytes([b]) + b"\0\0" + n.to_bytes(4, "big") + m.to_bytes(8, "big") + salt
 
 
-def start(salt, i, link):
-    return th("chainseal/v1/start", salt + i.to_bytes(4, "big") + link)
+def start(ctx, i, link):
+    return th("chainseal/v1/start", ctx + i.to_bytes(4, "big") + link)
 
 
 def chain(state, salt, i, steps):
@@ -96,7 +98,7 @@ def generate(n, m, b, salt, links):
     require(len(links) == n, "wrong number of input links")
     for link in links:
         fixed(link, b, "input link")
-    starts = [start(salt, i, link) for i, link in enumerate(links, 1)]
+    starts = [start(ctx, i, link) for i, link in enumerate(links, 1)]
     # Serial computation keeps this reference simple; chain independence is
     # preserved even though section 4 recommends parallel generation.
     ends = [chain(s, salt, i, m) for i, s in enumerate(starts, 1)]
@@ -225,7 +227,7 @@ def decode_checkpoint(data, puzzle):
 def solve_puzzle(puzzle, checkpoint=None):
     if checkpoint is None:
         i, j = 1, 0
-        state = start(puzzle["salt"], i, puzzle["links"][0])
+        state = start(puzzle["ctx"], i, puzzle["links"][0])
     else:
         require(hmac.compare_digest(checkpoint["puzzle_id"], puzzle_id(puzzle["raw"])),
                 "checkpoint puzzle id mismatch")
@@ -238,7 +240,7 @@ def solve_puzzle(puzzle, checkpoint=None):
             break
         link = xor(y[:puzzle["b"]], puzzle["links"][i])
         i, j = i + 1, 0
-        state = start(puzzle["salt"], i, link)
+        state = start(puzzle["ctx"], i, link)
     key = th("chainseal/v1/key", puzzle["ctx"] + y)
     check_key(puzzle, key)
     return key
@@ -265,9 +267,26 @@ def read_file(path):
         return stream.read()
 
 
-def write_file(path, value):
-    with open(path, "wb") as stream:
-        stream.write(value)
+def write_file(path, value, private=False):
+    """Write through a new temporary file, then rename it over path.
+
+    Private files (secrets) are created with mode 0600. Writing a fresh file
+    never follows a symlink at path or keeps an existing file's permissions.
+    """
+    tmp = f"{path}.tmp.{os.getpid()}"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600 if private else 0o644)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(value)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def emit(value, fd=1):
@@ -445,7 +464,7 @@ def main():
             envelope = encode_envelope(generated["puzzle"], generated["key"], os.urandom(16), message)
             write_file(args.output, envelope)
             if args.secret_out is not None:
-                write_file(args.secret_out, encode_secret(generated["puzzle"], generated["key"]))
+                write_file(args.secret_out, encode_secret(generated["puzzle"], generated["key"]), private=True)
         elif args.command == "solve":
             raw = read_file(args.file)
             puzzle = decode_envelope(raw)["puzzle"] if raw[:4] == b"CSEN" else decode_puzzle(raw)

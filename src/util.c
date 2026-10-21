@@ -80,10 +80,10 @@ int write_file(const char *path, const uint8_t *data, size_t len, int private_) 
     if (w <= 0) goto fail;
     off += (size_t)w;
   }
-  if (fsync(fd) || close(fd)) {
-    fd = -1;
-    goto fail;
-  }
+  if (fsync(fd)) goto fail;
+  int closed = close(fd);
+  fd = -1;
+  if (closed) goto fail;
   if (rename(tmp, path)) {
     fd = -1;
     goto fail;

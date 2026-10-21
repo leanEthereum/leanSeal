@@ -2,6 +2,11 @@ CC      ?= cc
 CFLAGS  ?= -O3
 CFLAGS  += -std=gnu11 -Wall -Wextra -Wshadow -Wno-unused-parameter
 LDLIBS  += -lpthread -lm
+# Apple's compiler targets the SHA-256 instructions by default; on Linux the
+# ARMv8 backend needs them enabled. The tool still checks the CPU at run time.
+ifeq ($(shell uname -s)-$(shell uname -m),Linux-aarch64)
+CFLAGS  += -march=armv8-a+crypto
+endif
 
 LIB  = src/sha256.c src/chain.c src/rng.c src/chainseal.c
 TOOL = src/cli.c src/util.c src/bench.c src/vectors.c
@@ -24,7 +29,7 @@ test: chainseal tests/test tests/shani_emu
 	./tests/test
 	./tests/shani_emu
 	./chainseal selftest
-	./chainseal vectors | cmp - tests/vectors.json
+	./chainseal vectors > tests/vectors.tmp && cmp tests/vectors.tmp tests/vectors.json && rm tests/vectors.tmp
 	sh tests/cli.sh ./chainseal
 	python3 ref/chainseal_ref.py check tests/vectors.json
 	sh tests/cross.sh ./chainseal

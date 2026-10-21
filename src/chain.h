@@ -25,8 +25,12 @@ typedef struct {
   void (*run_lanes)(uint32_t (*st)[8], const chain_tail *tails, int lanes, uint64_t steps);
 } chain_backend;
 
-// The fastest backend this CPU supports, unless the environment variable
-// CHAINSEAL_BACKEND names another available one.
+// The first backend in the order ARMv8, SHA-NI, portable that this build and
+// CPU support, unless the environment variable CHAINSEAL_BACKEND names another
+// available one. The command-line tool refuses a CHAINSEAL_BACKEND that is not
+// available.
 const chain_backend *chain_best(void);
-// All backends this CPU supports, portable last. Returns how many were written.
+// The available backend with this name, or NULL.
+const chain_backend *chain_find(const char *name);
+// All backends this build and CPU support, portable last. Returns how many were written.
 int chain_backends(const chain_backend **out, int max);

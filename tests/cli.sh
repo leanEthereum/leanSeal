@@ -11,6 +11,10 @@ expect_exit() {  # expect_exit CODE command...
   set +e; "$@" >/dev/null 2>&1; got=$?; set -e
   [ "$got" = "$want" ] || fail "'$*' exited $got, wanted $want"
 }
+flip() {  # flip FILE OFFSET: XOR one bit of the byte at OFFSET, so the file always changes
+  v=$(dd if="$1" bs=1 skip="$2" count=1 2>/dev/null | od -An -tu1 | tr -d ' ')
+  printf "\\$(printf %03o $((v ^ 1)))" | dd of="$1" bs=1 seek="$2" conv=notrunc 2>/dev/null
+}
 
 printf 'the vote is 7 to 2' > msg
 
@@ -38,7 +42,8 @@ printf '' | "$CS" encrypt -q -n 4 -d 0.01 --step-ns 25 --secret-out sec2 -o env2
 BAD=0000000000000000000000000000000000000000000000000000000000000000
 expect_exit 3 "$CS" open env -k "$BAD"
 expect_exit 3 "$CS" open env -s sec2
-cp env env.bad && printf '\001' | dd of=env.bad bs=1 seek=$(( $(wc -c < env) - 1 )) conv=notrunc 2>/dev/null
+cp env env.bad && flip env.bad $(( $(wc -c < env) - 1 ))
+cmp -s env env.bad && fail "tampering did not change the envelope"
 expect_exit 3 "$CS" open env.bad -k "$KEY"
 "$CS" open env.bad -k "$KEY" -o out5 2>/dev/null || true
 [ ! -e out5 ] || fail "plaintext written for a tampered envelope"
@@ -60,18 +65,20 @@ expect_exit 1 "$CS" open msg -k "$KEY"
 [ "$(sed -n 2p keys | cut -d' ' -f1)" = "$("$CS" key s2)" ] || fail "parallel solve 2"
 
 # A malformed puzzle among several: the others' keys are still printed.
-cp p2 p2.bad && printf '\377' | dd of=p2.bad bs=1 seek=$((8 + 68 + 12)) conv=notrunc 2>/dev/null
+cp p2 p2.bad && flip p2.bad $((8 + 68 + 12))
 set +e; "$CS" solve -q p1 p2.bad > keys 2>/dev/null; code=$?; set -e
 [ "$code" = 1 ] || fail "solve with a malformed puzzle exited $code, wanted 1"
 [ "$(cut -d' ' -f1 keys)" = "$("$CS" key s1)" ] || fail "key lost when another puzzle was malformed"
 [ ! -e p1.ckpt ] && [ ! -e p2.bad.ckpt ] || fail "checkpoint left after a finished solve"
 
-# Interrupt a solve, then resume it from the checkpoint.
-"$CS" encrypt -q -n 4 -m 15000000 -i msg -o long --secret-out slong
+# Interrupt a solve, then resume it from the checkpoint. 2^27 steps take about
+# 3 s on an Apple M4; the interrupt comes after 0.5 s, so this needs a solver
+# at least 6 times faster than an M4 core to finish first.
+"$CS" encrypt -q -n 4 -m 2^25 -i msg -o long --secret-out slong
 "$CS" solve -q long > /dev/null 2>&1 &
 PID=$!
-sleep 1
-kill -INT $PID
+sleep 0.5
+kill -INT $PID || fail "the solve finished before it could be interrupted"
 set +e; wait $PID; code=$?; set -e
 [ "$code" = 130 ] || fail "interrupted solve exited $code, wanted 130"
 [ -s long.ckpt ] || fail "no checkpoint after interrupt"
