@@ -1,4 +1,4 @@
-# chainseal on x86_64: personal-dev (exe.dev VM), AMD EPYC 9554P (Zen 4), 4 vCPU, 2026-10-21
+# chainseal on x86_64: a cloud VM, AMD EPYC 9554P (Zen 4), 4 vCPU, 2026-10-21
 # tests
 Linux 6.12.113 x86_64
 cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
