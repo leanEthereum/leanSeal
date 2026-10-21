@@ -148,9 +148,9 @@ static int build(params *P, cs_puzzle *p, uint8_t key[32]) {
             P->n, (unsigned long long)P->m, P->b, cs_puzzle_size(P->n, P->b), fmt_duration(a, dt),
             P->threads ? P->threads : online_cpus(), be->name, fmt_si(b, work / dt), fmt_si(c, work),
             fmt_duration(d, work * P->step_ns * 1e-9), P->step_ns, measured ? " (one chain on this machine)" : "");
-    if (P->b < 11)
+    if (P->b < 15)
       fprintf(stderr,
-              "warning: %u-byte links can be guessed; SPEC.md section 8 recommends 12 bytes\n", P->b);
+              "warning: %u-byte links can be guessed; SPEC.md section 8 recommends 16 bytes\n", P->b);
   }
   return 0;
 }
@@ -177,7 +177,7 @@ static int save_secret(const char *path, const cs_puzzle *p, const uint8_t key[3
 }
 
 static int cmd_gen(int argc, char **argv) {
-  params P = {.n = 64, .b = 12};
+  params P = {.n = 64, .b = 16};
   const char *out = NULL;
   static const struct option longopts[] = {PARAM_LONG, {"out", required_argument, 0, 'o'}, {0}};
   for (int c; (c = getopt_long(argc, argv, PARAM_SHORT "o:", longopts, NULL)) != -1;) {
@@ -197,7 +197,7 @@ static int cmd_gen(int argc, char **argv) {
 }
 
 static int cmd_encrypt(int argc, char **argv) {
-  params P = {.n = 64, .b = 12};
+  params P = {.n = 64, .b = 16};
   const char *out = NULL, *in = NULL, *secret = NULL, *secret_out = NULL;
   static const struct option longopts[] = {PARAM_LONG,
                                            {"out", required_argument, 0, 'o'},

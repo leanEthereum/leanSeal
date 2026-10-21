@@ -24,7 +24,7 @@ printf 'the vote is 7 to 2' > msg
 
 # A stored puzzle: gen, encrypt with it, reveal the key, open three ways.
 "$CS" gen -q -n 8 -m 2000 -o sec
-[ "$(stat -f %Lp sec 2>/dev/null || stat -c %a sec)" = 600 ] || fail "secret file is not private"
+[ "$(stat -c %a sec 2>/dev/null || stat -f %Lp sec)" = 600 ] || fail "secret file is not private"
 "$CS" encrypt -q -s sec -i msg -o env
 KEY=$("$CS" key sec)
 "$CS" open env -k "$KEY" -o out1 && cmp msg out1
@@ -36,7 +36,7 @@ SOLVED=$("$CS" solve -q env | cut -d' ' -f1)
 "$CS" info env > info.txt && grep -q 'chains n       8' info.txt || fail "info"
 
 # Envelope sizes: 128 + n*b + len (SPEC.md section 6.2).
-[ "$(wc -c < env | tr -d ' ')" = $((128 + 8 * 12 + 18)) ] || fail "envelope size"
+[ "$(wc -c < env | tr -d ' ')" = $((128 + 8 * 16 + 18)) ] || fail "envelope size"
 
 # Fresh puzzle in one go, from stdin, with --delay; empty message.
 printf '' | "$CS" encrypt -q -n 4 -d 0.01 --step-ns 25 --secret-out sec2 -o env2
@@ -69,7 +69,7 @@ expect_exit 1 "$CS" open msg -k "$KEY"
 [ "$(sed -n 2p keys | cut -d' ' -f1)" = "$("$CS" key s2)" ] || fail "parallel solve 2"
 
 # A malformed puzzle among several: the others' keys are still printed.
-cp p2 p2.bad && flip p2.bad $((8 + 68 + 12))
+cp p2 p2.bad && flip p2.bad $((8 + 68 + 16))
 set +e; "$CS" solve -q p1 p2.bad > keys 2>/dev/null; code=$?; set -e
 [ "$code" = 1 ] || fail "solve with a malformed puzzle exited $code, wanted 1"
 [ "$(cut -d' ' -f1 keys)" = "$("$CS" key s1)" ] || fail "key lost when another puzzle was malformed"

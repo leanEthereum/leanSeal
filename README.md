@@ -10,7 +10,7 @@ Authors: Vitalik Buterin, Quang Dao and Justin Drake.
 
 ## Build and test
 
-You need a C11 compiler, `make` and a POSIX system with pthreads. For the full test suite you also need `python3`, version 3.11 or later. The demo also uses `xxd` and `perl`. Everything here was run on macOS on an Apple M4; Linux and x86 builds have not been run.
+You need a C11 compiler, `make` and a POSIX system with pthreads. For the full test suite you also need `python3`, version 3.11 or later. The demo also uses `xxd` and `perl`. Everything here was run on macOS on an Apple M4. The build, the tests and the sanitizer runs also pass on Linux x86-64 (Ubuntu 24.04, gcc 13, AMD EPYC 9554P); Linux aarch64 has not been run.
 
 ```sh
 make            # builds ./chainseal
@@ -24,7 +24,7 @@ sh demo.sh      # time-lock the EIP-155 example transaction, open it both ways
 The tool has three SHA-256 backends. It uses an accelerated one when the CPU supports it, and the portable one otherwise:
 
 - `armv8-sha2`, for ARMv8 CPUs with the SHA-2 instructions. It is built on Apple silicon, and on Linux aarch64, where the Makefile enables those instructions. At run time the tool uses it only if the CPU reports them.
-- `x86-sha-ni`, for x86-64 CPUs with the SHA extensions, detected with CPUID. Its logic is checked under emulation (`tests/shani_emu`), but it has not been run on an x86 processor.
+- `x86-sha-ni`, for x86-64 CPUs with the SHA extensions, detected with CPUID. Its logic is also checked under emulation (`tests/shani_emu`). It was run and timed on an AMD EPYC 9554P (Zen 4): 42.3 ns/step for one chain, against 23.3 on the M4.
 - `portable`, everywhere.
 
 Set `CHAINSEAL_BACKEND` to force one. The tool refuses a backend that this build or this CPU does not have. `chainseal selftest` checks every available backend against plain SHA-256.
@@ -57,27 +57,27 @@ The sender draws random links `x_1 … x_n` and runs `n` independent chains of `
 
 The puzzle publishes `x_1` in the clear. Each later link `x_{i+1}` is published masked with a hash of the end of chain `i`. The key is a hash of the ends of all `n` chains, taken in order, and the puzzle carries a 32-byte commitment to the key.
 
-A solver that follows these dependencies must run the chains one after another, because each chain's start is hidden under the end of the previous one. So building costs `n·m` steps spread over the sender's cores, and honest solving costs `n·m` steps in sequence. A solver can skip chains by guessing a hidden link, or the key itself; that is why links are 12 bytes wide and the key is 32 (see the threat model below). The message is encrypted with an HMAC-SHA256 keystream and authenticated with an HMAC-SHA256 tag over the whole envelope.
+A solver that follows these dependencies must run the chains one after another, because each chain's start is hidden under the end of the previous one. So building costs `n·m` steps spread over the sender's cores, and honest solving costs `n·m` steps in sequence. A solver can skip chains by guessing a hidden link, or the key itself; that is why links are 16 bytes wide and the key is 32 (see the threat model below). The message is encrypted with an HMAC-SHA256 keystream and authenticated with an HMAC-SHA256 tag over the whole envelope.
 
 Sizes:
 
 | Item | Size |
 |---|---|
-| Puzzle | `68 + 12n` bytes with 12-byte links: 836 B for n = 64, 6,212 B for n = 512 |
+| Puzzle | `68 + 16n` bytes with 16-byte links: 1,092 B for n = 64, 8,260 B for n = 512 |
 | Envelope | the puzzle + 60 bytes + the message |
 | Secret, a puzzle kept with its key | the puzzle + 40 bytes |
 | Checkpoint | 116 bytes |
 
 ## Measurements
 
-These are from `chainseal bench all` and `demo.sh` on an Apple M4 (MacBook Air, 10 cores). The logs are in [bench-results/](bench-results/).
+These are from `chainseal bench all` and `demo.sh` on an Apple M4 (MacBook Air, 10 cores). The logs are in [bench-results/](bench-results/), which also has an x86 run on a 4-vCPU AMD EPYC 9554P VM (`x86-epyc-9554p.txt`): 42.3 ns/step for one chain, 93 M steps/s on all four vCPUs.
 
 | Quantity | Value |
 |---|---|
 | One chain | 23.3 ns/step (median of 5 runs), 23.2 ns/step (best) |
 | All cores, independent chains | 474 M steps/s |
 | Build speedup over one solver | 9.2 to 9.5 for n = 16 to 64, 10.3 to 11.4 from n = 128 up |
-| Demo: n = 512, m = 2^25 (17.2 G steps) | built in 37.1 s, opened with the key in 9 ms, solved without it in 6 min 44 s |
+| Demo: n = 512, m = 2^25 (17.2 G steps) | built in 37.8 s, opened with the key in 8 ms, solved without it in 6 min 43 s |
 
 The build speedup is how much faster the sender builds a puzzle than a single-core solver opens it. It approaches the all-core rate over the one-chain rate, about 11 here. Each core computes two chains at once, so the builder hands out chains in pairs, and it needs `n` to be several times the number of cores to keep every core busy until the end.
 
@@ -92,7 +92,7 @@ The build speedup is how much faster the sender builds a puzzle than a single-co
 **What the delay rests on.**
 
 - Nobody computes `m` chained SHA-256 steps much faster than `m·ℓ`, where `ℓ` is the fastest attainable latency of one compression on the best hardware. The delay is a wall-clock estimate, so a faster solver opens the envelope sooner. Set `m` against the fastest attacker you assume, not against your own machine.
-- Guessing does not pay. A solver can guess a hidden link and run the later chains from the guess before the earlier ones end. Since the key needs every chain's end, a guess is confirmed only when the solver's own chains reach it, so a right guess saves time but opens nothing by itself, and each guess costs at least one chain of steps, or its saving if that is less. With 12-byte links, an attacker computing `10^21` steps per second has a chance of about `2^-45` of saving even one chain of a 60-second puzzle with `m = 2^25`, and a chance of about `Q/(min(d,m)·2^96)` of saving `d` steps with `Q` steps of work (SPEC.md section 8; `chainseal bench attack` checks the formula at toy sizes). Saving more than half the work needs more than one right guess, or tables over every value of a link. Guessing the 32-byte key is right with chance `2^-256` per guess. Nothing here proves that no other strategy does better. A puzzle with `n = 1` has no hidden link, and its delay rests on the one chain alone.
+- Guessing does not pay. A solver can guess a hidden link and run the later chains from the guess before the earlier ones end. Since the key needs every chain's end, a guess is confirmed only when the solver's own chains reach it, so a right guess saves time but opens nothing by itself, and each guess costs at least one chain of steps, or its saving if that is less. With 16-byte links, an attacker computing `10^21` steps per second has a chance of about `2^-77` of saving even one chain of a 60-second puzzle with `m = 2^25`, and a chance of about `Q/(min(d,m)·2^128)` of saving `d` steps with `Q` steps of work (SPEC.md section 8; `chainseal bench attack` checks the formula at toy sizes). Saving more than half the work needs more than one right guess, or tables over every value of a link. Guessing the 32-byte key is right with chance `2^-256` per guess. Nothing here proves that no other strategy does better. A puzzle with `n = 1` has no hidden link, and its delay rests on the one chain alone.
 - In the random-oracle model, Mahmoody, Moran and Vadhan prove asymptotically that their construction needs about `n·m` sequential rounds. chainseal keeps their dependency structure, but there is no concrete security proof for chainseal itself, and no analysis against quantum attackers.
 - The sender's random number generator is sound.
 

@@ -198,7 +198,7 @@ int cmd_bench(int argc, char **argv) {
   double seconds = 2;
   int threads = online_cpus();
   uint64_t work = 1ull << 28, m = 16, n = 4, trials = 20000;
-  unsigned b = 12, attack_b = 1;
+  unsigned b = 16, attack_b = 1;
   double fraction = 0.25;
   static const struct option longopts[] = {{"seconds", required_argument, 0, 's'},
                                            {"threads", required_argument, 0, 'j'},

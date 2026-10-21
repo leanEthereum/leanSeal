@@ -21,7 +21,7 @@ printf '%s' "$TX" | xxd -r -p > "$T/tx"
 
 ms() { perl -MTime::HiRes=time -e 'printf "%.0f", time * 1000'; }
 
-echo "== 1. Sender builds a puzzle in advance (n = $N, m = $M, 12-byte links)"
+echo "== 1. Sender builds a puzzle in advance (n = $N, m = $M, 16-byte links)"
 "$CS" gen -n "$N" -m "$M" -o "$T/secret"
 
 echo
