@@ -328,7 +328,11 @@ static void test_checkpoints(void) {
   buf[5] = 0, store_be32(buf + 40, 0);
   CHECK(cs_checkpoint_peek(buf, sizeof buf, id, &i, &j) == CS_ERANGE, "peek: i = 0");
   CHECK(cs_checkpoint_decode(&p, &cur, buf, sizeof buf) == CS_ERANGE, "i = 0");
-  store_be32(buf + 40, 1);
+  store_be32(buf + 40, 4097), store_be64(buf + 44, CS_MAX_M);
+  CHECK(cs_checkpoint_peek(buf, sizeof buf, id, &i, &j) == CS_ERANGE, "peek: i*j above 2^60");
+  store_be32(buf + 40, 4096);
+  CHECK(cs_checkpoint_peek(buf, sizeof buf, id, &i, &j) == CS_OK && i == 4096 && j == CS_MAX_M, "peek: i*j = 2^60");
+  store_be32(buf + 40, 1), store_be64(buf + 44, 0);
   CHECK(cs_checkpoint_peek(buf, sizeof buf + 1, id, &i, &j) == CS_EFORMAT, "peek: long checkpoint");
 
   uint8_t *sec = malloc(cs_secret_size(&p));

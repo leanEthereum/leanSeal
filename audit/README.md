@@ -1,10 +1,11 @@
 # Audit
 
-An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited chainseal for security and correctness. It read the code and the documents, ran the tests, and wrote scratch programs to reproduce each failure. It had no permission to change the code.
+An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited chainseal for security and correctness. It read the code and the documents and ran the tests. It reproduced most failures with scratch programs, and established the rest from the source or by arithmetic. It had no permission to change the code.
 
 | Round | Commit | Report | Verdict |
 |---|---|---|---|
 | 1 | `dd063aa` | [round-1.md](round-1.md) | fix first: 4 blockers, 3 major, 5 minor |
+| 2 | `6e764bd` | [round-2.md](round-2.md) | fix first: 9 of the 12 resolved, 3 partly; 4 new blockers, 4 new minor |
 
 ## What changed after round 1
 
@@ -23,4 +24,17 @@ An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited chainseal fo
 | 11 | An `fsync` failure leaked a file descriptor. | `fsync` and `close` are now separate, and both always run. The README says checkpoints are not crash-durable. |
 | 12 | Two CLI tests could fail by chance. | The tamper test flips a bit instead of writing a byte, and the interrupt test uses a solve that takes seconds on current CPUs, and fails with a clear message if the solve ends before the signal. |
 
-Test gaps the report named are now covered: the C vector check feeds every invalid vector to the C decoders, and a new fuzz test mutates and truncates valid puzzles, secrets and checkpoints. The SHA-NI backend remains untested on real x86 hardware.
+Two test gaps the report named are closed: the C vector check feeds every invalid vector to the C decoders, and a new test mutates and truncates valid puzzles, secrets and checkpoints and checks that whatever decodes re-encodes to the same bytes. Others remain open: there are no fault-injection tests for thread creation or checkpoint writes, and nothing has run on Linux or x86 hardware.
+
+## What changed after round 2
+
+| # | Finding | Change |
+|---|---|---|
+| R2-1 | `open --solve -o FILE.ckpt` deleted its own output. | `open` refuses an output path that names the checkpoint file, before doing any work. A CLI test covers it. |
+| R2-2 | Checkpoint inspection accepted positions no valid puzzle can reach. | `cs_checkpoint_peek` also requires `i·j ≤ 2^60`. Unit and CLI tests cover `(4097, 2^48)` and the boundary `(4096, 2^48)`. |
+| R2-3 | Comparisons with other attacks were stated without support. | README and SPEC now say that guessing the last link leaves the least work among link guesses, say why earlier links do no better, and state that no proof covers other strategies. Cross-puzzle reuse is qualified by fresh random salts. |
+| R2-4 | The README said the latency median was over 9 runs. | It is over 5 runs, as the benchmark code does. |
+| R2-5 | A huge finite step time overflowed and gave `m = 1`. | The delay is divided in an order that cannot overflow. A CLI test checks the result. |
+| R2-6 | The interrupt tests depended on timing. | A real SIGINT now goes to a solve that cannot finish (its `m` is patched to 2^40). The checkpoint-and-resume tests use a test hook, `CHAINSEAL_TEST_STOP_AFTER`, that stops a solve after a set number of steps. |
+| R2-7 | Sanitizer builds on Linux aarch64 dropped the ARMv8 backend. | The architecture flag is in its own `ARCH` variable, which the sanitizer builds keep. |
+| R2-8 | This file overstated the test coverage. | The paragraph above now says which gaps are closed and which remain. |

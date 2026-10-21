@@ -71,28 +71,47 @@ set +e; "$CS" solve -q p1 p2.bad > keys 2>/dev/null; code=$?; set -e
 [ "$(cut -d' ' -f1 keys)" = "$("$CS" key s1)" ] || fail "key lost when another puzzle was malformed"
 [ ! -e p1.ckpt ] && [ ! -e p2.bad.ckpt ] || fail "checkpoint left after a finished solve"
 
-# Interrupt a solve, then resume it from the checkpoint. 2^27 steps take about
-# 3 s on an Apple M4; the interrupt comes after 0.5 s, so this needs a solver
-# at least 6 times faster than an M4 core to finish first.
-"$CS" encrypt -q -n 4 -m 2^25 -i msg -o long --secret-out slong
-"$CS" solve -q long > /dev/null 2>&1 &
+# A real SIGINT stops a solve and saves a checkpoint. The puzzle's m is
+# patched to 2^40, so the solve cannot finish before the signal arrives.
+cp p1 endless && perl -e 'open F, "+<", "endless" or die; seek F, 8 + 12, 0; print F pack("Q>", 1 << 40)'
+"$CS" solve -q endless > /dev/null 2>&1 &
 PID=$!
 sleep 0.5
-kill -INT $PID || fail "the solve finished before it could be interrupted"
+kill -INT $PID || fail "could not signal the solve"
 set +e; wait $PID; code=$?; set -e
 [ "$code" = 130 ] || fail "interrupted solve exited $code, wanted 130"
-[ -s long.ckpt ] || fail "no checkpoint after interrupt"
+[ -s endless.ckpt ] || fail "no checkpoint after SIGINT"
+rm -f endless endless.ckpt
+
+# Stop a solve partway, then resume it from the checkpoint. The test hook
+# stops the solve after 2^21 of its 2^24 steps, as an interrupt would.
+"$CS" encrypt -q -n 4 -m 2^22 -i msg -o long --secret-out slong
+set +e; CHAINSEAL_TEST_STOP_AFTER=2^21 "$CS" solve -q long > /dev/null 2>&1; code=$?; set -e
+[ "$code" = 130 ] || fail "stopped solve exited $code, wanted 130"
+[ -s long.ckpt ] || fail "no checkpoint after stop"
 "$CS" info long.ckpt | grep -q checkpoint || fail "checkpoint info"
 cp long.ckpt bad.ckpt && printf '\002' | dd of=bad.ckpt bs=1 seek=4 conv=notrunc 2>/dev/null
 expect_exit 1 "$CS" info bad.ckpt
+# Position (4097, 2^48) fits each field's range but no puzzle with n*m <= 2^60.
+cp long.ckpt bad.ckpt && perl -e 'open F, "+<", "bad.ckpt" or die; seek F, 40, 0; print F pack("NQ>", 4097, 1 << 48)'
+expect_exit 1 "$CS" info bad.ckpt
+# The plaintext output may not be the checkpoint file.
+expect_exit 2 "$CS" open long --solve -q -o long.ckpt
+[ -s long.ckpt ] || fail "open removed the checkpoint it was asked to write over"
 "$CS" solve long > keys 2> log
 grep -q resuming log || fail "solve did not resume"
 [ "$(cut -d' ' -f1 keys)" = "$("$CS" key slong)" ] || fail "resumed solve key"
 [ ! -e long.ckpt ] || fail "checkpoint left after resumed solve"
 
 # A checkpoint of another puzzle is refused.
-"$CS" solve -q long > /dev/null 2>&1 &
-PID=$!; sleep 0.5; kill -INT $PID; wait $PID || true
+set +e; CHAINSEAL_TEST_STOP_AFTER=2^21 "$CS" solve -q long > /dev/null 2>&1; set -e
 mv long.ckpt p1.ckpt
 expect_exit 1 "$CS" solve -q p1
+rm -f p1.ckpt
+
+# A huge but finite step time is converted without overflow: 1e300 s at
+# 1e307 ns per step over 64 chains is m = ceil(100 / 64) = 2.
+"$CS" gen -n 64 -d 1e300 --step-ns 1e307 -o big.sec 2> log
+grep -q "m = 2 steps" log || fail "delay with a huge step time: $(head -1 log)"
+
 echo "cli tests: ok"

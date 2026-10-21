@@ -2,7 +2,9 @@
 
 chainseal encrypts a message so that anyone can read it after a fixed amount of sequential SHA-256 work, and the sender can let everyone read it at once by publishing a key. It uses nothing but SHA-256.
 
-It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1), with every random-oracle call replaced by a long SHA-256 chain, as Vitalik Buterin proposed for encrypted mempools (private communication, October 2026). [SPEC.md](SPEC.md) defines the format.
+It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1), with every random-oracle call replaced by a long SHA-256 chain, as Vitalik Buterin proposed for encrypted mempools. [SPEC.md](SPEC.md) defines the format, and [the guide](https://quangvdao.github.io/chainseal/) explains the idea, the parameters and the measurements.
+
+Authors: Vitalik Buterin, Quang Dao and Justin Drake.
 
 **Status: proof of concept.** The format is versioned and fully specified. It has test vectors and a second implementation, in Python, that shares no code with the C one. An AI model audited the code in two rounds; the reports and the fixes are in [audit/](audit/). No human cryptographer has reviewed it. Do not protect anything valuable with it.
 
@@ -19,7 +21,7 @@ make bench      # latency, throughput, build time against n, toy attack
 sh demo.sh      # time-lock the EIP-155 example transaction, open it both ways
 ```
 
-The tool has three SHA-256 backends and uses the fastest one the CPU supports:
+The tool has three SHA-256 backends. It uses an accelerated one when the CPU supports it, and the portable one otherwise:
 
 - `armv8-sha2`, for ARMv8 CPUs with the SHA-2 instructions. It is built on Apple silicon, and on Linux aarch64, where the Makefile enables those instructions. At run time the tool uses it only if the CPU reports them.
 - `x86-sha-ni`, for x86-64 CPUs with the SHA extensions, detected with CPUID. Its logic is checked under emulation (`tests/shani_emu`), but it has not been run on an x86 processor.
@@ -55,7 +57,7 @@ The sender draws random links `x_1 … x_n` and runs `n` independent chains of `
 
 The puzzle publishes `x_1` in the clear. Each later link `x_{i+1}` is published masked with the end of chain `i`. The key is a hash of the end of chain `n`, and the puzzle carries a 32-byte commitment to the key.
 
-A solver that follows these dependencies must run the chains one after another, because each chain's start is hidden under the end of the previous one. So building costs `n·m` steps spread over the sender's cores, and honest solving costs `n·m` steps in sequence. The only known way to skip work is to guess a hidden link, which is why links are 12 bytes wide (see the threat model below). The message is encrypted with an HMAC-SHA256 keystream and authenticated with an HMAC-SHA256 tag over the whole envelope.
+A solver that follows these dependencies must run the chains one after another, because each chain's start is hidden under the end of the previous one. So building costs `n·m` steps spread over the sender's cores, and honest solving costs `n·m` steps in sequence. A solver can skip chains by guessing a hidden link, or the key itself; that is why links are 12 bytes wide and the key is 32 (see the threat model below). The message is encrypted with an HMAC-SHA256 keystream and authenticated with an HMAC-SHA256 tag over the whole envelope.
 
 Sizes:
 
@@ -72,7 +74,7 @@ These are from `chainseal bench all` and `demo.sh` on an Apple M4 (MacBook Air, 
 
 | Quantity | Value |
 |---|---|
-| One chain | 23.3 ns/step (median of 9 runs), 23.1 ns/step (best) |
+| One chain | 23.3 ns/step (median of 5 runs), 23.1 ns/step (best) |
 | All cores, independent chains | 465 M steps/s |
 | Build speedup over one solver | 9.6 at n = 16, 9.9 at n = 64, 10.8 to 11.3 from n = 128 up |
 | Demo: n = 512, m = 2^25 (17.2 G steps) | built in 36.9 s, opened with the key in 7 ms, solved without it in 6 min 37 s |
@@ -90,7 +92,7 @@ The build speedup is how much faster the sender builds a puzzle than a single-co
 **What the delay rests on.**
 
 - Nobody computes `m` chained SHA-256 steps much faster than `m·ℓ`, where `ℓ` is the fastest attainable latency of one compression on the best hardware. The delay is a wall-clock estimate, so a faster solver opens the envelope sooner. Set `m` against the fastest attacker you assume, not against your own machine.
-- Guessing links does not pay. The attack that skips the most work guesses the last link and runs only the last chain. With 12-byte links, an attacker computing `10^21` steps per second has a chance of about `2^-45` of opening a 60-second puzzle with `m = 2^25` this way (SPEC.md section 8; `chainseal bench attack` checks the formula at toy sizes). This figure covers that one attack. Other shortcuts are much less likely at these parameters, but nothing here proves it. A puzzle with `n = 1` has no hidden link, and its delay rests on the one chain alone.
+- Guessing does not pay. Among guesses of a hidden link, guessing the last one leaves the least work: one chain. With 12-byte links, an attacker computing `10^21` steps per second has a chance of about `2^-45` of opening a 60-second puzzle with `m = 2^25` this way (SPEC.md section 8; `chainseal bench attack` checks the formula at toy sizes). This figure covers that one attack. Guessing an earlier link is right just as often per guess but costs more chains, and guessing the 32-byte key is right with chance `2^-256` per guess. Nothing here proves that no other strategy does better. A puzzle with `n = 1` has no hidden link, and its delay rests on the one chain alone.
 - In the random-oracle model, Mahmoody, Moran and Vadhan prove asymptotically that their construction needs about `n·m` sequential rounds. chainseal keeps their dependency structure, but there is no concrete security proof for chainseal itself, and no analysis against quantum attackers.
 - The sender's random number generator is sound.
 

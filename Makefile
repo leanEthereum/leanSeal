@@ -4,8 +4,10 @@ CFLAGS  += -std=gnu11 -Wall -Wextra -Wshadow -Wno-unused-parameter
 LDLIBS  += -lpthread -lm
 # Apple's compiler targets the SHA-256 instructions by default; on Linux the
 # ARMv8 backend needs them enabled. The tool still checks the CPU at run time.
+# ARCH stays separate from CFLAGS so that the sanitizer builds keep it.
+ARCH    :=
 ifeq ($(shell uname -s)-$(shell uname -m),Linux-aarch64)
-CFLAGS  += -march=armv8-a+crypto
+ARCH    := -march=armv8-a+crypto
 endif
 
 LIB  = src/sha256.c src/chain.c src/rng.c src/chainseal.c
@@ -15,14 +17,14 @@ HDRS = $(wildcard src/*.h)
 all: chainseal
 
 chainseal: $(LIB) $(TOOL) $(HDRS)
-	$(CC) $(CFLAGS) -o $@ $(LIB) $(TOOL) $(LDLIBS)
+	$(CC) $(ARCH) $(CFLAGS) -o $@ $(LIB) $(TOOL) $(LDLIBS)
 
 tests/test: tests/test.c $(LIB) $(HDRS)
-	$(CC) $(CFLAGS) -Isrc -o $@ tests/test.c $(LIB) $(LDLIBS)
+	$(CC) $(ARCH) $(CFLAGS) -Isrc -o $@ tests/test.c $(LIB) $(LDLIBS)
 
 # The SHA-NI step logic, with the intrinsics emulated: runs on any machine.
 tests/shani_emu: tests/shani_emu.c src/chain_shani.h src/sha256.c src/chain.c src/rng.c $(HDRS)
-	$(CC) $(CFLAGS) -Wno-unused-function -Isrc -o $@ tests/shani_emu.c src/sha256.c src/chain.c src/rng.c $(LDLIBS)
+	$(CC) $(ARCH) $(CFLAGS) -Wno-unused-function -Isrc -o $@ tests/shani_emu.c src/sha256.c src/chain.c src/rng.c $(LDLIBS)
 
 # Unit tests, the CLI round trip, and the vectors regression.
 test: chainseal tests/test tests/shani_emu

@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <math.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -95,6 +96,27 @@ fail:;
   unlink(tmp);
   errno = saved;
   return -1;
+}
+
+// Resolve the directory part of a path, keeping the last component as given.
+static int resolve(const char *path, char out[PATH_MAX]) {
+  const char *slash = strrchr(path, '/');
+  char dir[PATH_MAX];
+  if (!slash) strcpy(dir, ".");
+  else if (slash == path) strcpy(dir, "/");
+  else if ((size_t)(slash - path) < sizeof dir) memcpy(dir, path, (size_t)(slash - path)), dir[slash - path] = 0;
+  else return -1;
+  char real[PATH_MAX];
+  if (!realpath(dir, real)) return -1;
+  return snprintf(out, PATH_MAX, "%s/%s", real, slash ? slash + 1 : path) < PATH_MAX ? 0 : -1;
+}
+
+int same_path(const char *a, const char *b) {
+  struct stat sa, sb;
+  if (!stat(a, &sa) && !stat(b, &sb)) return sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino;
+  char ra[PATH_MAX], rb[PATH_MAX];
+  if (resolve(a, ra) || resolve(b, rb)) return !strcmp(a, b);
+  return !strcmp(ra, rb);
 }
 
 void hex_encode(char *out, const uint8_t *in, size_t len) {

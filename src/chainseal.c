@@ -323,7 +323,8 @@ int cs_checkpoint_peek(const uint8_t *in, size_t len, uint8_t id[32], uint32_t *
   memcpy(id, in + 8, 32);
   *i = load_be32(in + 40);
   *j = load_be64(in + 44);
-  return *i < 1 || *i > CS_MAX_N || *j > CS_MAX_M ? CS_ERANGE : CS_OK;
+  // Any puzzle with this position has n >= i and m >= j, so n*m <= 2^60 needs i*j <= 2^60.
+  return *i < 1 || *i > CS_MAX_N || *j > CS_MAX_M || *j > CS_MAX_WORK / *i ? CS_ERANGE : CS_OK;
 }
 
 int cs_checkpoint_decode(const cs_puzzle *p, cs_cursor *c, const uint8_t *in, size_t len) {

@@ -121,7 +121,7 @@ static int build(params *P, cs_puzzle *p, uint8_t key[32]) {
   if (!P->m) {
     if (!(P->delay > 0)) return usage_error("give the work per chain (-m STEPS) or a delay (-d SECONDS)");
     if (!(P->step_ns > 0)) P->step_ns = measure_latency_ns(be, 0.3), measured = 1;
-    double m = ceil(P->delay / (P->n * P->step_ns * 1e-9));
+    double m = ceil(P->delay / (P->step_ns * 1e-9) / P->n);  // this order cannot overflow for valid inputs
     if (!(m <= (double)CS_MAX_M)) return fail("delay", CS_ERANGE);
     P->m = m < 1 ? 1 : (uint64_t)m;
   }
@@ -290,9 +290,14 @@ static int save_checkpoint(solve_job *s, const cs_cursor *c) {
   return write_file(s->ckpt, buf, sizeof buf, 1);
 }
 
+// For tests: CHAINSEAL_TEST_STOP_AFTER=STEPS stops every solve after about
+// that many steps, as if interrupted.
+static uint64_t g_stop_after;
+
 static int solve_progress(void *arg, const cs_cursor *c) {
   solve_job *s = arg;
   atomic_store(&s->done, cursor_done(s->p, c));
+  if (g_stop_after && atomic_load(&s->done) - s->start_done >= g_stop_after) atomic_store(&g_stop, 1);
   if (s->ckpt[0] && now() - s->last_save >= CHECKPOINT_SECONDS) {
     save_checkpoint(s, c);  // best effort; failures surface when stopping
     s->last_save = now();
@@ -507,6 +512,8 @@ static int cmd_open(int argc, char **argv) {
     fprintf(stderr, "chainseal: %s is a bare puzzle, not an envelope\n", s.path);
     rc = 1;
   }
+  if (!rc && s.ckpt[0] && strcmp(out, "-") && same_path(out, s.ckpt))
+    rc = usage_error("the output file is the checkpoint file; choose another -o or use --no-checkpoint");
   if (!rc) {
     if (solve) {
       rc = solve_all(&s, 1, quiet);
@@ -648,6 +655,8 @@ int main(int argc, char **argv) {
                   {"open", cmd_open}, {"info", cmd_info},         {"bench", cmd_bench}, {"selftest", cmd_selftest},
                   {"vectors", cmd_vectors}};
   set_fast_qos();
+  const char *stop_after = getenv("CHAINSEAL_TEST_STOP_AFTER");
+  if (stop_after && parse_u64(stop_after, &g_stop_after)) return usage_error("bad CHAINSEAL_TEST_STOP_AFTER");
   const char *forced = getenv("CHAINSEAL_BACKEND");
   if (forced && !chain_find(forced)) {
     fprintf(stderr, "chainseal: CHAINSEAL_BACKEND=%s is not available on this machine; available:", forced);
