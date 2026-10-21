@@ -1,0 +1,38 @@
+# host Darwin arm64, 10 cpus, cpu:Apple M4
+## latency: one chain, steps one after another
+backend         ns/step       best    M steps/s
+armv8-sha2        23.27      23.07         43.0
+portable         162.97     156.74          6.1
+## throughput: independent chains in parallel (armv8-sha2)
+ threads  lanes      M steps/s       per thread
+       1      1           43.1             43.1
+       1      2           67.7             67.7
+       2      2          133.1             66.6
+       4      2          241.4             60.4
+       6      2          323.5             53.9
+       8      2          393.9             49.2
+      10      2          465.3             46.5   <- all cores
+## build: total work n*m = 268.4 M steps, 10 threads, armv8-sha2, 23.31 ns/step for one chain
+     n            m    build s    M steps/s      solve s      ratio    bytes
+     1    268435456      6.202         43.3        6.257       1.01       80
+     2    134217728      4.027         66.7        6.257       1.55       92
+     4     67108864      2.056        130.6        6.257       3.04      116
+     8     33554432      1.129        237.7        6.257       5.54      164
+    16     16777216      0.655        410.0        6.257       9.56      260
+    32      8388608      0.658        408.2        6.257       9.51      452
+    64      4194304      0.634        423.4        6.257       9.87      836
+   128      2097152      0.580        462.9        6.257      10.79     1604
+   256      1048576      0.572        469.1        6.257      10.93     3140
+   512       524288      0.555        483.4        6.257      11.27     6212
+  1024       262144      0.556        483.2        6.257      11.26    12356
+  2048       131072      0.575        466.7        6.257      10.88    24644
+  4096        65536      0.575        466.8        6.257      10.88    49220
+## last-link guessing attack, b = 2 (2^16 values), n = 4, m = 16
+budget per puzzle   16384 guesses = 0.250 of all values, 262144 steps (honest solve: 64)
+opened              123 of 400 puzzles = 0.307; bound R*T/(m*2^(8b)) = 0.250, expected 100.0 +- 8.7
+time                6.80 s
+# host Darwin arm64, 10 cpus, cpu:Apple M4
+## last-link guessing attack, b = 1 (2^8 values), n = 4, m = 16
+budget per puzzle   64 guesses = 0.250 of all values, 1024 steps (honest solve: 64)
+opened              5097 of 20000 puzzles = 0.255; bound R*T/(m*2^(8b)) = 0.250, expected 5000.0 +- 61.2
+time                1.98 s

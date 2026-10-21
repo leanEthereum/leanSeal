@@ -1,0 +1,6 @@
+/chainseal
+/tests/test
+*.dSYM/
+*.ckpt
+*.tmp.*
+__pycache__/
