@@ -55,7 +55,7 @@ Instead of `-m`, you can give `-d 10m` to choose `m` for a target delay. By defa
 
 The sender draws random links `x_1 … x_n` and runs `n` independent chains of `m` SHA-256 steps, one per link, all in parallel. Each step hashes the 32-byte state together with the puzzle's salt and the chain's index. That is still one SHA-256 compression, and it ties every step to one chain of one puzzle.
 
-The puzzle publishes `x_1` in the clear. Each later link `x_{i+1}` is published masked with the end of chain `i`. The key is a hash of the ends of all `n` chains, taken in order, and the puzzle carries a 32-byte commitment to the key.
+The puzzle publishes `x_1` in the clear. Each later link `x_{i+1}` is published masked with a hash of the end of chain `i`. The key is a hash of the ends of all `n` chains, taken in order, and the puzzle carries a 32-byte commitment to the key.
 
 A solver that follows these dependencies must run the chains one after another, because each chain's start is hidden under the end of the previous one. So building costs `n·m` steps spread over the sender's cores, and honest solving costs `n·m` steps in sequence. A solver can skip chains by guessing a hidden link, or the key itself; that is why links are 12 bytes wide and the key is 32 (see the threat model below). The message is encrypted with an HMAC-SHA256 keystream and authenticated with an HMAC-SHA256 tag over the whole envelope.
 

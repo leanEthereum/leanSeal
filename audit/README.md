@@ -9,6 +9,7 @@ An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited chainseal fo
 | 3 | `8e04201` | [round-3.md](round-3.md) | fix first: 6 of the 8 resolved, 2 partly; 1 new blocker, 3 new minor |
 | 4 | `634982f` | [round-4.md](round-4.md) | fix first: R3-1 to R3-4 and R2-6 resolved, R2-1 partly; 1 new blocker, 1 nit |
 | 5 | `2d804be` | [round-5.md](round-5.md) | ready: R4-1, R4-2 and R2-1 resolved; no new findings |
+| 6 | `1893160` | [round-6.md](round-6.md) | fix first, after the key was changed to depend on every chain end: 1 new blocker, 1 new major |
 
 ## What changed after round 1
 
@@ -57,3 +58,12 @@ Two test gaps the report named are closed: the C vector check feeds every invali
 |---|---|---|
 | R4-1 | With stdout redirected onto the checkpoint (`>> FILE.ckpt`), `open` deleted the file holding the plaintext. | Both the early refusal and the final cleanup now compare the checkpoint with the output's file, and for stdout that is the file stdout is open on. `open` refuses before solving. A CLI test appends stdout to a valid checkpoint and checks the refusal and that the checkpoint is unchanged. |
 | R4-2 | Cancelling the test watchdog left its `sleep` running. | The watchdog is one Python process, and an exit trap kills it and the solve if the test stops early. |
+
+## What changed after round 6
+
+Commit `1893160` changed the design: the key now hashes the ends of all chains in order, instead of the end of the last chain alone, so that a guess of the last link can no longer be checked against the commitment after one chain. Round 6 audited that change.
+
+| # | Finding | Change |
+|---|---|---|
+| R6-1 | A link was masked with the first `b` bytes of the previous chain's end, so a right guess of the link revealed those bytes, and with `b = 32` the whole end. One guess could then skip a chain, contrary to SPEC and README. The documents also called one chain the cheapest useful saving, though a guess can save part of a chain. | Links are masked with `TH("chainseal/v1/mask", ctx ‖ y_i)[0:b]`, so a guess reveals part of a hash of the end and nothing about the end itself. SPEC sections 4, 5 and 8, the README and the C and Python code use the new mask; the vectors are regenerated. A unit test checks that with `b = 32` the mask does not stand in for `y_1`. The documents now say that savings of less than a chain follow the same formula, and use one chain only as the example. |
+| R6-2 | A cursor returned by a successful `cs_solve` held `a_n` instead of `a_(n−1)`, so solving again from it, or from a checkpoint made from it, failed. | The final absorption uses a temporary copy, and the cursor keeps `a_(n−1)`. A unit test solves puzzles with `n` = 1, 2 and 3, then solves again from the returned cursor and from its checkpoint. |

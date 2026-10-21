@@ -1,0 +1,5 @@
+# host Darwin arm64, 10 cpus, cpu:Apple M4
+## guessing ahead by one chain, b = 1 (2^8 values), n = 4, m = 16
+budget per puzzle   64 guesses = 0.250 of all values, 1024 steps (honest solve: 64)
+opened early        5085 of 20000 puzzles = 0.254; bound Q/(m*2^(8b)) = 0.250, expected 5000.0 +- 61.2
+time                4.24 s

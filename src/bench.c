@@ -160,12 +160,13 @@ static int bench_attack(unsigned b, uint32_t n, uint64_t m, int trials, double f
   double t0 = now();
   for (int t = 0; t < trials; t++) {
     cs_puzzle p;
-    uint8_t key[32], guess_key[32], g[4], x[4];
+    uint8_t key[32], guess_key[32], g[4], x[4], mk[32];
     if (cs_generate(&p, key, n, m, b, &rng, NULL)) return free(y), 1;
     memcpy(x, p.links, b);
     for (uint32_t i = 1; i < n; i++) {  // the honest part: chains 1..n-1
       cs_run_chain(&p, i, x, NULL, y + 32 * (size_t)(i - 1));
-      for (unsigned k = 0; k < b; k++) x[k] = y[32 * (size_t)(i - 1) + k] ^ p.links[(size_t)i * b + k];
+      cs_chain_mask(&p, y + 32 * (size_t)(i - 1), mk);
+      for (unsigned k = 0; k < b; k++) x[k] = mk[k] ^ p.links[(size_t)i * b + k];
     }
     uint32_t start;
     rng_bytes(&rng, (uint8_t *)&start, 4);

@@ -99,6 +99,12 @@ void cs_puzzle_id(const cs_puzzle *p, uint8_t id[32]) {
   th(id, "chainseal/v1/puzzle-id", head, 36, p->commit, 32, p->links, (size_t)p->n * p->b, NULL, 0);
 }
 
+void cs_chain_mask(const cs_puzzle *p, const uint8_t y[32], uint8_t mask[32]) {
+  uint8_t ctx[32];
+  cs_puzzle_ctx(p, ctx);
+  th(mask, "chainseal/v1/mask", ctx, 32, y, 32, NULL, 0, NULL, 0);
+}
+
 // a_i = TH("chainseal/v1/acc", a_{i-1} || y_i), from a_0 = ctx.
 static void absorb(uint8_t acc[32], const uint8_t y[32]) { th(acc, "chainseal/v1/acc", acc, 32, y, 32, NULL, 0, NULL, 0); }
 
@@ -223,21 +229,23 @@ int cs_generate_from(cs_puzzle *p, uint8_t key[32], uint32_t n, uint64_t m, unsi
   free(tid);
   if (o->progress) o->progress(o->progress_arg, (uint64_t)n * m, (uint64_t)n * m);
 
-  uint8_t yb[32], acc[32];
+  uint8_t yb[32], acc[32], mk[32];
   cs_puzzle_ctx(p, acc);
   memcpy(p->links, x, b);
   for (uint32_t i = 1; i <= n; i++) {
     words_to_bytes(yb, y[i - 1]);
     absorb(acc, yb);
-    if (i < n)  // z_i = y_i[0:b] xor x_{i+1}
-      for (unsigned k = 0; k < b; k++) p->links[(size_t)i * b + k] = yb[k] ^ x[(size_t)i * b + k];
+    if (i < n) {  // z_i = TH(mask, ctx || y_i)[0:b] xor x_{i+1}
+      cs_chain_mask(p, yb, mk);
+      for (unsigned k = 0; k < b; k++) p->links[(size_t)i * b + k] = mk[k] ^ x[(size_t)i * b + k];
+    }
   }
   derive_key(p, acc, key);
   commitment(p, key, p->commit);
   if (o->x_out) memcpy(o->x_out, x, (size_t)n * b);
   if (o->y_out)
     for (uint32_t i = 0; i < n; i++) words_to_bytes(o->y_out + 32 * (size_t)i, y[i]);
-  secure_zero(yb, sizeof yb), secure_zero(acc, sizeof acc);
+  secure_zero(yb, sizeof yb), secure_zero(acc, sizeof acc), secure_zero(mk, sizeof mk);
   secure_zero(y, (size_t)n * sizeof *y);
   free(y);
   return CS_OK;
@@ -291,7 +299,7 @@ int cs_solve(const cs_puzzle *p, uint8_t key[32], cs_cursor *cur, const chain_ba
   else
     cs_cursor_start(p, &c);
   if (c.i < 1 || c.i > p->n || c.j > p->m) return CS_ERANGE;
-  uint8_t yb[32], x[CS_MAX_B];
+  uint8_t yb[32], mk[32], acc[32], x[CS_MAX_B];
   chain_tail tail;
   chain_tail_init(&tail, p->salt, c.i);
   for (;;) {
@@ -305,18 +313,23 @@ int cs_solve(const cs_puzzle *p, uint8_t key[32], cs_cursor *cur, const chain_ba
         return CS_ESTOPPED;
       }
     }
+    if (c.i == p->n) break;
     words_to_bytes(yb, c.st);
     absorb(c.acc, yb);
-    if (c.i == p->n) break;
-    // unhide x_{i+1} = y_i[0:b] xor z_i
-    for (unsigned k = 0; k < p->b; k++) x[k] = yb[k] ^ p->links[(size_t)c.i * p->b + k];
+    cs_chain_mask(p, yb, mk);  // unhide x_{i+1} = TH(mask, ctx || y_i)[0:b] xor z_i
+    for (unsigned k = 0; k < p->b; k++) x[k] = mk[k] ^ p->links[(size_t)c.i * p->b + k];
     c.i++, c.j = 0;
     chain_start(p, c.i, x, c.st);
     chain_tail_init(&tail, p->salt, c.i);
   }
-  derive_key(p, c.acc, key);
+  // The cursor keeps a_{n-1}, so a finished cursor can be saved or resumed like any other.
+  words_to_bytes(yb, c.st);
+  memcpy(acc, c.acc, 32);
+  absorb(acc, yb);
+  derive_key(p, acc, key);
   if (cur) *cur = c;
-  secure_zero(yb, sizeof yb), secure_zero(x, sizeof x), secure_zero(&c, sizeof c);
+  secure_zero(yb, sizeof yb), secure_zero(mk, sizeof mk), secure_zero(acc, sizeof acc);
+  secure_zero(x, sizeof x), secure_zero(&c, sizeof c);
   return cs_check_key(p, key) ? CS_OK : CS_EPUZZLE;
 }
 

@@ -217,11 +217,15 @@ static void test_determinism(void) {
             "%s with %d threads matches the portable single-thread build", all[bi]->name, threads[t]);
       cs_puzzle_free(&p);
     }
-  // Links: x_1 in the clear, then z_i = y_i[0:b] xor x_{i+1}.
+  // Links: x_1 in the clear, then z_i = TH(mask, ctx || y_i)[0:b] xor x_{i+1}.
   int ok = !memcmp(ref.links, x, 12);
-  for (int i = 1; i < 40; i++)
-    for (int k = 0; k < 12; k++) ok &= ref.links[12 * i + k] == (ref_y[32 * (i - 1) + k] ^ x[12 * i + k]);
-  CHECK(ok, "links are x_1, then y_i[0:b] xor x_{i+1}");
+  uint8_t ctx[32], mk[32];
+  cs_puzzle_ctx(&ref, ctx);
+  for (int i = 1; i < 40; i++) {
+    th(mk, "chainseal/v1/mask", ctx, 32, ref_y + 32 * (i - 1), 32, NULL, 0, NULL, 0);
+    for (int k = 0; k < 12; k++) ok &= ref.links[12 * i + k] == (mk[k] ^ x[12 * i + k]);
+  }
+  CHECK(ok, "links are x_1, then TH(mask, ctx || y_i)[0:b] xor x_{i+1}");
   cs_puzzle_free(&ref);
 }
 
@@ -305,6 +309,21 @@ static void test_checkpoints(void) {
     CHECK(!cs_solve(&p, k2, &back, NULL, 0, NULL, NULL) && !memcmp(k2, key, 32), "resume from %u/%llu",
           stops[t].i, (unsigned long long)stops[t].j);
   }
+  // A finished cursor keeps a_{n-1}: solving again from it, directly or through a
+  // checkpoint, gives the same key.
+  for (uint32_t n = 1; n <= 3; n++) {
+    cs_puzzle q;
+    uint8_t qk[32], got[32];
+    cs_cursor done = {0}, back;
+    CHECK(!cs_generate(&q, qk, n, 5, 12, &rng, NULL), "build n = %u", n);
+    CHECK(!cs_solve(&q, got, &done, NULL, 0, NULL, NULL) && !memcmp(got, qk, 32), "solve n = %u", n);
+    CHECK(done.i == n && done.j == 5, "finished cursor at (n, m)");
+    CHECK(!cs_solve(&q, got, &done, NULL, 0, NULL, NULL) && !memcmp(got, qk, 32), "solve again, n = %u", n);
+    cs_checkpoint_encode(&q, &done, buf);
+    CHECK(!cs_checkpoint_decode(&q, &back, buf, sizeof buf), "decode finished checkpoint");
+    CHECK(!cs_solve(&q, got, &back, NULL, 0, NULL, NULL) && !memcmp(got, qk, 32), "resume finished, n = %u", n);
+    cs_puzzle_free(&q);
+  }
   // A checkpoint whose accumulator is wrong solves to a key that fails the commitment.
   {
     const stop_at at = {3, 7};
@@ -385,6 +404,20 @@ static void test_guess(void) {
   }
   CHECK(wins == 1 && winner == x[2], "exactly the true last link opens a 1-byte-link puzzle");
   CHECK(alone == 0, "the last chain alone opens nothing");
+  // With b = 32 the right x_2 gives the whole mask z_1 xor x_2, but not y_1 (audit R6-1).
+  {
+    uint8_t x2[64], ys[64], k32[32], ends2[64];
+    rng_bytes(&rng, x2, 64);
+    cs_puzzle q;
+    cs_gen_opts o2 = {.y_out = ends2};
+    CHECK(!cs_generate_from(&q, k32, 2, 5, 32, salt, x2, &o2), "build b = 32");
+    for (int k = 0; k < 32; k++) ys[k] = q.links[32 + k] ^ x2[32 + k];
+    cs_run_chain(&q, 2, x2 + 32, NULL, ys + 32);
+    CHECK(!cs_key_from_ends(&q, ys, gk), "the mask does not stand in for y_1");
+    memcpy(ys, ends2, 32);
+    CHECK(cs_key_from_ends(&q, ys, gk) && !memcmp(gk, k32, 32), "the true y_1 does");
+    cs_puzzle_free(&q);
+  }
   // Every chain end enters the key.
   for (int i = 0; i < 3; i++) {
     memcpy(y, ends, sizeof y);

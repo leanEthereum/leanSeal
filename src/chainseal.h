@@ -49,6 +49,8 @@ void cs_puzzle_id(const cs_puzzle *p, uint8_t id[32]);
 int cs_check_key(const cs_puzzle *p, const uint8_t key[32]);  // 1 if the key matches the commitment
 // The start value s_i of chain i from its link x_i (SPEC.md section 4).
 void cs_chain_start(const cs_puzzle *p, uint32_t i, const uint8_t *x, uint8_t s[32]);
+// The mask TH(mask, ctx || y_i) of chain i's end; its first b bytes hide x_{i+1}.
+void cs_chain_mask(const cs_puzzle *p, const uint8_t y[32], uint8_t mask[32]);
 
 // ---- generation
 typedef struct {

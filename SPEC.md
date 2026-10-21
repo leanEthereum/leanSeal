@@ -17,6 +17,7 @@ Labels used in v1:
 | Label | Used for |
 |---|---|
 | `chainseal/v1/start` | chain start values |
+| `chainseal/v1/mask` | the masks that hide links |
 | `chainseal/v1/acc` | the hash of the chain ends |
 | `chainseal/v1/key` | the session key |
 | `chainseal/v1/commit` | the key commitment |
@@ -35,7 +36,7 @@ Labels used in v1:
 
 In addition, `n·m ≤ 2^60`, so that every step count fits in 64 bits.
 
-An honest solver does `n·m` chain steps in sequence, plus `n` start hashes, `n` hashes of the chain ends and two final hashes. Section 8 discusses what this does and does not guarantee.
+An honest solver does `n·m` chain steps in sequence, plus `n` start hashes, `n − 1` mask hashes, `n` hashes of the chain ends and two final hashes. Section 8 discusses what this does and does not guarantee.
 
 ## 3. The chain step
 
@@ -70,7 +71,10 @@ Inputs: parameters `n`, `m`, `b`. The generator MUST draw `salt` and the links `
        s_i = TH("chainseal/v1/start", ctx ‖ be32(i) ‖ x_i)
        y_i = F_i^m(s_i)
 
-3. For each `i` in 1..n−1, hide the next link: `z_i = y_i[0:b] ⊕ x_{i+1}`.
+3. For each `i` in 1..n−1, hide the next link under a mask derived from the end of chain `i`:
+
+       z_i = TH("chainseal/v1/mask", ctx ‖ y_i)[0:b] ⊕ x_{i+1}
+
 4. Hash the chain ends in order, starting from `a_0 = ctx`:
 
        a_i = TH("chainseal/v1/acc", a_{i−1} ‖ y_i)    for i = 1, …, n
@@ -84,14 +88,14 @@ Inputs: parameters `n`, `m`, `b`. The generator MUST draw `salt` and the links `
 
 Step 2 is where the generator spends its time. The `n` chains are independent and SHOULD be computed in parallel. Step 4 is `n` more hashes, done in sequence once all chains have ended.
 
-*Informative.* The key depends on the end of every chain, not only the last. A solver who guesses a hidden link and runs the remaining chains from it still needs the ends of all earlier chains, so a right guess saves time but does not by itself open the puzzle (section 8). Hashing the ends one at a time keeps the state a solver carries between chains to 32 bytes.
+*Informative.* The key depends on the end of every chain, not only the last. A solver who guesses a hidden link and runs the remaining chains from it still needs the ends of all earlier chains, so a right guess saves time but does not by itself open the puzzle (section 8). The mask is a hash of the end rather than the end itself, so that a guess of `x_{i+1}`, which fixes the mask's first `b` bytes, says nothing about `y_i`; with a raw mask and `b = 32`, a right guess would give away all of `y_i`. Hashing the ends one at a time keeps the state a solver carries between chains to 32 bytes.
 
 ## 5. Solving
 
 Given a valid puzzle:
 
 1. Read `ctx`, `x_1` and `z_1, …, z_{n−1}`. Set `x ← x_1` and `a ← ctx`.
-2. For `i` = 1, …, n: compute `y_i = F_i^m(TH("chainseal/v1/start", ctx ‖ be32(i) ‖ x))` and set `a ← TH("chainseal/v1/acc", a ‖ y_i)`. If `i < n`, set `x ← y_i[0:b] ⊕ z_i`.
+2. For `i` = 1, …, n: compute `y_i = F_i^m(TH("chainseal/v1/start", ctx ‖ be32(i) ‖ x))` and set `a ← TH("chainseal/v1/acc", a ‖ y_i)`. If `i < n`, set `x ← TH("chainseal/v1/mask", ctx ‖ y_i)[0:b] ⊕ z_i`.
 3. Compute `K = TH("chainseal/v1/key", ctx ‖ a)`.
 4. Accept `K` only if `TH("chainseal/v1/commit", ctx ‖ K) = C`. Otherwise the puzzle is malformed and MUST be reported as such.
 
@@ -185,7 +189,7 @@ A key MAY encrypt several messages, each with its own nonce. All of them open to
 *Informative.*
 
 - **What the delay rests on.** The delay is an assumption about attackers, not a theorem of this document. It assumes nobody computes `m` chained steps much faster than `m·ℓ`, where `ℓ` is the fastest attainable latency of one SHA-256 compression; this covers both the absence of shortcuts for iterating SHA-256 and the circuit speed of the best hardware. It also assumes that the only useful way to skip chains is to guess links, as below. In the random-oracle model, Mahmoody, Moran and Vadhan prove asymptotically that their construction needs about `n·m` sequential rounds, except with negligible probability, and that no hash-only puzzle can provably need more rounds than its generator makes queries. chainseal keeps their dependency structure, but this document gives no concrete security theorem for chainseal itself, and no analysis against quantum attackers.
-- **Guessing a link.** A solver can skip work only by guessing a hidden link `x_k` and running chains `k, k+1, …` from the guess before chain `k − 1` has ended. Because the key depends on every chain end, a guess is confirmed only when the solver's own chains reach link `k` and reveal `x_k`; until then every guessed run is blind. To finish `d` steps sooner than an honest solver, a guessed run must already be `d` steps ahead when it is confirmed, so each guess costs about `d` steps and is right with probability `2^(−8b)`. An attacker who computes `Q` chain steps in total, across all its hardware, thus saves `d` steps with chance at most about `Q / (d·2^(8b))`, and saving more than half of the `n·m` steps needs two right guesses at once. The cheapest useful saving is one chain, `d = m`: a fleet computing `R` chain steps per second makes `Q = R·T` steps within time `T`, so its chance is at most `R·T / (m·2^(8b))`. Guessing the key itself succeeds with chance `2^−256` per guess. There is no proof that no other strategy does better. Use `b = 12` unless a smaller value is justified. Against `R = 10^21`, `T = 60 s` and `m = 2^25`, keeping the one-chain saving below chance `2^(−32)` per puzzle needs `b ≥ 11`. With `n = 1` the only link is public, so a one-chain puzzle relies on the chain alone.
+- **Guessing a link.** A solver can skip work only by guessing a hidden link `x_k` and running chains `k, k+1, …` from the guess before chain `k − 1` has ended. Because the key depends on every chain end, and a link's mask is a hash of the previous end that reveals nothing about the end itself, a guess is confirmed only when the solver's own chains reach link `k` and reveal `x_k`; until then every guessed run is blind. To finish `d` steps sooner than an honest solver, a guessed run must already be `d` steps ahead when it is confirmed, so each guess costs about `d` steps and is right with probability `2^(−8b)`. An attacker who computes `Q` chain steps in total, across all its hardware, thus saves `d` steps with chance at most about `Q / (d·2^(8b))`, and saving more than half of the `n·m` steps needs two right guesses at once. For a saving of one whole chain, take `d = m`: a fleet computing `R` chain steps per second makes `Q = R·T` steps within time `T`, so its chance is at most `R·T / (m·2^(8b))`. Guessing the key itself succeeds with chance `2^−256` per guess. There is no proof that no other strategy does better. Use `b = 12` unless a smaller value is justified. Against `R = 10^21`, `T = 60 s` and `m = 2^25`, keeping the chance of saving one chain below `2^(−32)` per puzzle needs `b ≥ 11`. Savings of less than a chain are likelier but worth less, and follow the same formula. With `n = 1` the only link is public, so a one-chain puzzle relies on the chain alone.
 - **The delay starts at publication.** Anyone holding a puzzle can start solving it. A puzzle built in advance (a secret file) MUST be kept private until its first envelope is published. From then on the clock runs for every envelope under that puzzle: a message encrypted later under the same puzzle opens at the same time as the first, not one full delay after its own publication. Encrypt together all messages that should open together, then discard the secret.
 - **Malformed puzzles.** Nothing in v1 lets a verifier check, before solving, that a puzzle leads to its commitment. A malformed puzzle is detected only when the solve ends with a commitment mismatch.
 - **What the tag protects.** The tag stops anyone who does not know `K` from changing an envelope. Anyone who knows `K`, because it was revealed or solved, can seal a new message under the same puzzle, with a valid tag. A puzzle or its commitment therefore does not identify a message. A system that orders or references envelopes MUST bind to the whole envelope, for example by its SHA-256 hash.

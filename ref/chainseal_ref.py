@@ -72,6 +72,10 @@ def chain(state, salt, i, steps):
     return state
 
 
+def mask(ctx, end):
+    return th("chainseal/v1/mask", ctx + end)
+
+
 def absorb(acc, end):
     return th("chainseal/v1/acc", acc + end)
 
@@ -118,7 +122,7 @@ def generate(n, m, b, salt, links):
     ends = [chain(s, salt, i, m) for i, s in enumerate(starts, 1)]
     key, accs = derive_key(ctx, ends)
     commit = commitment(ctx, key)
-    hidden = [links[0]] + [xor(ends[i][:b], links[i + 1]) for i in range(n - 1)]
+    hidden = [links[0]] + [xor(mask(ctx, ends[i])[:b], links[i + 1]) for i in range(n - 1)]
     raw = encode_puzzle(n, m, b, salt, commit, hidden)
     return {"start": starts, "y": ends, "acc": accs, "key": key, "commit": commit,
             "puzzle": raw, "puzzle_id": puzzle_id(raw)}
@@ -258,7 +262,7 @@ def solve_puzzle(puzzle, checkpoint=None):
         acc = absorb(acc, y)
         if i == puzzle["n"]:
             break
-        link = xor(y[:puzzle["b"]], puzzle["links"][i])
+        link = xor(mask(puzzle["ctx"], y)[:puzzle["b"]], puzzle["links"][i])
         i, j = i + 1, 0
         state = start(puzzle["ctx"], i, link)
     key = th("chainseal/v1/key", puzzle["ctx"] + acc)
@@ -370,7 +374,7 @@ def check_vectors(path):
                                     ("ctx", context(n, m, b, salt)),
                                     ("raw", derived["puzzle"])):
                 equal(f"{label}.{field}", puzzle[field], expected)
-            expected_links = [links[0]] + [xor(derived["y"][i][:b], links[i + 1])
+            expected_links = [links[0]] + [xor(mask(context(n, m, b, salt), derived["y"][i])[:b], links[i + 1])
                                             for i in range(n - 1)]
             equal(f"{label}.links", puzzle["links"], expected_links)
 
