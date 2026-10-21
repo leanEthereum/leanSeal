@@ -10,6 +10,7 @@ An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited chainseal fo
 | 4 | `634982f` | [round-4.md](round-4.md) | fix first: R3-1 to R3-4 and R2-6 resolved, R2-1 partly; 1 new blocker, 1 nit |
 | 5 | `2d804be` | [round-5.md](round-5.md) | ready: R4-1, R4-2 and R2-1 resolved; no new findings |
 | 6 | `1893160` | [round-6.md](round-6.md) | fix first, after the key was changed to depend on every chain end: 1 new blocker, 1 new major |
+| 7 | `2dd794c` | [round-7.md](round-7.md) | fix first: R6-2 resolved, R6-1 partly; 1 new blocker in the security argument, 1 minor, 1 nit |
 
 ## What changed after round 1
 
@@ -61,9 +62,19 @@ Two test gaps the report named are closed: the C vector check feeds every invali
 
 ## What changed after round 6
 
-Commit `1893160` changed the design: the key now hashes the ends of all chains in order, instead of the end of the last chain alone, so that a guess of the last link can no longer be checked against the commitment after one chain. Round 6 audited that change.
+Commit `1893160` changed the design: the key now hashes the ends of all chains in order, instead of the end of the last chain alone, so that a guess of the last link could no longer be checked against the commitment after one chain. Round 6 audited that change and found that with the raw mask the shortcut survived for `b = 32`; commit `2dd794c` closed it by hashing the mask (R6-1).
 
 | # | Finding | Change |
 |---|---|---|
 | R6-1 | A link was masked with the first `b` bytes of the previous chain's end, so a right guess of the link revealed those bytes, and with `b = 32` the whole end. One guess could then skip a chain, contrary to SPEC and README. The documents also called one chain the cheapest useful saving, though a guess can save part of a chain. | Links are masked with `TH("chainseal/v1/mask", ctx ‖ y_i)[0:b]`, so a guess reveals part of a hash of the end and nothing about the end itself. SPEC sections 4, 5 and 8, the README and the C and Python code use the new mask; the vectors are regenerated. A unit test checks that with `b = 32` the mask does not stand in for `y_1`. The documents now say that savings of less than a chain follow the same formula, and use one chain only as the example. |
 | R6-2 | A cursor returned by a successful `cs_solve` held `a_n` instead of `a_(n−1)`, so solving again from it, or from a checkpoint made from it, failed. | The final absorption uses a temporary copy, and the cursor keeps `a_(n−1)`. A unit test solves puzzles with `n` = 1, 2 and 3, then solves again from the returned cursor and from its checkpoint. |
+
+## What changed after round 7
+
+Round 7 audited `2dd794c`. It found no defect in the code; its blocker is in the security argument.
+
+| # | Finding | Change |
+|---|---|---|
+| R7-1 | SPEC and README charged each guess the whole saving `d`, giving the bound `Q/(d·2^(8b))`. Runs from different guesses of one link can reach the same later link and then share all later steps. With 1- and 2-byte links, an attacker that tries every value of a link and merges runs that meet recovered the key in 100 of 100 puzzles under a budget for which the bound gave 3.5%. | SPEC section 8, the README and section 4 of the guide now charge each guess `min(d, m)` steps, its first chain, which runs from distinct guesses cannot share. The bound becomes `Q/(min(d,m)·2^(8b))`. The one-chain figures, `2^-45` and Table 2 of the guide, are unchanged. The guide's figure for opening half the delay early is replaced by the two-guess estimate, and the guide says the bound may be loose beyond one chain and that the merging attack shows why. |
+| R7-2 | `docs/index.html` at `2dd794c` still described the raw mask. | The page is regenerated from the guide, which uses the hashed mask. |
+| R7-3 | This file said `1893160` removed the last-link shortcut, though round 6 showed it had not for `b = 32`. | The round-6 paragraph above now says what `1893160` intended and what `2dd794c` fixed. |
