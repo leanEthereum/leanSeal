@@ -313,6 +313,23 @@ static void test_checkpoints(void) {
   store_be64(buf + 44, 0), buf[7] = 1;
   CHECK(cs_checkpoint_decode(&p, &cur, buf, sizeof buf) == CS_EFORMAT, "reserved byte");
 
+  // Format checks that need no puzzle.
+  uint8_t id[32], want[32];
+  uint32_t i;
+  uint64_t j;
+  buf[7] = 0;
+  cs_puzzle_id(&p, want);
+  CHECK(!cs_checkpoint_peek(buf, sizeof buf, id, &i, &j) && !memcmp(id, want, 32) && i == 1 && !j, "peek");
+  buf[4] = 2;
+  CHECK(cs_checkpoint_peek(buf, sizeof buf, id, &i, &j) == CS_EFORMAT, "peek: version");
+  buf[4] = 1, buf[5] = 1;
+  CHECK(cs_checkpoint_peek(buf, sizeof buf, id, &i, &j) == CS_EFORMAT, "peek: reserved byte");
+  buf[5] = 0, store_be32(buf + 40, 0);
+  CHECK(cs_checkpoint_peek(buf, sizeof buf, id, &i, &j) == CS_ERANGE, "peek: i = 0");
+  CHECK(cs_checkpoint_decode(&p, &cur, buf, sizeof buf) == CS_ERANGE, "i = 0");
+  store_be32(buf + 40, 1);
+  CHECK(cs_checkpoint_peek(buf, sizeof buf + 1, id, &i, &j) == CS_EFORMAT, "peek: long checkpoint");
+
   uint8_t *sec = malloc(cs_secret_size(&p));
   cs_secret_encode(&p, key, sec);
   cs_puzzle q;

@@ -87,6 +87,8 @@ int cs_guess_last_link(const cs_puzzle *p, const uint8_t *x_n, const chain_backe
 
 void cs_checkpoint_encode(const cs_puzzle *p, const cs_cursor *c, uint8_t out[CS_CHECKPOINT_SIZE]);
 int cs_checkpoint_decode(const cs_puzzle *p, cs_cursor *c, const uint8_t *in, size_t len);
+// Check a checkpoint's format without its puzzle and read its puzzle id and position.
+int cs_checkpoint_peek(const uint8_t *in, size_t len, uint8_t id[32], uint32_t *i, uint64_t *j);
 
 // ---- secrets: a puzzle built in advance, with its key
 size_t cs_secret_size(const cs_puzzle *p);

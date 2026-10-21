@@ -46,6 +46,10 @@ expect_exit 2 "$CS" open env -k nothex
 expect_exit 2 "$CS" open env
 expect_exit 2 "$CS" gen -n 0 -m 5 -o x
 expect_exit 2 "$CS" gen -b 33 -m 5 -o x
+expect_exit 2 "$CS" gen -d inf -o x
+expect_exit 2 "$CS" gen -d 1e308h -o x
+expect_exit 2 "$CS" gen -d 1 --step-ns inf -o x
+expect_exit 2 "$CS" gen -d nan -o x
 expect_exit 1 "$CS" open msg -k "$KEY"
 
 # Several puzzles solved in parallel.
@@ -54,6 +58,13 @@ expect_exit 1 "$CS" open msg -k "$KEY"
 "$CS" solve -q p1 p2 > keys
 [ "$(sed -n 1p keys | cut -d' ' -f1)" = "$("$CS" key s1)" ] || fail "parallel solve 1"
 [ "$(sed -n 2p keys | cut -d' ' -f1)" = "$("$CS" key s2)" ] || fail "parallel solve 2"
+
+# A malformed puzzle among several: the others' keys are still printed.
+cp p2 p2.bad && printf '\377' | dd of=p2.bad bs=1 seek=$((8 + 68 + 12)) conv=notrunc 2>/dev/null
+set +e; "$CS" solve -q p1 p2.bad > keys 2>/dev/null; code=$?; set -e
+[ "$code" = 1 ] || fail "solve with a malformed puzzle exited $code, wanted 1"
+[ "$(cut -d' ' -f1 keys)" = "$("$CS" key s1)" ] || fail "key lost when another puzzle was malformed"
+[ ! -e p1.ckpt ] && [ ! -e p2.bad.ckpt ] || fail "checkpoint left after a finished solve"
 
 # Interrupt a solve, then resume it from the checkpoint.
 "$CS" encrypt -q -n 4 -m 15000000 -i msg -o long --secret-out slong
@@ -65,6 +76,8 @@ set +e; wait $PID; code=$?; set -e
 [ "$code" = 130 ] || fail "interrupted solve exited $code, wanted 130"
 [ -s long.ckpt ] || fail "no checkpoint after interrupt"
 "$CS" info long.ckpt | grep -q checkpoint || fail "checkpoint info"
+cp long.ckpt bad.ckpt && printf '\002' | dd of=bad.ckpt bs=1 seek=4 conv=notrunc 2>/dev/null
+expect_exit 1 "$CS" info bad.ckpt
 "$CS" solve long > keys 2> log
 grep -q resuming log || fail "solve did not resume"
 [ "$(cut -d' ' -f1 keys)" = "$("$CS" key slong)" ] || fail "resumed solve key"

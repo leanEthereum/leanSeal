@@ -62,10 +62,12 @@ static int fail_errno(const char *path) {
   return 1;
 }
 
-static volatile sig_atomic_t g_stop;
+// Set by SIGINT and SIGTERM and by the main thread, read by solver threads.
+// Lock-free atomics are safe to store from a signal handler.
+static atomic_int g_stop;
 static void on_signal(int sig) {
   (void)sig;
-  g_stop = 1;
+  atomic_store(&g_stop, 1);
 }
 
 // ---------------------------------------------------------------- building puzzles
@@ -97,7 +99,7 @@ static int param_opt(params *P, int c, const char *arg) {
     case 'L': {
       char *end;
       P->step_ns = strtod(arg, &end);
-      return *end || !(P->step_ns > 0) ? -1 : 1;
+      return *end || !(P->step_ns > 0) || !isfinite(P->step_ns) ? -1 : 1;
     }
     case 'q': P->quiet = 1; return 1;
   }
@@ -120,7 +122,7 @@ static int build(params *P, cs_puzzle *p, uint8_t key[32]) {
     if (!(P->delay > 0)) return usage_error("give the work per chain (-m STEPS) or a delay (-d SECONDS)");
     if (!(P->step_ns > 0)) P->step_ns = measure_latency_ns(be, 0.3), measured = 1;
     double m = ceil(P->delay / (P->n * P->step_ns * 1e-9));
-    if (m > (double)CS_MAX_M) return fail("delay", CS_ERANGE);
+    if (!(m <= (double)CS_MAX_M)) return fail("delay", CS_ERANGE);
     P->m = m < 1 ? 1 : (uint64_t)m;
   }
   cs_rng rng;
@@ -274,6 +276,7 @@ typedef struct {
   uint64_t start_done;      // steps already done when this run began
   _Atomic uint64_t done;    // steps done, for progress
   atomic_int finished;
+  int solved;  // the key is valid
   double t0, t1, last_save;
   int err;
   uint8_t key[32];
@@ -294,7 +297,7 @@ static int solve_progress(void *arg, const cs_cursor *c) {
     save_checkpoint(s, c);  // best effort; failures surface when stopping
     s->last_save = now();
   }
-  return g_stop;
+  return atomic_load(&g_stop);
 }
 
 static void *solve_thread(void *arg) {
@@ -302,6 +305,7 @@ static void *solve_thread(void *arg) {
   set_fast_qos();
   s->t0 = s->last_save = now();
   s->err = cs_solve(s->p, s->key, &s->cur, NULL, SOLVE_EVERY, solve_progress, s);
+  s->solved = !s->err;
   s->t1 = now();
   atomic_store(&s->finished, 1);
   return NULL;
@@ -391,7 +395,7 @@ static int solve_all(solve_job *jobs, int k, int quiet) {
   for (; started < k; started++)
     if (pthread_create(&tid[started], NULL, solve_thread, &jobs[started])) break;
   if (started < k) {
-    g_stop = 1;
+    atomic_store(&g_stop, 1);
     fprintf(stderr, "chainseal: could not start %d solver threads\n", k);
   }
   double t0 = now(), last = 0;
@@ -445,8 +449,10 @@ static int cmd_solve(int argc, char **argv) {
   int rc = 0, opened = 0;
   for (; opened < k && !rc; opened++) rc = solve_open(&jobs[opened], argv[optind + opened], checkpoints);
   if (!rc) rc = solve_all(jobs, k, quiet);
+  // Print every key that was found, even if another job failed: a solved
+  // job's checkpoint is already gone, so its key must not be lost.
   for (int i = 0; i < opened; i++) {
-    if (!rc && !jobs[i].err) {
+    if (jobs[i].solved) {
       char hex[65];
       hex_encode(hex, jobs[i].key, 32);
       printf("%s  %s\n", hex, jobs[i].path);
@@ -568,12 +574,16 @@ static int cmd_info(int argc, char **argv) {
       cs_puzzle_free(&p);
       secure_zero(key, 32);
     }
-  } else if (len == CS_CHECKPOINT_SIZE && !memcmp(data, "CSCK", 4)) {
-    char hex[65];
-    hex_encode(hex, data + 8, 32);
-    printf("%s: checkpoint\n  puzzle id      %s\n  chain i        %u\n  steps done j   %llu\n", argv[1], hex,
-           load_be32(data + 40), (unsigned long long)load_be64(data + 44));
-    err = CS_OK;
+  } else if (len >= 4 && !memcmp(data, "CSCK", 4)) {
+    uint8_t id[32];
+    uint32_t i;
+    uint64_t j;
+    if (!(err = cs_checkpoint_peek(data, len, id, &i, &j))) {
+      char hex[65];
+      hex_encode(hex, id, 32);
+      printf("%s: checkpoint\n  puzzle id      %s\n  chain i        %u\n  steps done j   %llu\n", argv[1], hex, i,
+             (unsigned long long)j);
+    }
   }
   secure_zero(data, len);
   free(data);

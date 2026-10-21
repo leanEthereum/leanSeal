@@ -311,15 +311,22 @@ void cs_checkpoint_encode(const cs_puzzle *p, const cs_cursor *c, uint8_t out[CS
   words_to_bytes(out + 52, c->st);
 }
 
-int cs_checkpoint_decode(const cs_puzzle *p, cs_cursor *c, const uint8_t *in, size_t len) {
+int cs_checkpoint_peek(const uint8_t *in, size_t len, uint8_t id[32], uint32_t *i, uint64_t *j) {
   if (len != CS_CHECKPOINT_SIZE || memcmp(in, MAGIC_CHECKPOINT, 4) || in[4] != VERSION || in[5] || in[6] || in[7])
     return CS_EFORMAT;
-  uint8_t id[32];
-  cs_puzzle_id(p, id);
-  if (memcmp(id, in + 8, 32)) return CS_EMISMATCH;
-  c->i = load_be32(in + 40);
-  c->j = load_be64(in + 44);
-  if (c->i < 1 || c->i > p->n || c->j > p->m) return CS_ERANGE;
+  memcpy(id, in + 8, 32);
+  *i = load_be32(in + 40);
+  *j = load_be64(in + 44);
+  return *i < 1 || *i > CS_MAX_N || *j > CS_MAX_M ? CS_ERANGE : CS_OK;
+}
+
+int cs_checkpoint_decode(const cs_puzzle *p, cs_cursor *c, const uint8_t *in, size_t len) {
+  uint8_t id[32], want[32];
+  int err = cs_checkpoint_peek(in, len, id, &c->i, &c->j);
+  if (err == CS_EFORMAT) return err;
+  cs_puzzle_id(p, want);
+  if (memcmp(id, want, 32)) return CS_EMISMATCH;
+  if (err || c->i > p->n || c->j > p->m) return CS_ERANGE;
   bytes_to_words(c->st, in + 52);
   return CS_OK;
 }

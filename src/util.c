@@ -146,14 +146,14 @@ int parse_u64(const char *s, uint64_t *out) {
 int parse_seconds(const char *s, double *out) {
   char *end;
   double d = strtod(s, &end);
-  if (end == s || !(d > 0)) return -1;
+  if (end == s || !(d > 0) || !isfinite(d)) return -1;
   if (!strcmp(end, "") || !strcmp(end, "s")) *out = d;
   else if (!strcmp(end, "ms")) *out = d / 1e3;
   else if (!strcmp(end, "m") || !strcmp(end, "min")) *out = d * 60;
   else if (!strcmp(end, "h")) *out = d * 3600;
   else if (!strcmp(end, "d")) *out = d * 86400;
   else return -1;
-  return 0;
+  return isfinite(*out) ? 0 : -1;
 }
 
 const char *fmt_duration(char buf[32], double t) {

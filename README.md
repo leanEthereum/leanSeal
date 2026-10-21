@@ -81,7 +81,7 @@ The build/solve ratio is how much faster the sender builds a puzzle than a singl
 **What chainseal is meant to give.**
 
 - *Confidentiality until the work is done.* Nobody learns anything about the message until they have computed `n·m` chain steps in sequence, or the sender reveals the key.
-- *Integrity.* An envelope opens only to the message the sender sealed. Any change to the puzzle, nonce, ciphertext or tag makes opening fail.
+- *Integrity, until the key is known.* Any change to an envelope's puzzle, nonce, ciphertext or tag makes opening fail. Once the key is public, revealed or solved, anyone can seal a different message under the same puzzle. So the puzzle and its commitment do not identify a message: refer to an envelope by a hash of all its bytes.
 - *A checkable fast path.* A revealed key is checked against the commitment before it is used.
 
 **What the delay rests on.**
