@@ -11,6 +11,7 @@ An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited chainseal fo
 | 5 | `2d804be` | [round-5.md](round-5.md) | ready: R4-1, R4-2 and R2-1 resolved; no new findings |
 | 6 | `1893160` | [round-6.md](round-6.md) | fix first, after the key was changed to depend on every chain end: 1 new blocker, 1 new major |
 | 7 | `2dd794c` | [round-7.md](round-7.md) | fix first: R6-2 resolved, R6-1 partly; 1 new blocker in the security argument, 1 minor, 1 nit |
+| 8 | `c33fa59` | [round-8.md](round-8.md) | fix first: R7-2 and R7-3 resolved, R7-1 partly; 1 new blocker in the security argument, 2 minor |
 
 ## What changed after round 1
 
@@ -78,3 +79,13 @@ Round 7 audited `2dd794c`. It found no defect in the code; its blocker is in the
 | R7-1 | SPEC and README charged each guess the whole saving `d`, giving the bound `Q/(d·2^(8b))`. Runs from different guesses of one link can reach the same later link and then share all later steps. With 1- and 2-byte links, an attacker that tries every value of a link and merges runs that meet recovered the key in 100 of 100 puzzles under a budget for which the bound gave 3.5%. | SPEC section 8, the README and section 4 of the guide now charge each guess `min(d, m)` steps, its first chain, which runs from distinct guesses cannot share. The bound becomes `Q/(min(d,m)·2^(8b))`. The one-chain figures, `2^-45` and Table 2 of the guide, are unchanged. The guide's figure for opening half the delay early is replaced by the two-guess estimate, and the guide says the bound may be loose beyond one chain and that the merging attack shows why. |
 | R7-2 | `docs/index.html` at `2dd794c` still described the raw mask. | The page is regenerated from the guide, which uses the hashed mask. |
 | R7-3 | This file said `1893160` removed the last-link shortcut, though round 6 showed it had not for `b = 32`. | The round-6 paragraph above now says what `1893160` intended and what `2dd794c` fixed. |
+
+## What changed after round 8
+
+Round 8 audited `c33fa59` and found no attack that beats `Q/(min(d,m)·2^(8b))` by more than a constant factor. Its findings are in the argument and the guide.
+
+| # | Finding | Change |
+|---|---|---|
+| R8-1 | The guide said that saving more than half needs two right guesses, so the chance is about the square of the one-chain figure. An attacker can instead prepare short starts for every value of a link, which needs no luck. With 2-byte links this beat the squared figure by a factor of about 3,200. The argument also charged each guess the whole saving, though an attack can combine several smaller gains. | The squared figure and the "below 10^-27" estimate are gone from the guide. The guide and SPEC now charge one run's gain `a` at least `min(a, m)` steps, say that this does not prove the bound because gains can combine, and give no separate bound for saving more than half. SPEC and README say what saving more than half needs, without a probability. |
+| R8-2 | The guide said merging pays only when an attacker tries a sizable fraction of all link values, but sharing also grows with the number of chains each run covers. | The guide now says that sharing grows with both, and never reaches a run's first chain. |
+| R8-3 | The guide gave the honest opener `N + n + 2` rounds, leaving out the mask and accumulator hashes. | It now gives `N + 3n + 1` hash calls, as SPEC does. |
