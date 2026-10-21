@@ -4,3 +4,4 @@
 *.ckpt
 *.tmp.*
 __pycache__/
+/tests/shani_emu

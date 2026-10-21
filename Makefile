@@ -15,9 +15,14 @@ chainseal: $(LIB) $(TOOL) $(HDRS)
 tests/test: tests/test.c $(LIB) $(HDRS)
 	$(CC) $(CFLAGS) -Isrc -o $@ tests/test.c $(LIB) $(LDLIBS)
 
+# The SHA-NI step logic, with the intrinsics emulated: runs on any machine.
+tests/shani_emu: tests/shani_emu.c src/chain_shani.h src/sha256.c src/chain.c src/rng.c $(HDRS)
+	$(CC) $(CFLAGS) -Wno-unused-function -Isrc -o $@ tests/shani_emu.c src/sha256.c src/chain.c src/rng.c $(LDLIBS)
+
 # Unit tests, the CLI round trip, and the vectors regression.
-test: chainseal tests/test
+test: chainseal tests/test tests/shani_emu
 	./tests/test
+	./tests/shani_emu
 	./chainseal selftest
 	./chainseal vectors | cmp - tests/vectors.json
 	sh tests/cli.sh ./chainseal
@@ -46,7 +51,7 @@ bench: chainseal
 	./chainseal bench all
 
 clean:
-	rm -f chainseal tests/test
+	rm -f chainseal tests/test tests/shani_emu
 	rm -rf *.dSYM tests/*.dSYM
 
 .PHONY: all test sanitize tsan vectors bench clean
