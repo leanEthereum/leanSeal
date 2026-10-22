@@ -1,4 +1,0 @@
-puzzle: n = 64 chains, m = 268435456 steps each, b = 16-byte links, 1092 bytes
-built in 42.1 s on 10 threads (armv8-sha2), 407.7 M steps/s
-solving takes n*m = 17.2 G steps: 6 min 34 s at 23.0 ns/step (one chain on this machine)
-wrote b64.secret (keep it private until you use it)

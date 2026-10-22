@@ -7,7 +7,7 @@ use std::{
     path::Path,
     time::Instant,
 };
-const USAGE:&str="usage: chainseal <command> [options]\n\nSender:\n  gen -o SECRET (-m STEPS | -d DELAY) [-n CHAINS] [-b BYTES]\n        build a puzzle in advance and keep it, with its key, in SECRET\n  encrypt -o ENVELOPE (-s SECRET | -m STEPS | -d DELAY) [-i MESSAGE] [--secret-out FILE]\n        encrypt MESSAGE (default stdin) under a stored or freshly built puzzle\n  key SECRET            print the key, to open an envelope early\n\nReceiver:\n  solve FILE...         solve puzzles (envelopes or bare puzzles), one thread each,\n                        saving progress to FILE.ckpt; print each key\n  open ENVELOPE (-k KEY | -s SECRET | --solve) [-o MESSAGE]\n        check the key and the tag, then write the message (default stdout)\n  info FILE             describe a puzzle, envelope, secret or checkpoint\n\nMeasurement:\n  bench [latency | throughput | build | attack | all]\n  selftest              check every backend against plain SHA-256, then a round trip\n  vectors               print the test vectors as JSON\n\nPuzzle options:\n  -n, --chains N        chains (default 64); match the sender's parallelism\n  -m, --steps M         hash steps per chain, e.g. 2^28\n  -d, --delay T         or: choose m for a delay of T (90, 10m, 2h) ...\n      --step-ns L       ... against a solver taking L ns per step (default: this machine)\n  -b, --link-bytes B    link width (default 16; see SPEC.md section 8)\n  -j, --threads J       build threads (default: all cores)\n  -q, --quiet\n\nBackends: set CHAINSEAL_BACKEND=portable|armv8-sha2|x86-sha-ni to override.\n";
+const USAGE:&str="usage: chainseal <command> [options]\n\nSender:\n  gen -o SECRET (-m STEPS | -d DELAY) [-n CHAINS] [-b BYTES]\n        build a puzzle in advance and keep it, with its key, in SECRET\n  encrypt -o ENVELOPE (-s SECRET | -m STEPS | -d DELAY) [-i MESSAGE] [--secret-out FILE]\n        encrypt MESSAGE (default stdin) under a stored or freshly built puzzle\n  key SECRET            print the key, to open an envelope early\n\nReceiver:\n  solve FILE...         solve puzzles (envelopes or bare puzzles), one thread each,\n                        saving progress to FILE.ckpt; print each key\n  open ENVELOPE (-k KEY | -s SECRET | --solve) [-o MESSAGE]\n        check the key and the tag, then write the message (default stdout)\n  info FILE             describe a puzzle, envelope, secret or checkpoint\n\nMeasurement:\n  bench [latency | throughput | build | attack | all]\n  selftest              check every backend against plain SHA-256, then a round trip\n  vectors               print the test vectors as JSON\n\nPuzzle options:\n  -n, --chains N        chains (default 16)\n  -m, --steps M         hash steps per chain, e.g. 2^28\n  -d, --delay T         or: choose m for a delay of T (90, 10m, 2h) ...\n      --step-ns L       ... against a solver taking L ns per step (default: this machine)\n  -b, --link-bytes B    link width (default 24; see SPEC.md section 8)\n  -j, --threads J       build threads (default: all cores)\n  -q, --quiet\n\nBackends: set CHAINSEAL_BACKEND=portable|armv8-sha2|x86-sha-ni to override.\n";
 
 enum CliError {
     Message(String, i32),
@@ -407,9 +407,9 @@ struct Params {
 impl Default for Params {
     fn default() -> Self {
         Self {
-            n: 64,
+            n: 16,
             m: 0,
-            b: 16,
+            b: 24,
             delay: 0.,
             step_ns: 0.,
             threads: 0,
@@ -491,9 +491,9 @@ impl Params {
             let work = self.n as f64 * self.m as f64;
             eprintln!("puzzle: n = {} chains, m = {} steps each, b = {}-byte links, {} bytes\nbuilt in {} on {} threads ({}), {} steps/s\nsolving takes n*m = {} steps: {} at {:.1} ns/step{}",
                 self.n,self.m,self.b,68+p.links().len(),fmt_duration(dt),if self.threads==0 {cpu_count()} else {self.threads},be.name(),fmt_si(work/dt),fmt_si(work),fmt_duration(work*self.step_ns*1e-9),self.step_ns,if measured {" (one chain on this machine)"} else {""});
-            if self.b < 15 {
+            if self.b < 24 {
                 eprintln!(
-                    "warning: {}-byte links can be guessed; SPEC.md section 8 recommends 16 bytes",
+                    "warning: with {}-byte links the proved bound is weak; SPEC.md section 8 recommends 24 bytes or more",
                     self.b
                 );
             }

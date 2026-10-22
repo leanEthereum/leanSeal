@@ -1,0 +1,250 @@
+# chainseal Metal benchmark raw output
+# date: 2026-10-22T14:37:46Z
+# host: Apple M4 Max, 16 CPU cores, model Mac16,5
+# GPU Chipset Model: Apple M4 Max
+# GPU Total Number of Cores: 40
+# ProductName:		macOS
+# ProductVersion:		27.0.1
+# BuildVersion:		26A434
+# Host: MacBook Pro (Mac16,5), reached as `ssh macpro`; runs started from screen in ~/chainseal-metal.
+# The sections below were run with successive builds of bench/metal/main.swift; each section's first lines name the change.
+# Section 1 (first tune): variants plain/pre only; columns in G hashes/s.
+# build: swiftc -O main.swift -o chainseal-metal (swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1))
+
+# load before run: { 2.76 10.92 10.43 }
+$ ./chainseal-metal tune --chains 65536 --secs 2
+# device: Apple M4 Max
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T14:43:18Z
+# command: ./chainseal-metal tune --chains 65536 --secs 2
+verify plainx1: OK (m = 1000, chains 1,2,7,65539, salt e41a7238eae499220f3720af83b68390, python hashlib)
+verify plainx2: OK (m = 1000, chains 1,2,7,65539, salt de223f103508ebd44f7095d41902ba1c, python hashlib)
+verify prex1: OK (m = 1000, chains 1,2,7,65539, salt 49d77fba6b989a635dfb74c8f3cb572f, python hashlib)
+verify prex2: OK (m = 1000, chains 1,2,7,65539, salt 8339a658f1ea3e20b8065c00a47d9709, python hashlib)
+# plainx1: maxTotalThreadsPerThreadgroup 1024, threadExecutionWidth 32
+# prex1: maxTotalThreadsPerThreadgroup 1024, threadExecutionWidth 32
+# plainx2: maxTotalThreadsPerThreadgroup 1024, threadExecutionWidth 32
+# prex2: maxTotalThreadsPerThreadgroup 1024, threadExecutionWidth 32
+variant     tg   chains          K      Gh/s  Gh/s-gpu  ns/step/ch  ms/disp  wall s
+plainx1     32    65536       2487     2.746     2.746     23865.2     59.3    2.20
+plainx1     64    65536       4221     2.761     2.762     23734.5    100.2    2.30
+plainx1    128    65536       4213     2.760     2.760     23745.1    100.0    2.30
+plainx1    256    65536       3943     2.587     2.587     25335.0     99.9    2.40
+plainx1    512    65536       3492     2.291     2.291     28611.0     99.9    2.40
+plainx1   1024    65536       3482     2.282     2.283     28713.9    100.0    2.40
+prex1       32    65536       4191     2.740     2.740     23919.8    100.2    2.31
+prex1       64    65536       4221     2.766     2.767     23690.3    100.0    2.30
+prex1      128    65536       4215     2.759     2.760     23749.5    100.1    2.30
+prex1      256    65536       3938     2.588     2.588     25326.2     99.7    2.39
+prex1      512    65536       3490     2.291     2.291     28606.5     99.8    2.40
+prex1     1024    65536       3477     2.283     2.284     28700.1     99.8    2.39
+plainx2     32    65536       3654     2.386     2.386     27465.7    100.3    2.31
+plainx2     64    65536       3644     2.391     2.391     27408.0     99.9    2.40
+plainx2    128    65536       3358     2.211     2.211     29647.5     99.5    2.39
+plainx2    256    65536       3093     2.033     2.033     32233.4     99.7    2.39
+plainx2    512    65536       3063     2.014     2.014     32546.3     99.7    2.39
+plainx2   1024    65536       3050     2.006     2.006     32666.9     99.6    2.39
+prex2       32    65536       3649     2.391     2.391     27412.6    100.0    2.40
+prex2       64    65536       3653     2.394     2.395     27371.3    100.0    2.30
+prex2      128    65536       3359     2.211     2.212     29636.6     99.5    2.39
+prex2      256    65536       3092     2.031     2.031     32271.8     99.8    2.39
+prex2      512    65536       3057     2.011     2.011     32591.3     99.6    2.39
+prex2     1024    65536       3048     2.003     2.003     32722.6     99.7    2.39
+
+# ---- rebuilt binary: added variant prem (Maj with one fewer operation); columns still in G hashes/s ----
+# load before run: { 1.98 5.31 7.95 }
+$ ./chainseal-metal tune --variants prex1,premx1 --tgs 32,64,128 --chains 65536,262144 --secs 3
+# device: Apple M4 Max
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T14:48:10Z
+# command: ./chainseal-metal tune --variants prex1,premx1 --tgs 32,64,128 --chains 65536,262144 --secs 3
+verify premx1: OK (m = 1000, chains 1,2,7,65539, salt 5fcbf85ae7ff1014c9baa8e4a2106bea, python hashlib)
+verify prex1: OK (m = 1000, chains 1,2,7,65539, salt 5b1fd481757bd17bfb477f50c3078869, python hashlib)
+# prex1: maxTotalThreadsPerThreadgroup 1024, threadExecutionWidth 32
+# premx1: maxTotalThreadsPerThreadgroup 1024, threadExecutionWidth 32
+variant     tg   chains          K      Gh/s  Gh/s-gpu  ns/step/ch  ms/disp  wall s
+prex1       32    65536       2560     2.744     2.744     23887.6     61.1    3.24
+prex1       64    65536       4214     2.760     2.760     23747.6    100.1    3.30
+prex1      128    65536       4210     2.757     2.757     23770.8    100.1    3.30
+premx1      32    65536       4246     2.775     2.776     23612.4    100.3    3.31
+premx1      64    65536       4276     2.797     2.798     23428.6    100.2    3.31
+premx1     128    65536       4271     2.798     2.798     23425.2    100.0    3.30
+prex1       32   262144       1135     2.972     2.972     88200.7    100.1    3.30
+prex1       64   262144        411     2.978     2.979     88017.9     36.2    3.11
+prex1      128   262144       1127     2.952     2.952     88800.3    100.1    3.30
+premx1      32   262144       1136     2.984     2.985     87839.3     99.8    3.39
+premx1      64   262144        391     2.962     2.963     88493.1     34.6    3.11
+premx1     128   262144        439     2.839     2.839     92340.7     40.5    3.16
+
+# ---- rebuilt binary: calibration of K re-measures once at its estimate; columns still in G hashes/s (small rows round to 0.000; superseded by the M hashes/s sweep below) ----
+# load before run: { 2.04 4.61 7.47 }
+$ ./chainseal-metal sweep --variant premx1 --tg 64 --secs 2 --chains 1,16,256,1024,4096,16384,65536,262144,1048576
+# device: Apple M4 Max
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T14:49:26Z
+# command: ./chainseal-metal sweep --variant premx1 --tg 64 --secs 2 --chains 1,16,256,1024,4096,16384,65536,262144,1048576
+verify premx1: OK (m = 1000, chains 1,2,7,65539, salt 956c55a7a651525453f314c3cb63b415, python hashlib)
+variant     tg   chains          K      Gh/s  Gh/s-gpu  ns/step/ch  ms/disp  wall s
+premx1      64        1      18994     0.000     0.000      5255.7     99.8    2.40
+premx1      64       16      18994     0.003     0.003      5255.4     99.8    2.40
+premx1      64      256      19922     0.051     0.051      5025.7    100.1    2.30
+premx1      64     1024      19786     0.200     0.200      5126.5    101.4    2.33
+premx1      64     4096      19544     0.791     0.791      5179.8    101.2    2.33
+premx1      64    16384      13165     2.158     2.158      7591.6     99.9    2.40
+premx1      64    65536       4276     2.798     2.798     23423.9    100.1    2.30
+premx1      64   262144       1143     2.998     2.999     87429.7     99.9    2.40
+premx1      64  1048576        291     3.058     3.059    342866.0     99.8    2.39
+
+# load before run: { 1.80 4.27 7.23 }
+$ ./chainseal-metal sweep --variant prex1 --tg 32 --chains 1,1,1 --secs 3
+# device: Apple M4 Max
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T14:49:55Z
+# command: ./chainseal-metal sweep --variant prex1 --tg 32 --chains 1,1,1 --secs 3
+verify prex1: OK (m = 1000, chains 1,2,7,65539, salt 48ca74fa4499370e61a9bdd0f921feed, python hashlib)
+variant     tg   chains          K      Gh/s  Gh/s-gpu  ns/step/ch  ms/disp  wall s
+prex1       32        1      17640     0.000     0.000      5616.7     99.1    3.37
+prex1       32        1      17934     0.000     0.000      5615.7    100.7    3.32
+prex1       32        1      17934     0.000     0.000      5615.5    100.7    3.32
+
+# load before run: { 2.07 4.25 7.19 }
+$ ./chainseal-metal sweep --variant plainx1 --tg 32 --chains 1,1 --secs 3
+# device: Apple M4 Max
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T14:50:07Z
+# command: ./chainseal-metal sweep --variant plainx1 --tg 32 --chains 1,1 --secs 3
+verify plainx1: OK (m = 1000, chains 1,2,7,65539, salt 06a29fc159b091003a7110a0ee6e824b, python hashlib)
+variant     tg   chains          K      Gh/s  Gh/s-gpu  ns/step/ch  ms/disp  wall s
+plainx1     32        1      18229     0.000     0.000      5498.6    100.2    3.31
+plainx1     32        1      18232     0.000     0.000      5498.6    100.2    3.31
+
+# load before run: { 2.42 4.25 7.16 }
+$ ./chainseal-metal sweep --variant premx1 --tg 32 --chains 1,1 --secs 3
+# device: Apple M4 Max
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T14:50:16Z
+# command: ./chainseal-metal sweep --variant premx1 --tg 32 --chains 1,1 --secs 3
+verify premx1: OK (m = 1000, chains 1,2,7,65539, salt 6ff8fb9d65466490f7637437d050d89a, python hashlib)
+variant     tg   chains          K      Gh/s  Gh/s-gpu  ns/step/ch  ms/disp  wall s
+premx1      32        1      18995     0.000     0.000      5255.2     99.8    3.39
+premx1      32        1      19045     0.000     0.000      5254.7    100.1    3.30
+
+# ---- rebuilt binary: output columns now in M hashes/s (final version of main.swift) ----
+# load before run: { 2.82 4.13 6.95 }
+$ ./chainseal-metal sweep --variant premx1 --tg 64 --secs 2 --chains 1,16,256,1024,4096,16384,65536,262144,1048576,4194304
+# device: Apple M4 Max
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T14:51:09Z
+# command: ./chainseal-metal sweep --variant premx1 --tg 64 --secs 2 --chains 1,16,256,1024,4096,16384,65536,262144,1048576,4194304
+verify premx1: OK (m = 1000, chains 1,2,7,65539, salt 4630aff8d7383269c238dbefdb4a6c2e, python hashlib)
+variant     tg   chains          K       Mh/s   Mh/s-gpu  ns/step/ch  ms/disp  wall s
+premx1      64        1      18848       0.19       0.19      5255.6     99.0    2.38
+premx1      64       16      18993       3.04       3.04      5255.5     99.8    2.40
+premx1      64      256      19308      50.95      50.96      5024.4     97.0    2.33
+premx1      64     1024      19298     198.98     199.00      5146.2     99.3    2.38
+premx1      64     4096      19147     792.75     792.83      5166.8     98.9    2.37
+premx1      64    16384      13178    2157.02    2157.24      7595.7    100.1    2.30
+premx1      64    65536       4275    2801.36    2801.65     23394.3    100.0    2.30
+premx1      64   262144       1143    2997.43    2997.78     87456.2    100.0    2.40
+premx1      64  1048576        269    3058.55    3058.91    342834.6     92.2    2.31
+premx1      64  4194304         73    3071.54    3071.93   1365537.1     99.7    2.39
+
+# load before run: { 2.99 3.94 6.62 }
+$ ./chainseal-metal sweep --variant premx1 --tg 64 --secs 3 --chains 1,1
+# device: Apple M4 Max
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T14:52:27Z
+# command: ./chainseal-metal sweep --variant premx1 --tg 64 --secs 3 --chains 1,1
+verify premx1: OK (m = 1000, chains 1,2,7,65539, salt e3b8e22f4f0bf7449c05d0e3b5b6eb41, python hashlib)
+variant     tg   chains          K       Mh/s   Mh/s-gpu  ns/step/ch  ms/disp  wall s
+premx1      64        1      18993       0.19       0.19      5255.3     99.8    3.39
+premx1      64        1      19045       0.19       0.19      5254.1    100.1    3.30
+
+# load before run: { 2.83 3.89 6.59 }
+$ ./chainseal-metal sweep --variant prex1 --tg 64 --secs 3 --chains 1
+# device: Apple M4 Max
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T14:52:36Z
+# command: ./chainseal-metal sweep --variant prex1 --tg 64 --secs 3 --chains 1
+verify prex1: OK (m = 1000, chains 1,2,7,65539, salt ddc2af7f22fa77151d66524ebbba8212, python hashlib)
+variant     tg   chains          K       Mh/s   Mh/s-gpu  ns/step/ch  ms/disp  wall s
+prex1       64        1      15733       0.18       0.18      5614.1     88.3    3.27
+
+# load before run: { 2.09 3.58 6.37 }
+$ ./chainseal-metal sustain --variant premx1 --tg 64 --chains 1048576 --secs 70
+# device: Apple M4 Max
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T14:53:10Z
+# command: ./chainseal-metal sustain --variant premx1 --tg 64 --chains 1048576 --secs 70
+verify premx1: OK (m = 1000, chains 1,2,7,65539, salt f5d0c476183518795e4b64fe66cd11b0, python hashlib)
+# sustain: premx1, tg 64, 1048576 chains, K = 291 steps per dispatch, 70.0 s
+t =    0.0 ..    5.0 s:    3.058 G hashes/s
+t =    5.0 ..   10.0 s:    3.059 G hashes/s
+t =   10.0 ..   15.0 s:    3.058 G hashes/s
+t =   15.0 ..   20.0 s:    3.058 G hashes/s
+t =   20.0 ..   25.0 s:    3.059 G hashes/s
+t =   25.0 ..   30.0 s:    3.049 G hashes/s
+t =   30.0 ..   35.0 s:    2.964 G hashes/s
+t =   35.0 ..   40.0 s:    2.870 G hashes/s
+t =   40.0 ..   45.0 s:    2.849 G hashes/s
+t =   45.0 ..   50.0 s:    2.869 G hashes/s
+t =   50.0 ..   55.0 s:    2.877 G hashes/s
+t =   55.0 ..   60.0 s:    2.882 G hashes/s
+t =   60.0 ..   65.0 s:    2.889 G hashes/s
+t =   65.0 ..   70.0 s:    2.900 G hashes/s
+first 10 s: 3.059 G hashes/s
+last 10 s:  2.895 G hashes/s
+whole run:  2.960 G hashes/s over 70.4 s wall (2.084e+11 hashes)
+
+# load before run: { 1.43 2.81 5.66 }
+$ chainseal bench throughput -s 10
+# host Darwin arm64, 16 cpus, cpu:Apple M4 Max
+## throughput: independent chains in parallel (armv8-sha2)
+ threads  lanes      M steps/s       per thread
+       1      1           39.8             39.8
+       1      2           61.7             61.7
+       2      2          122.3             61.2
+       4      2          241.0             60.3
+       6      2          361.9             60.3
+       8      2          483.7             60.5
+      12      2          720.8             60.1
+      16      2          867.1             54.2   <- all cores
+
+# load before run: { 2.74 4.11 5.81 }
+$ ./chainseal-metal sustain --variant premx1 --tg 64 --chains 1048576 --secs 60 --window 5   (background)
+$ sleep 12; chainseal bench throughput -s 10   (concurrently; started at about t = 12 s)
+# cpu bench start 14:58:15
+# host Darwin arm64, 16 cpus, cpu:Apple M4 Max
+## throughput: independent chains in parallel (armv8-sha2)
+ threads  lanes      M steps/s       per thread
+       1      1           40.6             40.6
+       1      2           62.6             62.6
+       2      2          123.7             61.9
+       4      2          244.6             61.1
+       6      2          361.5             60.3
+       8      2          485.2             60.7
+      12      2          722.9             60.2
+      16      2          822.9             51.4   <- all cores
+# cpu bench end 14:58:43
+# device: Apple M4 Max
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T14:58:03Z
+# command: ./chainseal-metal sustain --variant premx1 --tg 64 --chains 1048576 --secs 60 --window 5
+verify premx1: OK (m = 1000, chains 1,2,7,65539, salt 66c2bb4970030937b8438f600d01aba2, python hashlib)
+# sustain: premx1, tg 64, 1048576 chains, K = 291 steps per dispatch, 60.0 s
+t =    0.0 ..    5.0 s:    3.059 G hashes/s
+t =    5.0 ..   10.0 s:    3.058 G hashes/s
+t =   10.0 ..   15.0 s:    3.058 G hashes/s
+t =   15.0 ..   20.0 s:    3.059 G hashes/s
+t =   20.0 ..   25.0 s:    3.059 G hashes/s
+t =   25.0 ..   30.0 s:    3.058 G hashes/s
+t =   30.0 ..   35.0 s:    2.989 G hashes/s
+t =   35.0 ..   40.0 s:    2.873 G hashes/s
+t =   40.0 ..   45.0 s:    2.855 G hashes/s
+t =   45.0 ..   50.0 s:    2.868 G hashes/s
+t =   50.0 ..   55.0 s:    2.879 G hashes/s
+t =   55.0 ..   60.0 s:    2.885 G hashes/s
+first 10 s: 3.059 G hashes/s
+last 10 s:  2.882 G hashes/s
+whole run:  2.974 G hashes/s over 60.3 s wall (1.794e+11 hashes)
+

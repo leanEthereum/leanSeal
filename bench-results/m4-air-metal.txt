@@ -1,0 +1,53 @@
+# chainseal Metal benchmark raw output
+# date: 2026-10-22T14:59:27Z
+# host: Apple M4, 10 CPU cores, model Mac16,13
+# GPU Chipset Model: Apple M4
+# GPU Total Number of Cores: 10
+# ProductName:		macOS
+# ProductVersion:		27.0.1
+# BuildVersion:		26A434
+# build: swiftc -O main.swift -o chainseal-metal (swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1))
+
+# load before run: { 2.79 4.70 5.91 }
+$ ./chainseal-metal tune --variants plainx1,prex1,premx1,premx2 --tgs 32,64,128,256 --chains 65536 --secs 2
+# device: Apple M4
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T15:13:34Z
+# command: ./chainseal-metal tune --variants plainx1,prex1,premx1,premx2 --tgs 32,64,128,256 --chains 65536 --secs 2
+verify plainx1: OK (m = 1000, chains 1,2,7,65539, salt e342fcfca98af97b257e91eb2dc966b5, python hashlib)
+verify premx1: OK (m = 1000, chains 1,2,7,65539, salt 5d02b098280512249670a448e1fb3e73, python hashlib)
+verify premx2: OK (m = 1000, chains 1,2,7,65539, salt d8436fa3a47b0f2789afc7590138106a, python hashlib)
+verify prex1: OK (m = 1000, chains 1,2,7,65539, salt 6cffaf360e7c87ddb410a71353ced364, python hashlib)
+# plainx1: maxTotalThreadsPerThreadgroup 1024, threadExecutionWidth 32
+# prex1: maxTotalThreadsPerThreadgroup 1024, threadExecutionWidth 32
+# premx1: maxTotalThreadsPerThreadgroup 1024, threadExecutionWidth 32
+# premx2: maxTotalThreadsPerThreadgroup 1024, threadExecutionWidth 32
+variant     tg   chains          K       Mh/s   Mh/s-gpu  ns/step/ch  ms/disp  wall s
+plainx1     32    65536        966     673.57     673.65     97296.5     94.0    2.35
+plainx1     64    65536       1062     694.30     694.43     94391.4    100.2    2.31
+plainx1    128    65536       1053     688.75     688.89     95151.7    100.2    2.30
+plainx1    256    65536       1052     679.59     679.69     96434.0    101.4    2.33
+prex1       32    65536        980     690.01     690.11     94978.2     93.1    2.33
+prex1       64    65536       1052     694.96     695.09     94301.5     99.2    2.38
+prex1      128    65536       1053     688.77     688.96     95149.4    100.2    2.30
+prex1      256    65536       1051     688.74     689.05     95153.4    100.0    2.30
+premx1      32    65536       1064     683.36     683.58     95902.1    102.0    2.35
+premx1      64    65536       1067     694.79     694.99     94324.5    100.6    2.31
+premx1     128    65536       1057     686.76     686.87     95427.6    100.9    2.32
+premx1     256    65536       1056     688.23     688.34     95224.5    100.5    2.31
+premx2      32    65536       1001     644.46     644.57    101690.9    101.8    2.34
+premx2      64    65536        984     641.55     641.81    102153.0    100.5    2.31
+premx2     128    65536        989     652.30     654.37    100468.6     99.0    2.38
+premx2     256    65536       1006     653.27     653.53    100319.6    100.9    2.32
+
+# device: Apple M4
+# os: Version 27.0.1 (Build 26A434)
+# date: 2026-10-22T15:43:19Z
+# command: ./chainseal-metal tune --variants premx1 --tgs 64 --chains 1,16384,262144,1048576 --secs 3
+verify premx1: OK (m = 1000, chains 1,2,7,65539, salt bda9f3bc28170c9e33701894f21422bb, python hashlib)
+# premx1: maxTotalThreadsPerThreadgroup 1024, threadExecutionWidth 32
+variant     tg   chains          K       Mh/s   Mh/s-gpu  ns/step/ch  ms/disp  wall s
+premx1      64        1      16771       0.20       0.20      5082.5     85.2    3.32
+premx1      64    16384       3994     651.72     651.78     25139.7    100.4    3.31
+premx1      64   262144        271     709.74     709.81    369353.9    100.1    3.30
+premx1      64  1048576         68     710.90     710.98   1474993.1    100.3    3.31

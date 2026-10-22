@@ -1,0 +1,64 @@
+# chainseal on a MacBook Air (Apple M4, 10 cores, fanless), 32-byte links, 22 October 2026.
+# The machine was in use during the runs (Spotlight indexing); 'load' lines give the load average before each run.
+load { 5.93 4.81 4.56 }
+# host Darwin arm64, 10 cpus, cpu:Apple M4
+## latency: one chain, steps one after another
+backend         ns/step       best    M steps/s
+armv8-sha2        23.16      23.12         43.2
+portable         162.06     160.12          6.2
+# host Darwin arm64, 10 cpus, cpu:Apple M4
+## throughput: independent chains in parallel (armv8-sha2)
+ threads  lanes      M steps/s       per thread
+       1      1           43.3             43.3
+       1      2           67.3             67.3
+       2      2          132.2             66.1
+       4      2          241.8             60.5
+       6      2          327.2             54.5
+       8      2          410.6             51.3
+      10      2          461.0             46.1   <- all cores
+load { 5.70 4.91 4.61 }
+puzzle: n = 16 chains, m = 1073741824 steps each, b = 32-byte links, 580 bytes
+built in 42.2 s on 10 threads (armv8-sha2), 406.7 M steps/s
+solving takes n*m = 17.2 G steps: 7 min 09 s at 25.0 ns/step (one chain on this machine)
+load { 5.88 5.36 4.81 }
+puzzle: n = 10 chains, m = 1717986918 steps each, b = 32-byte links, 388 bytes
+built in 54.3 s on 10 threads (armv8-sha2), 316.6 M steps/s
+solving takes n*m = 17.2 G steps: 7 min 08 s at 24.9 ns/step (one chain on this machine)
+load { 4.96 8.13 6.43 }
+puzzle: n = 20 chains, m = 858993459 steps each, b = 32-byte links, 708 bytes
+built in 37.8 s on 10 threads (armv8-sha2), 454.9 M steps/s
+solving takes n*m = 17.2 G steps: 6 min 55 s at 24.2 ns/step (one chain on this machine)
+load { 5.46 8.31 7.00 }
+puzzle: n = 32 chains, m = 536870912 steps each, b = 32-byte links, 1092 bytes
+built in 42.9 s on 10 threads (armv8-sha2), 400.6 M steps/s
+solving takes n*m = 17.2 G steps: 7 min 06 s at 24.9 ns/step (one chain on this machine)
+load { 5.70 8.09 7.08 }
+puzzle: n = 64 chains, m = 268435456 steps each, b = 32-byte links, 2116 bytes
+built in 42.5 s on 10 threads (armv8-sha2), 404.5 M steps/s
+solving takes n*m = 17.2 G steps: 6 min 34 s at 22.9 ns/step (one chain on this machine)
+load { 5.10 7.88 7.18 }
+puzzle: n = 16 chains, m = 1073741824 steps each, b = 32-byte links, 580 bytes
+built in 42.1 s on 10 threads (armv8-sha2), 408.2 M steps/s
+solving takes n*m = 17.2 G steps: 7 min 09 s at 25.0 ns/step (one chain on this machine)
+load { 5.71 7.58 7.15 }
+== batch: 5 puzzles (n = 16, m = 2^30) at once, 2 threads each
+built in 3 min 07 s on 2 threads (armv8-sha2), 91.8 M steps/s
+built in 3 min 07 s on 2 threads (armv8-sha2), 91.8 M steps/s
+built in 3 min 06 s on 2 threads (armv8-sha2), 91.9 M steps/s
+built in 3 min 06 s on 2 threads (armv8-sha2), 92.0 M steps/s
+built in 3 min 07 s on 2 threads (armv8-sha2), 91.7 M steps/s
+batch wall 187.633 s
+load { 5.85 10.63 9.18 }
+== 1. Sender builds a puzzle in advance (n = 16, m = 2^30, 32-byte links)
+puzzle: n = 16 chains, m = 1073741824 steps each, b = 32-byte links, 580 bytes
+built in 41.7 s on 10 threads (armv8-sha2), 411.6 M steps/s
+solving takes n*m = 17.2 G steps: 7 min 08 s at 25.0 ns/step (one chain on this machine)
+
+== 2. Sender encrypts the 110-byte transaction under it
+
+== 3. Fast path: the sender reveals the key; anyone checks it and opens
+opened in 12 ms with key 8f421b00e723beaef51465f4639cc867a1dc0e845d785e84f96c1875a4dd11c5
+
+== 4. Slow path: without the key, anyone solves the puzzle
+envelope: solved in 6 min 42 s, 23.44 ns/step
+matches the original

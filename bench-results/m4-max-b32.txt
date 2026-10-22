@@ -1,0 +1,38 @@
+# chainseal on a MacBook Pro (Apple M4 Max, 16 cores), 32-byte links, 22 October 2026.
+load { 2.18 3.58 3.23 }
+# host Darwin arm64, 16 cpus, cpu:Apple M4 Max
+## latency: one chain, steps one after another
+backend         ns/step       best    M steps/s
+armv8-sha2        24.11      24.02         41.5
+portable         170.38     162.16          5.9
+# host Darwin arm64, 16 cpus, cpu:Apple M4 Max
+## throughput: independent chains in parallel (armv8-sha2)
+ threads  lanes      M steps/s       per thread
+       1      1           41.4             41.4
+       1      2           63.9             63.9
+       2      2          122.2             61.1
+       4      2          240.9             60.2
+       6      2          362.2             60.4
+       8      2          483.6             60.4
+      12      2          721.4             60.1
+      16      2          867.0             54.2   <- all cores
+load { 2.23 3.54 3.22 }
+puzzle: n = 16 chains, m = 1073741824 steps each, b = 32-byte links, 580 bytes
+built in 30.1 s on 16 threads (armv8-sha2), 571.2 M steps/s
+solving takes n*m = 17.2 G steps: 6 min 24 s at 22.4 ns/step (one chain on this machine)
+load { 2.18 8.15 6.42 }
+puzzle: n = 32 chains, m = 536870912 steps each, b = 32-byte links, 1092 bytes
+built in 19.8 s on 16 threads (armv8-sha2), 866.7 M steps/s
+solving takes n*m = 17.2 G steps: 6 min 40 s at 23.3 ns/step (one chain on this machine)
+load { 2.28 6.36 6.27 }
+puzzle: n = 24 chains, m = 715827882 steps each, b = 32-byte links, 836 bytes
+built in 23.8 s on 16 threads (armv8-sha2), 721.8 M steps/s
+solving takes n*m = 17.2 G steps: 6 min 39 s at 23.3 ns/step (one chain on this machine)
+load { 2.11 5.02 5.76 }
+puzzle: n = 64 chains, m = 268435456 steps each, b = 32-byte links, 2116 bytes
+built in 19.8 s on 16 threads (armv8-sha2), 865.7 M steps/s
+solving takes n*m = 17.2 G steps: 7 min 11 s at 25.1 ns/step (one chain on this machine)
+load { 2.30 5.70 6.32 }
+puzzle: n = 16 chains, m = 1073741824 steps each, b = 32-byte links, 580 bytes
+built in 30.2 s on 16 threads (armv8-sha2), 568.7 M steps/s
+solving takes n*m = 17.2 G steps: 7 min 18 s at 25.5 ns/step (one chain on this machine)

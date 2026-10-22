@@ -174,18 +174,18 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
     <p class="authors">Vitalik Buterin <span aria-hidden="true">·</span> Quang Dao <span aria-hidden="true">·</span> Justin Drake</p>
     <p class="byline">Code, specification and benchmark logs: <a href="https://github.com/quangvdao/chainseal">github.com/quangvdao/chainseal</a></p>
     <nav class="toc" aria-label="Sections">
-      <a href="#abstract">Abstract</a><a href="#intro">1. Introduction</a><a href="#background">2. Background</a><a href="#construction">3. Construction</a><a href="#security">4. Security</a><a href="#limits">5. Limits of hashes</a><a href="#impl">6. Implementation</a><a href="#params">7. Parameters</a><a href="#knobs">Calculator</a><a href="#ethereum">8. Ethereum</a><a href="#open">9. Open questions</a><a href="#appendix">Appendix</a><a href="#refs">References</a>
+      <a href="#abstract">Abstract</a><a href="#intro">1. Introduction</a><a href="#background">2. Background</a><a href="#construction">3. Construction</a><a href="#security">4. Security</a><a href="#limits">5. Limits of hashes</a><a href="#impl">6. Implementation</a><a href="#params">7. Parameters</a><a href="#knobs">Calculator</a><a href="#ethereum">8. Ethereum</a><a href="#open">9. Open questions</a><a href="#appendix">Appendix A</a><a href="#refs">References</a>
     </nav>
   </header>
 
   <section class="abstract" id="abstract" aria-labelledby="abstract-h">
     <h2 id="abstract-h">Abstract</h2>
-    <p>An encrypted mempool lets block builders order transactions before they can read them, which removes their ability to front-run. Each transaction must then open once it is ordered, without a committee that holds a decryption key and without letting its sender keep it sealed. A time-lock puzzle provides this: the transaction opens by itself after a fixed amount of sequential computation. Efficient time-lock puzzles use repeated squaring in RSA or class groups, which needs a trusted setup or is broken by quantum computers. Puzzles built from a hash function avoid both problems, but the sender must compute as many hashes as the opener, only in parallel, and Mahmoody, Moran and Vadhan showed that this cost is unavoidable. We ask whether it is affordable for sealing a transaction.</p>
-    <p>We present chainseal, a practical instantiation of the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan with SHA-256. The sender computes many hash chains in parallel and links them so that the opener must compute them in sequence. Against an attacker who computes one chained SHA-256 every 3.5 ns, 3.7 times faster than the fastest published design, a one-minute lock costs the sender 2<sup>34</sup> hashes, which took 36.2 s on an Apple M4 laptop (10.2 s for a 15-second lock), and adds 1.1 to 8.1 KiB to the transaction. Puzzles do not depend on the transaction, so a wallet can build them ahead of time. We then use chainseal as a fallback for commit–reveal in Ethereum. Senders normally reveal their keys right after ordering, so no puzzle is ever solved; a sender who withholds its key can then only delay its transaction, not cancel it, as long as its puzzle is well formed.</p>
+    <p>An encrypted mempool lets block builders order transactions before they can read them, which removes their ability to front-run. Each transaction must then open once it is ordered, without a committee that holds a decryption key and without letting its sender keep it sealed. A time-lock puzzle provides this: the transaction opens by itself after a fixed amount of sequential computation. Efficient time-lock puzzles use repeated squaring in RSA or class groups, which needs a trusted setup or is broken by quantum computers. Puzzles built from a hash function avoid both problems, but the sender must compute as many hashes as the opener, only in parallel, and Mahmoody, Moran and Vadhan (CRYPTO 2011) showed that this cost is unavoidable. We ask whether it is affordable for sealing a transaction.</p>
+    <p>We present chainseal, which instantiates the chained-hash puzzle of Mahmoody, Moran and Vadhan with SHA-256: the sender computes several hash chains in parallel and links them so that the opener must compute them in sequence. In the random-oracle model, we prove that opening a puzzle even one round early requires guessing a 24-byte value; against the hash rate of the whole Bitcoin network, the chance is about 2<sup>−116</sup> for a one-minute lock. Turning rounds into seconds requires an assumption about hardware. Against an attacker who computes one chained SHA-256 every 3.5 ns, 3.7 times faster than the fastest published design, a one-minute lock costs the sender 2<sup>34</sup> hashes, 42.1 s on the CPU of an Apple M4 laptop, and adds 512 bytes to the transaction. The puzzle does not depend on the transaction, so this work can be done in advance; at the hash rate we measured on the GPU of a larger laptop (an M4 Max), building thousands of puzzles at once would take 5.8 s each. Finally, we sketch how chainseal could serve as a fallback for commit–reveal in Ethereum: senders would normally reveal their keys after ordering, and a sender who withholds its key could only delay its transaction, not cancel it, as long as its puzzle is well formed.</p>
   </section>
 
   <h2 id="intro">1. Introduction</h2>
-  <p>In an encrypted mempool, block builders order transactions before they can read them, which removes their ability to front-run. (In Ethereum, a slot is the 12-second interval in which one block is proposed.) The hard part is opening the transactions afterwards. A committee can hold a decryption key, but then a majority of the committee must be trusted. The sender can reveal its own key after ordering, but then the sender sees the ordering first and can withhold the key when the ordering does not suit it. A <em>time lock</em> avoids both: the transaction opens by itself once a fixed amount of computation has been done, and nobody can do that computation much faster by buying more machines.</p>
+  <p>In an encrypted mempool, block builders order transactions before they can read them, which removes their ability to front-run. The hard part is opening the transactions afterwards. A committee can hold a decryption key, but then a majority of the committee must be trusted. The sender can reveal its own key after ordering, but then the sender sees the ordering first and can withhold the key when the ordering does not suit it. A <em>time lock</em> avoids both: the transaction opens by itself once a fixed amount of computation has been done, and nobody can do that computation much faster by buying more machines.</p>
   <p>There are two versions of this idea, and they behave very differently when only a hash function is available.</p>
   <div class="split">
     <div class="card">
@@ -194,25 +194,25 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
     </div>
     <div class="card">
       <div class="card-k">Delay encryption</div>
-      <p>Senders encrypt to a public label, such as a slot number. After the slot, one <i>T</i>-second computation on that label yields a key that opens every transaction sent to it. Encryption is cheap and the network solves once per slot.</p>
+      <p>Senders encrypt to a public label, such as a slot number (in Ethereum, a slot is the 12-second interval in which one block is proposed). After the slot, one <i>T</i>-second computation on that label yields a key that opens every transaction sent to it. Encryption is cheap and the network solves once per slot.</p>
     </div>
   </div>
   <p>Time-lock puzzles are known from repeated squaring in RSA or class groups, and newer candidates come from lattices. Delay encryption is known from isogenies. The group and isogeny constructions are broken by quantum computers, and the RSA and isogeny ones need a trusted setup. This note asks what a hash function alone can do. Throughout, the hash is SHA-256.</p>
+  <p>Two observations make a hash-only time lock possible at all. First, the secrecy only needs to be <em>short-lived</em>. The classical barriers say hashes cannot give public-key encryption that stays secure forever against every efficient attacker, but a time lock only has to hold for a minute against an attacker with a fixed hardware budget, and it is meant to open afterwards. Second, the sender and the opener hash in different ways: the sender can hash <em>in parallel</em>, while the opener must hash <em>in sequence</em>. The construction turns the sender's parallel width into the opener's delay.</p>
+
 
   <h3>Summary of results</h3>
   <ol class="results">
-    <li><b>Time-lock puzzles work.</b> A chain of hashes linked as in section 3 gives a per-transaction time lock. Sealing a transaction for one minute against a very fast attacker costs the sender 2<sup>34</sup> SHA-256 hashes, spread over all its cores. That took 36.2 seconds on a laptop, and the transaction grows by 1.1–8.1 KiB. There is no trusted setup and no committee, and known quantum attacks are far too slow to matter.</li>
-    <li><b>The cost cannot be improved.</b> The sender must do as much hashing as the attacker, only in parallel rather than in sequence. For constructions from a random oracle this is optimal up to a constant factor: no proof can promise a delay much longer than the sender's total number of hashes, run one after another (section 5).</li>
+    <li><b>Time-lock puzzles work.</b> A set of hash chains linked as in section 3 gives a per-transaction time lock. Sealing a transaction for one minute against a very fast attacker costs the sender 2<sup>34</sup> SHA-256 hashes, spread over all its cores. That took 42.1 seconds on a laptop, and the sealed transaction is 512 bytes longer. There is no trusted setup and no committee, and known quantum attacks are far too slow to matter.</li>
+    <li><b>The delay is proved, given one hardware number.</b> In the random-oracle model, we prove that an opener recovers the key in fewer sequential rounds than the honest opener only by guessing a 24-byte value or finding a collision. Against the hash rate of the whole Bitcoin network, the chance is about 2<sup>−116</sup> for a one-minute lock and 2<sup>−97</sup> for a one-year lock (section 4). The proof is written out in the specification and has not been checked by machine or by independent reviewers. Turning rounds into seconds needs ℓ, the fastest time in which anyone can compute one chained SHA-256. We state ℓ as an advantage factor <i>A</i> over the fastest published SHA-256 core, 13.0 ns per hash, and price at <i>A</i> ≈ 3.7, that is ℓ = 3.5 ns. A circuit model built from published round analyses and adder delays puts a chip designed for chains at <i>A</i> ≈ 1.3–4.5, but no such chip has been built. If ℓ is misjudged by a factor <i>k</i>, the delay shrinks by <i>k</i> and nothing else breaks. How large <i>A</i> can be is the least certain number in this paper, so section 7 shows the cost of every choice.</li>
+    <li><b>The sender's cost cannot be avoided, but it can be paid early.</b> The sender must compute as many hashes as the attacker computes in sequence, only in parallel. For constructions from a random oracle this is optimal up to a constant factor (section 5). In time, a sender spends about 0.70 seconds of building per second of delay on the laptop's CPU (measured), A GPU helps only when building thousands of puzzles at once, and then mostly on a large one: from measured hash rates, the ratio is 0.4 on the laptop's GPU and 0.097 on an M4 Max GPU. Puzzles do not depend on the transaction, so a wallet can build them while idle and keep a stock (section 7).</li>
     <li><b>Delay encryption is out of reach.</b> Encrypting to a slot so that one computation opens all its transactions is impossible with hashes alone when the setup is cheap. With an expensive setup the question is open. No known method opens puzzles from different senders for less than one full solve each.</li>
-    <li><b>Security rests on SHA-256 and two hardware numbers:</b> the fastest chained SHA-256, ℓ, and the attacker's total hash rate, <i>R</i>. In the random-oracle model, an opener with fewer than <i>N</i> sequential hashes can recover the key only by guessing links, and we state a bound on its chance of doing so, with a proof sketch (section 4). Turning hashes into seconds needs ℓ. If ℓ is misjudged by a factor <i>k</i>, the delay shrinks by <i>k</i> and nothing else breaks; restoring it costs the sender <i>k</i> times more work. We state ℓ as an advantage factor <i>A</i> over the fastest published SHA-256 core, 13.0 ns per hash, and price at <i>A</i> ≈ 3.7, that is ℓ = 3.5 ns. A circuit model built from published round analyses and adder delays puts a chip designed for chains at <i>A</i> ≈ 1.3–4.5, but no such chip has been built. How large <i>A</i> can be is the least certain number in this paper, so section 4 shows the cost of every choice.</li>
     <li><b>The best use is as a fallback.</b> Behind commit–reveal, users normally reveal their keys after ordering, and puzzles are solved only for those who stay silent. If its puzzle is well formed, a user who dislikes the ordering can then delay its transaction but not cancel it (section 8).</li>
     <li><b>An implementation exists.</b> chainseal is a complete, specified format with a Rust implementation, a second implementation in Python, test vectors and benchmarks (section 6).</li>
   </ol>
-  <p>Two observations make a hash-only time lock possible at all. First, the secrecy only needs to be <em>short-lived</em>. The classical barriers say hashes cannot give public-key encryption that stays secure forever against every efficient attacker, but a time lock only has to hold for a minute against an attacker with a fixed hardware budget, and it is meant to open afterwards. Second, the sender and the opener hash in different ways: the sender can hash <em>in parallel</em>, while the opener must hash <em>in sequence</em>. The construction turns the sender's parallel width into the opener's delay.</p>
-
   <h2 id="background">2. Background</h2>
   <h3>Hash chains</h3>
-  <p>A <em>hash chain</em> starts from a value and hashes it <i>m</i> times in a row. Each step needs the previous output, so if the hash has no shortcut and its outputs cannot be guessed, even unlimited hardware needs <i>m</i> steps one after another. A single chain would make a fine lock, except that its builder also needs <i>m</i> sequential steps: a one-minute lock would take the sender a minute on the fastest hardware there is, and much longer on a phone. The construction in section 3 fixes this by building many short chains at the same time and linking them in a fixed order.</p>
+  <p>A <em>hash chain</em> starts from a value and hashes it <i>N</i> times in a row. Each step needs the previous output, so if the hash has no shortcut and its outputs cannot be guessed, even unlimited hardware needs <i>N</i> steps one after another. A single chain would make a fine lock, except that its builder also needs <i>N</i> sequential steps: a one-minute lock would take the sender a minute on the fastest hardware there is, and much longer on a phone. The construction in section 3 fixes this by building many short chains at the same time and linking them in a fixed order.</p>
 
   <h3>Merkle puzzles, and why they do not help</h3>
   <p>The classical hash-based way to keep a secret from an eavesdropper is Merkle's 1974 puzzles. Alice publishes <i>k</i> puzzles, each breakable with about <i>k</i> work. Bob breaks one at random and announces its identifier, and the two share its secret. The eavesdropper does not know which puzzle Bob chose, so she must break about half of them, about <i>k</i><sup>2</sup> work in total.</p>
@@ -261,30 +261,30 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
   <p>Impagliazzo and Rudich (1989) showed that key exchange secure against every efficient eavesdropper cannot be built from a random oracle in a black-box way, and Barak and Mahmoody (2009) that in the random-oracle model Merkle's quadratic gap is the best possible. For a time lock, though, a gap in total work is worth nothing: the eavesdropper's <i>k</i><sup>2</sup> is <i>k</i> separate pieces of work, each as large as Bob's, so on <i>k</i> machines it takes Bob's time. An attacker who can rent hardware and only needs to win a one-minute race does exactly that. What helps is a gap in <em>sequential</em> time, which a chain provides.</p>
 
   <h3>Prior work</h3>
-  <p><b>Theory.</b> Rivest, Shamir and Wagner (1996) introduced time-lock puzzles, based on repeated squaring in an RSA group; Bitansky et al. (2016) built them from randomized encodings. Mahmoody, Moran and Vadhan (2011) studied time-lock puzzles in the random-oracle model, which treats the hash as a random function anyone can query. They gave the chained puzzle of section 3, including a variant that iterates the hash in each link so that the puzzle stays small for a long delay (their section 3.1). They also proved that no puzzle in this model can force more sequential rounds than the sender's total number of hash calls, up to a constant factor. Two neighbouring notions need different things. A proof of sequential work shows that time has passed, but its creator knows no secret answer in advance (Mahmoody, Moran and Vadhan 2013; Cohen and Pietrzak 2018). A verifiable delay function needs a unique output that anyone can check quickly (Boneh et al. 2018), and that is impossible from a random oracle alone (Mahmoody, Smith and Wu 2020; Guan, Riazanov and Yuan 2025; Abusalah et al. 2026). Concrete bounds exist for computing a full-width hash chain with parallel queries, classically and against quantum attackers (Chung et al. 2021; Blocki, Lee and Zhou 2021). They do not cover the short masked links that chainseal relies on.</p>
-  <p><b>Practice.</b> The chained-hash idea has been implemented several times. Gwern Branwen's 2011 essay described it. Dorian Johnson's Go tool (2013) builds SHA-512 chains in parallel, with full 64-byte seeds, each encrypted under the end of the previous chain with AES. Peter Todd's <code>timelock</code> (2014) uses SHA-256 chains, and Todd published a 32-chain puzzle with Bitcoin bounties on its intermediate secrets. Kadupul (Skjegstad, Madhavapeddy and Crowcroft 2014) uses Todd's puzzles to reward packet forwarding. EtherDream's Timelock Online (2024) builds chains in a browser on CPUs and GPUs, with 4-byte seeds and a salt per seed. Its slow hash is PBKDF2-HMAC-SHA-256, and, as in chainseal, its key depends on the end of every chain (section 4). Separately, Solana's Proof of History uses sequential SHA-256 as a clock rather than for encryption (Yakovenko 2018); Shoup (2022) discusses how its elapsed time depends on hardware. None of these states a security bound for short links or measures costs against an explicit attacker model.</p>
-  <p><b>This note.</b> Neither the construction nor its practical use is new. What this note adds is an explicit security claim for short links together with its sensitivity to the hardware numbers (section 4), parameters for sealing transactions with costs measured on current hardware (sections 6 and 7), a specified and tested implementation (section 6), and its use as a fallback for commit–reveal (section 8).</p>
+  <p><b>Theory.</b> Rivest, Shamir and Wagner (1996) introduced time-lock puzzles, based on repeated squaring in an RSA group; Bitansky et al. (2016) built them from randomized encodings. Mahmoody, Moran and Vadhan (2011) studied time-lock puzzles in the random-oracle model, which treats the hash as a random function anyone can query. They gave the chained puzzle of section 3, including a variant that iterates the hash in each link so that the puzzle stays small for a long delay (their section 3.1). They also proved that no puzzle in this model can force more sequential rounds than the sender's total number of hash calls, up to a constant factor. Two neighbouring notions need different things. A proof of sequential work shows that time has passed, but its creator knows no secret answer in advance (Mahmoody, Moran and Vadhan 2013; Cohen and Pietrzak 2018). A verifiable delay function needs a unique output that anyone can check quickly (Boneh et al. 2018), and that is impossible from a random oracle alone (Mahmoody, Smith and Wu 2020; Guan, Riazanov and Yuan 2025; Abusalah et al. 2026). Concrete bounds exist for computing a full-width hash chain with parallel queries, classically and against quantum attackers (Chung et al. 2021; Blocki, Lee and Zhou 2021). They cover a single chain, not several chains linked through masked secrets as in chainseal.</p>
+  <p><b>Practice.</b> The chained-hash idea has been implemented several times. Gwern Branwen's 2011 essay described it. Dorian Johnson's Go tool (2013) builds SHA-512 chains in parallel, with full 64-byte seeds, each encrypted under the end of the previous chain with AES. Peter Todd's <code>timelock</code> (2014) uses SHA-256 chains, and Todd published a 32-chain puzzle with Bitcoin bounties on its intermediate secrets. Kadupul (Skjegstad, Madhavapeddy and Crowcroft 2014) uses Todd's puzzles to reward packet forwarding. EtherDream's Timelock Online (2024) builds chains in a browser on CPUs and GPUs, with 4-byte seeds and a salt per seed. Its slow hash is PBKDF2-HMAC-SHA-256, and, as in chainseal, its key depends on the end of every chain (section 4). Separately, Solana's Proof of History uses sequential SHA-256 as a clock rather than for encryption (Yakovenko 2018); Shoup (2022) discusses how its elapsed time depends on hardware. None of these states a concrete security bound or measures costs against an explicit attacker model.</p>
+  <p><b>This note.</b> Neither the construction nor its practical use is new. What this note adds is a concrete security proof for chainseal's exact encoding together with its sensitivity to the hardware numbers (section 4), parameters for sealing transactions with costs measured on current CPUs and GPUs (sections 6 and 7), a specified and tested implementation (section 6), and its use as a fallback for commit–reveal (section 8).</p>
 
   <h2 id="construction">3. The construction</h2>
   <p>The sender builds <i>n</i> chains of <i>m</i> hashes each, all at once, and links them so that an opener can only run them in order. Its parameters:</p>
   <div class="table-wrap">
     <table>
       <tbody>
-        <tr><td class="sym"><i>n</i></td><td>number of chains</td><td>reference value: 512</td></tr>
-        <tr><td class="sym"><i>m</i></td><td>hashes per chain</td><td>2<sup>25</sup> ≈ 34 million</td></tr>
-        <tr><td class="sym"><i>b</i></td><td>bytes per link, the secret that starts each chain</td><td>12</td></tr>
+        <tr><td class="sym"><i>n</i></td><td>number of chains</td><td>16</td></tr>
+        <tr><td class="sym"><i>m</i></td><td>hashes per chain</td><td>2<sup>30</sup> ≈ 1.1 billion</td></tr>
+        <tr><td class="sym"><i>b</i></td><td>bytes per link, the secret that starts each chain</td><td>32</td></tr>
         <tr><td class="sym"><i>N</i> = <i>n</i>·<i>m</i></td><td>total hashes, which sets the delay</td><td>2<sup>34</sup> ≈ 17 billion</td></tr>
       </tbody>
     </table>
   </div>
-  <p>We call <i>n</i> = 512, <i>m</i> = 2<sup>25</sup>, <i>b</i> = 16 the <em>reference parameters</em>. They give a one-minute delay against an attacker at 3.5 ns per hash.</p>
+  <p>We call <i>n</i> = 16, <i>m</i> = 2<sup>30</sup>, <i>b</i> = 24 the <em>reference parameters</em>. They give a one-minute delay against an attacker at 3.5 ns per hash, with a 452-byte puzzle. Sections 4 and 7 explain the choice: the delay fixes <i>N</i>; 24-byte links are the shortest for which the proved bound stays negligible for any practical delay; and <i>n</i> only trades puzzle size against how many cores one puzzle can use.</p>
 
   <h3>Building the puzzle (the sender)</h3>
   <ol class="steps">
     <li>Pick a random 16-byte salt and <i>n</i> random links <i>x</i><sub>1</sub>, …, <i>x</i><sub>n</sub> of <i>b</i> bytes each.</li>
     <li>For each chain <i>i</i>, start from a hash of the puzzle's parameters and salt, <i>i</i> and <i>x</i><sub>i</sub>, and hash <i>m</i> times. Each step hashes the 32-byte state together with the salt and <i>i</i>. That is still one SHA-256 compression, and it makes every step specific to one chain of one puzzle. Call the end <i>y</i><sub>i</sub>. All <i>n</i> chains run at the same time on different cores.</li>
-    <li>Hide each link under a hash of the end of the previous chain: <i>z</i><sub>i</sub> = (first <i>b</i> bytes of H(<i>y</i><sub>i</sub>)) ⊕ <i>x</i><sub>i+1</sub>, for <i>i</i> = 1, …, <i>n</i> − 1. Hashing the end means that a right guess of <i>x</i><sub>i+1</sub>, which fixes these <i>b</i> bytes, says nothing about <i>y</i><sub>i</sub> itself.</li>
-    <li>Derive the key <i>K</i> by hashing the ends of all chains, <i>y</i><sub>1</sub>, …, <i>y</i><sub>n</sub>, in order, together with the parameters. Because every end goes into the key, a guessed link cannot be checked until the chains before it are done (section 4). Encrypt the transaction under <i>K</i> with authenticated encryption, and publish a commitment <i>C</i>, a 32-byte hash of <i>K</i>, so that anyone can check a claimed key with one hash.</li>
+    <li>Hide each link under a hash of the end of the previous chain: <i>z</i><sub>i</sub> = (first <i>b</i> bytes of H(<i>y</i><sub>i</sub>)) ⊕ <i>x</i><sub>i+1</sub>, for <i>i</i> = 1, …, <i>n</i> − 1. Hashing the end, rather than using it directly, means that learning <i>x</i><sub>i+1</sub> says nothing about <i>y</i><sub>i</sub> itself.</li>
+    <li>Derive the key <i>K</i> by hashing the ends of all chains, <i>y</i><sub>1</sub>, …, <i>y</i><sub>n</sub>, in order, together with the parameters. Because every end goes into the key, an opener cannot leave out a chain even if it somehow learns the link that follows it. Encrypt the transaction under <i>K</i> with authenticated encryption, and publish a commitment <i>C</i>, a 32-byte hash of <i>K</i>, so that anyone can check a claimed key with one hash.</li>
     <li>The puzzle is the parameters, the salt, <i>x</i><sub>1</sub>, the hidden links <i>z</i><sub>1</sub>, …, <i>z</i><sub>n−1</sub>, and <i>C</i>.</li>
   </ol>
   <h3>Opening the puzzle (anyone)</h3>
@@ -330,8 +330,8 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
       <line x1="318" y1="190" x2="838" y2="190" stroke="currentColor"/>
       <line x1="318" y1="186" x2="318" y2="194" stroke="currentColor"/><line x1="838" y1="186" x2="838" y2="194" stroke="currentColor"/>
       <text x="578" y="208" text-anchor="middle" font-size="11">n · m hash steps, no parallelism helps</text>
-      <text x="305" y="242" font-size="11" class="muted">Skipping chain i means guessing xᵢ₊₁: 2^(8b) candidates for a b-byte link.</text>
-      <text x="305" y="258" font-size="11" class="muted">K hashes every end y₁, …, yₙ, so a guess is confirmed only when the chains before it end.</text>
+      <text x="305" y="242" font-size="11" class="muted">Starting chain i + 1 early means guessing xᵢ₊₁: 2^192 candidates for a 24-byte link.</text>
+      <text x="305" y="258" font-size="11" class="muted">K hashes every end y₁, …, yₙ, so no chain can be left out.</text>
     </svg>
     </div>
     <figcaption>Figure 2. The same <i>n</i> chains, arranged two ways in time. The sender knows every link and runs the chains side by side. An opener has to run them one after another, because each chain's starting link is hidden under the end of the previous chain. The puzzle is just the <i>n</i> links, so its size grows with <i>n</i> and not with the delay.</figcaption>
@@ -339,50 +339,51 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
 
   <h3>Why it works</h3>
   <ul>
-    <li><b>Opening is sequential.</b> Chain <i>i</i> + 1 cannot start until its link is known, and that link is hidden by the end of chain <i>i</i>. So opening takes <i>N</i> = <i>n</i>·<i>m</i> hashes one after another, however much hardware the opener has, unless it guesses a link (section 4).</li>
-    <li><b>Building is parallel.</b> The sender knows every link from the start, so it runs all <i>n</i> chains at once. Its wall time is <i>m</i> steps on <i>n</i> cores, or <i>N</i> divided by its total hash rate. There is also one hash to start each chain and two at the end, which is negligible.</li>
+    <li><b>Opening is sequential.</b> Chain <i>i</i> + 1 cannot start until its link is known, and that link is hidden by the end of chain <i>i</i>. So opening takes <i>N</i> = <i>n</i>·<i>m</i> hashes one after another, however much hardware the opener has. Section 4 proves this in the random-oracle model.</li>
+    <li><b>Building is parallel.</b> The sender knows every link from the start, so it runs all <i>n</i> chains at once. With a core for every chain its wall time is <i>m</i> steps; in general it is about <i>N</i> divided by its total hash rate. The few extra hashes per chain, to start it and hide its link, and the two at the end are negligible.</li>
     <li><b>Size and delay are separate.</b> The puzzle consists of the <i>n</i> links, <i>n</i>·<i>b</i> bytes, plus 68 bytes for the parameters, the salt and the commitment. The delay depends on <i>N</i>, so longer chains give a longer delay with the same puzzle size.</li>
   </ul>
   <div class="box">
     <p class="label">Worked example: the reference parameters</p>
-    <p><i>n</i> = 512 chains of <i>m</i> = 2<sup>25</sup> hashes with 16-byte links: 2<sup>34</sup> hashes in total and an 8,260-byte puzzle. An attacker that computes one chained SHA-256 every 3.5 ns needs 60 seconds to open it. Measured on an M4 MacBook Air: building took 36.2 seconds on all 10 cores, and opening took 6.6 minutes on one core. The opened key matched the commitment and decrypted the transaction.</p>
+    <p><i>n</i> = 16 chains of <i>m</i> = 2<sup>30</sup> hashes with 24-byte links: 2<sup>34</sup> hashes in total and a 452-byte puzzle. An attacker that computes one chained SHA-256 every 3.5 ns needs 60 seconds to open it. Measured on an M4 MacBook Air: building took 42.1 seconds on all 10 cores, and opening took 6 min 42 s on one core. The opened key matched the commitment and decrypted the transaction.</p>
   </div>
 
   <h2 id="security">4. Security</h2>
-  <p>Secrecy until the deadline rests on two assumptions about SHA-256 and two about the attacker's hardware. This section states them, gives the delay they imply, explains how we price the one hardware number that matters most, and says what happens if any of the numbers is wrong. It then goes through the attacks one by one.</p>
+  <p>Secrecy until the deadline rests on two assumptions about SHA-256 and two about the attacker's hardware. This section states them, proves the delay in the random-oracle model, explains how we price the one hardware number that the proof cannot supply, and says what happens if any of the numbers is wrong. It then goes through the attacks one by one and ends with the choice of link width.</p>
 
   <h3>What secrecy rests on</h3>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Assumption</th><th>Kind</th><th>If it fails</th></tr></thead>
       <tbody>
-        <tr><td><b>A1. No shortcut.</b> The chain step and the other labelled hashes behave like one random function. In particular, iterating the step has no shortcut, and a chain's end says nothing about the chain's start beyond what the chain itself computes.</td><td>cryptographic; the random-oracle model, applied heuristically to the SHA-256 compression function</td><td>The delay is lost. No choice of parameters repairs it; the hash must be replaced, which the versioned format allows.</td></tr>
+        <tr><td><b>A1. No shortcut.</b> The chain step and the other labelled hashes behave like independent random functions. In particular, iterating the step has no shortcut, and a chain's end says nothing about the chain's start beyond what the chain itself computes.</td><td>cryptographic; the random-oracle model, applied heuristically to the SHA-256 compression function</td><td>The delay is lost. No choice of parameters repairs it; the hash must be replaced, which the versioned format allows.</td></tr>
         <tr><td><b>A2. Speed.</b> During the <i>T</i> seconds that matter, nobody computes one chain step in less than ℓ.</td><td>physical, empirical</td><td>The delay shrinks in proportion; see below.</td></tr>
-        <tr><td><b>A3. Budget.</b> The attacker computes at most <i>R</i> chain steps per second in total, over all its hardware.</td><td>economic</td><td>The chance of an early opening grows in proportion; see below.</td></tr>
+        <tr><td><b>A3. Budget.</b> The attacker computes at most <i>R</i> hashes per second in total, over all its hardware.</td><td>economic</td><td>The bound below grows in proportion, from a starting point so small that no realistic error matters.</td></tr>
         <tr><td><b>A4. Encryption.</b> HMAC-SHA256 is a pseudorandom function.</td><td>cryptographic, standard</td><td>The message can leak even while <i>K</i> is hidden. This has nothing to do with the time lock.</td></tr>
       </tbody>
     </table>
   </div>
 
-  <h3>The delay claim</h3>
+  <h3>The delay theorem</h3>
   <div class="box">
-    <p class="label">Claim (not yet proved)</p>
-    <p>Model the hashes as one random oracle, and write <i>N</i> = <i>n</i> · <i>m</i>. Let an attacker make at most <i>Q</i> oracle calls in total, in sequential rounds that may each contain any number of calls in parallel. Then for every <i>d</i> ≥ 1, the probability that it makes the key-derivation call within <i>N</i> − <i>d</i> rounds is at most about</p>
-    <p style="text-align:center"><i>Q</i> / (min(<i>d</i>, <i>m</i>) · 2<sup>8<i>b</i></sup>) + (<i>Q</i><sup>2</sup> + <i>Q</i> · <i>N</i>) / 2<sup>256</sup>.</p>
-    <p>Every call depends on one puzzle's salt, so the bound also holds when <i>Q</i> counts the calls on many puzzles together, and it then bounds the expected number of puzzles opened early.</p>
+    <p class="label">Theorem (random-oracle model)</p>
+    <p>Model the chain step and the other labelled hashes as independent random oracles, and count time in rounds: in one round an attacker sends any number of queries at once and then receives all their answers. The honest opener obtains <i>K</i> after <i>n</i>(<i>m</i> + 2) + 1 rounds. Let <i>P</i> = <i>n</i>(<i>m</i> + 3) + 1, the number of hashes the honest opener computes. An attacker that receives the puzzle and makes at most <i>Q</i> queries in total outputs <i>K</i> in fewer rounds with probability at most</p>
+    <p style="text-align:center"><i>Q</i> / 2<sup>8<i>b</i></sup> + (3<i>QP</i> + <i>P</i><sup>2</sup> + <i>Q</i> + 1) / 2<sup>256</sup>.</p>
+    <p>The bound counts every query, including any made before the puzzle was published. With 24-byte links the first term, the chance of guessing a link, is the largest; for a one-minute lock the others are smaller by a factor of about 2<sup>28</sup>.</p>
   </div>
-  <p>Assumptions A2 and A3 turn rounds and calls into seconds. Write <i>T</i> = <i>N</i> · ℓ, and let the attacker make <i>Q</i> = <i>R</i> · <i>T</i> calls. Opening a puzzle even one chain early, at (1 − 1/<i>n</i>) · <i>T</i>, then has probability about <i>R</i> · <i>T</i> / (<i>m</i> · 2<sup>8<i>b</i></sup>), the figure in Table 2 below; at <i>n</i> = 512 one chain is 0.12 s of a one-minute delay. The claim gives the same figure for every larger saving, since it charges each guess only one chain (see below). Larger savings are surely harder, but we state no smaller figure for them. Until the key-derivation call is made, <i>K</i> is uniformly random to the attacker, and A4 then keeps the message hidden. The honest opener makes <i>N</i> + 3<i>n</i> + 1 hash calls: the chain steps; a start, a mask and an accumulator hash per chain, less one mask; and two hashes at the end.</p>
-  <p><b>Why the bound should hold.</b> With fewer than <i>N</i> rounds, the attacker cannot run every chain after the previous one, so it must start at least one chain from a link it has not unhidden. Each hidden link is <i>b</i> uniformly random bytes, masked by a hash of the end of a chain the attacker has not finished, so a guess is right with probability 2<sup>−8<i>b</i></sup>, and a right guess reveals part of that hash but nothing about the end itself. The key needs the end of every chain, so a run from a guessed link <i>x</i><sub><i>k</i></sub> leads to the key only together with the ends of chains 1 to <i>k</i> − 1. Once the attacker has those, it also knows the true <i>x</i><sub><i>k</i></sub>, and a right guess saves only the rounds the run has already spent. A guess that saves <i>d</i> rounds has therefore been run blind for <i>d</i> rounds. Runs from different guesses of the same link share no calls in their first chain, since they start from different 256-bit states. Once two runs reach the same later link, though, they need the same calls from then on, and the attacker can make those calls once. So a guessed run that gains <i>a</i> rounds has cost at least min(<i>a</i>, <i>m</i>) calls of its own. An attack can combine several gains, for instance one guessed chain with short prepared starts for every possible value of another link, so this per-run cost does not by itself prove the claim. It is the reason we expect the claim to hold. One right guess lets two parts of the sequence of chains run side by side, which saves at most half of the rounds. Saving more needs further work done ahead, either more right guesses or tables over all 2<sup>8<i>b</i></sup> values of a link, and the claim does not price that work separately. Every other shortcut means predicting a 32-byte oracle output, hitting a state on the honest chain, or finding a collision, which the second term covers.</p>
-  <p><b>Status.</b> If the claim holds, it is tight up to a constant factor for savings of up to one chain, the case Table 2 counts: guessing ahead, below, achieves it. For longer savings it may be loose. The audit built two attackers against 1- and 2-byte links that defeat two sharper formulas. One charged each guess its whole saving <i>d</i>, and fails against an attacker that merges runs reaching the same link (round 7). The other squared the chance for savings over half, and fails against an attacker that prepares short starts for every value of a link (round 8). Mahmoody, Moran and Vadhan prove that this construction with full-length links (their section 3.1) needs about <i>n</i> · <i>m</i> sequential rounds against attackers that make polynomially many calls. Their proof gives no explicit constants, and it does not cover short links, whose guessing term is the one that matters here. A weaker statement is proved for chainseal's exact encoding (SPEC.md section 8), following the soundness argument of Pietrzak and Reyzin for proofs of sequential work: finishing even one round early needs a right guess of some link, with probability at most <i>Q</i> / 2<sup>8<i>b</i></sup> plus terms of order <i>Q</i> · <i>N</i> / 2<sup>256</sup>. It lacks the factor min(<i>d</i>, <i>m</i>), so it grows with the delay: with 16-byte links and <i>R</i> = 10<sup>21</sup> it is about 2<sup>−52</sup> for a one-minute puzzle and 2<sup>−33</sup> for a year. The claim itself is not proved (section 9). The rest of this paper uses the claim as stated.</p>
+  <p><b>Why it holds.</b> Call the 32-byte values the honest opener computes, in order, the <em>honest path</em>: each chain's start value, its <i>m</i> states, its mask and its accumulator value, and then <i>K</i>. Each value on the path is the answer to a query whose input contains the value before it, or, for the start of chain <i>i</i>, the link <i>x</i><sub><i>i</i></sub>, which the puzzle hides under the mask of chain <i>i</i> − 1. An attacker can learn a value on the path before its predecessor in only three ways. It can send an input that contains a path value it has not yet seen, which means guessing 32 bytes. It can receive a path value as the answer to some other query, which is a collision. Or it can start a chain from a link whose mask it has not yet seen, which means guessing the <i>b</i>-byte link. The first two have probability at most (3<i>QP</i> + <i>P</i><sup>2</sup>) / 2<sup>256</sup> together, and the third at most <i>Q</i> / 2<sup>8<i>b</i></sup>. Without them, every value on the path becomes known only in the round after its predecessor, exactly as for the honest opener, and an attacker that outputs <i>K</i> without knowing it is right with probability at most (<i>Q</i> + 1) / 2<sup>256</sup>, counting its tests against <i>C</i>. The argument follows the soundness proof of Pietrzak and Reyzin for proofs of sequential work (their Lemmas 6 and 9), and SPEC.md section 8 writes it out for chainseal's exact encoding. It has not been machine-checked or reviewed by a third party.</p>
+  <p><b>What it means in seconds.</b> Assumptions A2 and A3 turn rounds and queries into time. Write <i>T</i> = <i>n</i> · <i>m</i> · ℓ, and let the attacker make <i>Q</i> = <i>R</i> · <i>T</i> queries. Against <i>R</i> = 10<sup>21</sup> hashes per second, roughly the whole Bitcoin network, the bound is about 2<sup>−116</sup> for a one-minute lock and 2<sup>−97</sup> for a one-year lock. It depends on the number of chains only through <i>P</i> ≈ <i>N</i>, which the delay fixes. It covers every saving, however small: except with this probability, the attacker does not finish even one round before the honest opener. Until then <i>K</i> is uniformly random to the attacker, and A4 keeps the message hidden.</p>
+  <p>The attacker's total hash rate <i>R</i> is easier to price, because the hardware exists. A Bitcoin miner (S21 XP) computes 270 TH/s for about $2.8k, an RTX 5090 GPU 27 GH/s (hashcat), and the Bitcoin network about 10<sup>21</sup> H/s (October 2026). A mining pipeline finishes one double SHA-256 per clock cycle, every 3 ns in a 2013 chip at about 335 MHz (Taylor 2013), but each hash spends many cycles in the pipeline. These machines compute many independent hashes at once and say little about how fast one hash can follow another, so they bound <i>R</i> in A3, not ℓ; we take <i>R</i> = 10<sup>21</sup> H/s.</p>
 
   <h3>Pricing the hardware number</h3>
   <p>A2 is the assumption that most needs physical evidence, and it can be checked against how SHA-256 is computed. One SHA-256 compression is 64 rounds, and each round needs the exact output of the previous one. The new state words are sums of up to five 32-bit terms. Some of them, such as the round constant and the message word, can be added ahead of time, but the next round applies rotations and bitwise functions to the exact bits of the result. So every round must finish at least one 32-bit addition with full carry propagation, plus a few levels of logic. Lee, Chan and Verbauwhede show that this much is also enough: with carry-save adders and retiming, the loop through one round needs one carry-propagate addition, one carry-save layer and the choice function Ch. Pipelining raises throughput but not the latency of one chain, since each step starts from the previous step's output. Unrolling removes the registers between rounds, so the relevant floor is the one for logic alone. So ℓ is roughly 64 times the shortest critical path of one round, measured over many unrolled rounds.</p>
-  <p>The table collects what is known, from measurements to models.</p>
+  <p>We state A2 relative to the fastest published design. Let ℓ<sub>pub</sub> = 13.0 ns, the 7 nm core of Baldanzi et al., and say that an attacker has <em>advantage</em> <i>A</i> if it computes one chained hash in ℓ = ℓ<sub>pub</sub> / <i>A</i>. The table collects what is known, from measurements to models.</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Source</th><th class="num">Time per chained hash</th><th class="num">Per round</th><th class="num">Advantage <i>A</i></th><th>Basis</th></tr></thead>
       <tbody>
-        <tr><td>Apple M4, one core</td><td class="num">23.3 ns</td><td class="num">364 ps</td><td class="num">0.56</td><td><span class="chip ok">measured</span> chainseal benchmark</td></tr>
+        <tr><td>Apple M4, one core</td><td class="num">23.2 ns</td><td class="num">362 ps</td><td class="num">0.56</td><td><span class="chip ok">measured</span> chainseal benchmark</td></tr>
+        <tr><td>Apple M4 Max, one core</td><td class="num">24.1 ns</td><td class="num">377 ps</td><td class="num">0.54</td><td><span class="chip ok">measured</span> chainseal benchmark</td></tr>
         <tr><td>AMD EPYC 9554P (Zen 4), one core of a cloud VM</td><td class="num">37.4 ns</td><td class="num">584 ps</td><td class="num">0.35</td><td><span class="chip ok">measured</span> chainseal benchmark, SHA-NI</td></tr>
         <tr><td>AMD Zen 5, one core</td><td class="num">at least 17 ns</td><td class="num">266 ps</td><td class="num">at most 0.76</td><td><span class="chip est">estimate</span> counts only the SHA round instructions (uops.info); not measured</td></tr>
         <tr><td>Published SHA-256 core, 7 nm synthesis (Baldanzi et al. 2020)</td><td class="num">13.0 ns</td><td class="num">203 ps</td><td class="num">1</td><td><span class="chip est">synthesis</span> 67 cycles at 5.15 GHz, one round per cycle; not a fabricated chip</td></tr>
@@ -392,65 +393,49 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
       </tbody>
     </table>
   </div>
-  <p><b>The assumption as an advantage factor.</b> We state A2 relative to the fastest published design. Let ℓ<sub>pub</sub> = 13.0 ns, the 7 nm core of Baldanzi et al., and say that an attacker has advantage <i>A</i> if it computes one chained hash in ℓ = ℓ<sub>pub</sub> / <i>A</i>. This paper's design point is <i>A</i> ≈ 3.7, that is ℓ = 3.5 ns: 6.7 times faster than the M4 we measured and about 5 times faster than the best case for Zen 5. Some advantage over ℓ<sub>pub</sub> is certain. That core is a general-purpose design, synthesized at one clock cycle per round with a register between rounds, and it makes no use of the fact that the last 20 bytes of a chain step's input are constant. A chip built for chains could unroll rounds, drop most of the registers and precompute the constant part of the message schedule. How large <i>A</i> can get is the weakest point of the analysis. The model row of the table puts numbers on this. Its unit is the FO4, the delay of an inverter driving four copies of itself. It prices the round loop of Lee et al. at 10–17 FO4: 7–12 for a fast 32-bit adder (Harris and Sutherland) and 3–5 that we assume for the carry-save layer and Ch. Predicted FO4 delays for 3–5 nm processes are 4.3–4.7 ps (Nikolić et al.). Then 64 rounds take 64 × 10 × 4.3 ps = 2.75 ns to 64 × 17 × 4.7 ps = 5.11 ns, and with 0.1–0.3 ns for the final addition and startup, 2.85–5.41 ns. Our allowance of 1 to 1.8 times for wires, cell choice and registers gives 2.9–9.7 ns, that is <i>A</i> ≈ 1.3–4.5. As a cross-check, Intel's mining patent describes a state update 13 logic levels deep (Suresh et al.); if each level cost one FO4, which is optimistic, a hash would take 3.6–3.9 ns. A process shrink alone gives only <i>A</i> ≈ 1.3. At 3.5 ns a round has 55 ps, about 12 FO4, so the design point needs a very good custom datapath and sits near the aggressive end of the model. The model's lower end is a conditional estimate, not a physical bound, and no published design that we found comes close to it. Work on verifiable delay functions faced the same question and also answered it with a stated factor: Drake proposed <i>A</i><sub>max</sub> = 10 as a conservative parameter for RSA-based VDFs, hoping that public ASICs would bring it to about 5. Here <i>A</i> = 10 means ℓ = 1.3 ns, about 4.5 FO4 per round, outside the model but not ruled out. Section 9 lists a careful estimate as the most important open question. We do not claim that 3.5 ns is a lower bound: the claim above holds for whatever ℓ the reader believes, and Table 1 shows what each choice costs the sender.</p>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th class="num">Advantage <i>A</i></th><th class="num">ℓ</th><th class="num">Hashes <i>N</i></th><th class="num">Chain length <i>m</i></th><th class="num">Build, M4 laptop</th><th class="num">Open, one M4 core</th><th class="num">Chance of saving one chain</th></tr></thead>
-      <tbody>
-        <tr><td class="num">1</td><td class="num">13.0 ns</td><td class="num">2<sup>32.1</sup></td><td class="num">2<sup>23.1</sup></td><td class="num">10 s</td><td class="num">1.8 min</td><td class="num">2.0 × 10⁻²³</td></tr>
-        <tr><td class="num">2</td><td class="num">6.5 ns</td><td class="num">2<sup>33.1</sup></td><td class="num">2<sup>24.1</sup></td><td class="num">20 s</td><td class="num">3.6 min</td><td class="num">9.8 × 10⁻²⁴</td></tr>
-        <tr><td class="num"><b>3.7</b></td><td class="num"><b>3.5 ns</b></td><td class="num"><b>2<sup>34</sup></b></td><td class="num"><b>2<sup>25</sup></b></td><td class="num"><b>36.2 s</b></td><td class="num"><b>6.6 min</b></td><td class="num"><b>5.3 × 10⁻²⁴</b></td></tr>
-        <tr><td class="num">4.5</td><td class="num">2.9 ns</td><td class="num">2<sup>34.3</sup></td><td class="num">2<sup>25.3</sup></td><td class="num">46 s</td><td class="num">8.1 min</td><td class="num">4.4 × 10⁻²⁴</td></tr>
-        <tr><td class="num">10</td><td class="num">1.3 ns</td><td class="num">2<sup>35.4</sup></td><td class="num">2<sup>26.4</sup></td><td class="num">100 s</td><td class="num">18 min</td><td class="num">2.0 × 10⁻²⁴</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <p class="note">Table 1. A one-minute delay against an attacker with advantage <i>A</i> over the fastest published SHA-256 core, with <i>n</i> = 512 chains and 16-byte links. <i>A</i> = 1.3 and 4.5 are the ends of the circuit model, and <i>A</i> = 10 is the VDF precedent. Only the bold row was measured; the other build times scale its measured time linearly in <i>N</i>. The puzzle is 8,260 bytes in every row. The last column is the chance, per puzzle, that a 10²¹ H/s fleet opens it one chain early by guessing (Table 2). A faster assumed attacker means longer chains, so guessing does slightly worse. Shorter delays scale every time in the table down in proportion (section 7).</p>
-  <p>For throughput, the hardware that exists tells a different story. A Bitcoin miner (S21 XP) computes 270 TH/s for about $2.8k, an RTX 5090 GPU 27 GH/s (hashcat), and the Bitcoin network about 10<sup>21</sup> H/s (October 2026). A mining pipeline finishes one double SHA-256 per clock cycle, every 3 ns in a 2013 chip at about 335 MHz (Taylor 2013), but each hash spends many cycles in the pipeline. These machines compute many independent hashes at once and say little about how fast one hash can follow another, so they bound <i>R</i> in A3, not ℓ.</p>
-
+  <p>This paper's design point is <i>A</i> ≈ 3.7, that is ℓ = 3.5 ns: 6.6 times faster than the M4 we measured and about 5 times faster than the best case for Zen 5. Some advantage over ℓ<sub>pub</sub> is certain. That core is a general-purpose design, synthesized at one clock cycle per round with a register between rounds, and it makes no use of the fact that the last 20 bytes of a chain step's input are constant. A chip built for chains could unroll rounds, drop most of the registers and precompute the constant part of the message schedule.</p>
+  <p>The model row of the table puts numbers on this. Its unit is the FO4, the delay of an inverter driving four copies of itself. It prices the round loop of Lee et al. at 10–17 FO4: 7–12 for a fast 32-bit adder (Harris and Sutherland) and 3–5 that we assume for the carry-save layer and Ch. Predicted FO4 delays for 3–5 nm processes are 4.3–4.7 ps (Nikolić et al.). Then 64 rounds take 64 × 10 × 4.3 ps = 2.75 ns to 64 × 17 × 4.7 ps = 5.11 ns, and with 0.1–0.3 ns for the final addition and startup, 2.85–5.41 ns. Our allowance of 1 to 1.8 times for wires, cell choice and registers gives 2.9–9.7 ns, that is <i>A</i> ≈ 1.3–4.5. As a cross-check, Intel's mining patent describes a state update 13 logic levels deep (Suresh et al.); if each level cost one FO4, which is optimistic, a hash would take 3.6–3.9 ns. A process shrink alone gives only <i>A</i> ≈ 1.3. At 3.5 ns a round has 55 ps, about 12 FO4, so the design point needs a very good custom datapath and sits near the aggressive end of the model. The model's lower end is a conditional estimate, not a physical bound, and no published design that we found comes close to it.</p>
+  <p>Work on verifiable delay functions faced the same question and also answered it with a stated factor: Drake proposed <i>A</i><sub>max</sub> = 10 as a conservative parameter for RSA-based VDFs, hoping that public ASICs would bring it to about 5. Here <i>A</i> = 10 means ℓ = 1.3 ns, about 4.5 FO4 per round, outside the model but not ruled out. Section 9 lists a careful estimate as the most important open question. We do not claim that 3.5 ns is a lower bound: the theorem holds whatever ℓ the reader believes, and Table 2 in section 7 shows what each choice costs the sender.</p>
   <h3>If the numbers are wrong</h3>
-  <p>Only A1 fails abruptly. The two hardware numbers fail gradually, and the parameters can absorb an error in either.</p>
+  <p>Only A1 fails abruptly. The hardware numbers fail gradually, and the parameters can absorb an error in either.</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Number</th><th>Assumed</th><th>If the attacker is <i>k</i> times stronger</th><th>Cost of restoring the margin</th></tr></thead>
       <tbody>
         <tr><td>Speed ℓ</td><td>3.5 ns</td><td>A one-minute puzzle opens after 60/<i>k</i> s: 50 s at 2.9 ns (<i>A</i> = 4.5, the fast end of the circuit model), 22 s at 1.3 ns (<i>A</i> = 10).</td><td><i>k</i> times more sender work; same puzzle size</td></tr>
-        <tr><td>Budget <i>R</i></td><td>10<sup>18</sup>–10<sup>21</sup> H/s</td><td>The early-opening chance grows <i>k</i>-fold.</td><td>one more link byte per factor of 256, that is <i>n</i> more bytes; or fewer, longer chains, which cost the sender wall time</td></tr>
+        <tr><td>Budget <i>R</i></td><td>10<sup>21</sup> H/s</td><td>The bound of the theorem grows <i>k</i>-fold: from 2<sup>−116</sup> for one minute, it stays below 2<sup>−64</sup> unless <i>k</i> exceeds 2<sup>52</sup>.</td><td>none needed; 32-byte links add 128 bytes and about 29 bits</td></tr>
         <tr><td>Honest speeds</td><td>measured</td><td>A slower sender or solver takes longer to build or open. This costs time and money, never secrecy.</td><td>none needed for secrecy</td></tr>
-        <tr><td>Start of the clock</td><td>publication</td><td>Any time between publication and the moment the ordering is final eats into the delay.</td><td>a longer <i>T</i></td></tr>
+        <tr><td>Start of the clock</td><td>publication</td><td>Any time between publication and the moment the ordering can no longer change eats into the delay.</td><td>a longer <i>T</i></td></tr>
         <tr><td>A1</td><td>no shortcut</td><td>A shortcut for iterated SHA-256 removes the delay.</td><td>a different hash</td></tr>
       </tbody>
     </table>
   </div>
-  <p>In every row, the chance of an early opening is the chance of saving at least one chain, 1/<i>n</i> of <i>T</i>; saving more than half of <i>T</i> needs more work done ahead and is harder still. The secrecy is also short-lived, which limits the damage of any mistake. A sealed transaction becomes public <i>T</i> seconds after it is sent, so only hardware that exists during that window matters, and there is nothing to gain by attacking old puzzles later. A faster chip next year shortens next year's delays, not this year's. As with key lengths, ℓ and <i>R</i> should be repriced as hardware improves.</p>
+  <p>So among the hardware numbers, only ℓ matters at this scale: the delay is exactly as good as its estimate. The secrecy is also short-lived, which limits the damage of any mistake. A sealed transaction becomes public <i>T</i> seconds after it is sent, so only hardware that exists during that window matters, and there is nothing to gain by attacking old puzzles later. A faster chip next year shortens next year's delays, not this year's. As with key lengths, ℓ should be repriced as hardware improves.</p>
 
-  <h3>Opening early</h3>
+  <h3>Attacks</h3>
   <ul class="attacks">
-    <li><b>Guess ahead.</b> The attacker can guess a hidden link <i>x</i><sub><i>k</i></sub> and run chains <i>k</i>, <i>k</i> + 1, … from the guess while its own chains 1 to <i>k</i> − 1 are still running. The key needs the end of every chain, so the guess cannot be checked against the commitment <i>C</i>. It is confirmed only when the attacker's own chains reach link <i>k</i> and reveal <i>x</i><sub><i>k</i></sub>, and a right guess then saves the time it has already run. Each guess is right with probability 2<sup>−8b</sup> and costs at least one chain of hashes, or its saving if that is less than a chain, and the claim above is that saving <i>d</i> rounds, by this or any other attack, succeeds with probability at most about <i>Q</i> / (min(<i>d</i>, <i>m</i>) · 2<sup>8<i>b</i></sup>). Runs from different guesses can reach the same later link and then share the rest of their hashes, so a guess that runs several chains can cost less than the rounds it saves. Sharing grows with the number of guesses and with the number of chains each run covers, but it never reaches a run's first chain, which is all the claim charges. Savings of less than a chain are likelier but worth less; Table 2 counts the saving of one whole chain, from guesses that each run one chain. Guesses are independent, so this attack parallelizes perfectly, and it is what sets the link width. Both choices of section 3 are needed for this. Had the key been derived from the last chain's end alone, a guess of <i>x</i><sub>n</sub> could be checked against <i>C</i> after one chain: the same chance would then open the puzzle after <i>T</i> / <i>n</i> instead of saving <i>T</i> / <i>n</i>. Had the mask been the raw end, a right guess of a 32-byte link would give away the whole previous end, and the chain that produced it could be skipped.</li>
+    <li><b>Guess a link.</b> An attacker can guess a hidden link <i>x</i><sub><i>k</i></sub> and run chains <i>k</i>, <i>k</i> + 1, … from the guess while its own chains 1 to <i>k</i> − 1 are still running. This is the attack behind the first term of the theorem. With 24-byte links each guess is right with probability 2<sup>−192</sup>. Two choices of section 3 also limit what a right guess would buy, which would matter only for shorter links (Appendix A). Because the key needs the end of every chain, a guess cannot be checked against the commitment <i>C</i> until the attacker's own chains reach link <i>k</i>; had the key been derived from the last chain's end alone, a guess of <i>x</i><sub><i>n</i></sub> could be checked after one chain, and a right guess would open the puzzle after <i>T</i> / <i>n</i>. Because the mask is a hash of the previous end rather than the end itself, a right guess of a link reveals nothing about the chain before it.</li>
+    <li><b>Guess the key.</b> A guess of the 32-byte key is checked against <i>C</i> with one hash and is right with chance 2<sup>−256</sup>.</li>
+    <li><b>Precompute.</b> Every puzzle draws a fresh random salt, and every hash on the honest path depends on it together with a fresh link or a 32-byte value computed from one. So work done before a puzzle is published, or on another puzzle, is of no use, except with the negligible probability the theorem already counts. Once a puzzle is public, an attacker could compute chain segments for it from states of its choice, hoping the honest chain passes through one. That is the 3<i>QP</i> / 2<sup>256</sup> term.</li>
+    <li><b>Use a quantum computer.</b> Quantum search needs a way to recognize the right link. A candidate for <i>x</i><sub><i>k</i></sub> can be recognized only by running chain <i>k</i> and the chains after it to the key, and only once the chains before <i>k</i> are done. With 24-byte links, each of the roughly 2<sup>96</sup> search steps then costs at least one whole chain in sequence, far more than running the chains honestly. The idealized construction is proved secure against quantum openers (Afshar et al. 2023); chainseal's encoding has not been analyzed separately.</li>
+    <li><b>Get the puzzle early.</b> The attacker's clock starts when the puzzle is published. A sender who builds puzzles in advance must keep them private until use.</li>
+    <li><b>Lie about the key, or replace the message.</b> A claimed key is checked against <i>C</i> with one hash, and authenticated decryption then checks the transaction, so a wrong key is rejected at once. Once the key is known, though, anyone can seal a different transaction under the same puzzle, so the ordering must bind the whole sealed transaction (section 8). Nothing checks in advance that a puzzle is well formed; see spam in section 8.</li>
   </ul>
+
+  <h3>Link width</h3>
+  <p>The first term of the theorem, <i>Q</i> / 2<sup>8<i>b</i></sup>, is the chance of guessing a link, and it is the only place where the link width enters. Shorter links make the puzzle smaller, but they weaken the bound, and more so for longer delays:</p>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Link width</th><th class="num">Fleet of 10¹⁸ H/s: chance per puzzle</th><th class="num">Puzzles opened early per year</th><th class="num">Fleet of 10²¹ H/s: chance per puzzle</th><th class="num">Per year</th><th>Verdict</th></tr></thead>
+      <thead><tr><th>Link width</th><th class="num">Puzzle, <i>n</i> = 16</th><th class="num">One minute</th><th class="num">One hour</th><th class="num">One year</th></tr></thead>
       <tbody>
-        <tr><td>6 bytes</td><td class="num">6.4 × 10⁻³</td><td class="num">3,300</td><td class="num">near 1: about 6 chains saved</td><td class="num">3.3 × 10⁶</td><td><span class="chip bad">too small</span></td></tr>
-        <tr><td>8 bytes</td><td class="num">9.7 × 10⁻⁸</td><td class="num">0.05</td><td class="num">9.7 × 10⁻⁵</td><td class="num">51</td><td><span class="chip bad">too small</span></td></tr>
-        <tr><td>10 bytes</td><td class="num">1.5 × 10⁻¹²</td><td class="num">7.8 × 10⁻⁷</td><td class="num">1.5 × 10⁻⁹</td><td class="num">7.8 × 10⁻⁴</td><td><span class="chip warn">not negligible</span></td></tr>
-        <tr><td>12 bytes</td><td class="num">2.3 × 10⁻¹⁷</td><td class="num">1.2 × 10⁻¹¹</td><td class="num">2.3 × 10⁻¹⁴</td><td class="num">1.2 × 10⁻⁸</td><td><span class="chip warn">about 2<sup>−45</sup></span></td></tr>
-        <tr><td>14 bytes</td><td class="num">3.4 × 10⁻²²</td><td class="num">1.8 × 10⁻¹⁶</td><td class="num">3.4 × 10⁻¹⁹</td><td class="num">1.8 × 10⁻¹³</td><td><span class="chip ok">about 2<sup>−61</sup></span></td></tr>
-        <tr><td>16 bytes</td><td class="num">5.3 × 10⁻²⁷</td><td class="num">2.8 × 10⁻²¹</td><td class="num">5.3 × 10⁻²⁴</td><td class="num">2.8 × 10⁻¹⁸</td><td><span class="chip ok">recommended, about 2<sup>−77</sup></span></td></tr>
+        <tr><td>16 bytes</td><td class="num">324 B</td><td class="num">2<sup>−52</sup></td><td class="num">2<sup>−46</sup></td><td class="num">2<sup>−33</sup></td></tr>
+        <tr><td><b>24 bytes</b></td><td class="num"><b>452 B</b></td><td class="num"><b>2<sup>−116</sup></b></td><td class="num"><b>2<sup>−110</sup></b></td><td class="num"><b>2<sup>−97</sup></b></td></tr>
+        <tr><td>32 bytes</td><td class="num">580 B</td><td class="num">2<sup>−145</sup></td><td class="num">2<sup>−133</sup></td><td class="num">2<sup>−107</sup></td></tr>
       </tbody>
     </table>
   </div>
-  <p class="note">Table 2. Guessing ahead against a one-minute puzzle with <i>m</i> = 2<sup>25</sup>: the chance of opening it at least one chain early, 0.12 s at <i>n</i> = 512. Opening by more than half the delay needs more work done ahead and is harder still; we give no separate figure for it. A fleet here is any hardware that computes <i>R</i> chain steps per second with at most <i>T</i> / <i>m</i> ≈ 1.8 µs per step, since a guessed chain can start as soon as the puzzle is published and only has to end before the attacker's own chains reach it. The ratio <i>T</i> / <i>m</i> = <i>n</i> · ℓ does not depend on the delay. GPUs at about 1 µs per step would qualify, and 10¹⁸ H/s of them is about 37 million RTX 5090s. Mining chips are hard-wired to block headers and cannot run chains, but a chip like them could be built for chains. For scale, 10¹⁸ hashes per second of today's mining machines costs about $10M, but mining machines cannot run chains, and 10²¹ is roughly the whole Bitcoin network. "Per year" assumes the fleet attacks nonstop and always has puzzles to attack. In general, to keep this attack's chance below 2<sup>−λ</sup> per puzzle against a fleet of <i>R</i> hashes per second, take 8<i>b</i> ≥ log<sub>2</sub>(<i>R</i> · <i>T</i> / <i>m</i>) + λ bits. Against 10²¹ H/s with λ = 64 that is 115 bits, so at least 15 bytes; 16 bytes leave a margin. If the claim above holds, no strategy does much better than this one; for short links it is not yet proved (section 9).</p>
-  <p>An early opening is a bounded harm, not a break. A puzzle opened one chain early is open 0.12 s before its minute is up, and the claim bounds every larger saving by the same chance. So even if every successful guess gave away the whole delay, the expected time lost per puzzle would be at most the chance times <i>T</i>: about 3.5 × 10⁻²² s with 16-byte links against 10²¹ H/s, against 1.4 × 10⁻¹² s with 12-byte links. With 16 bytes the guessing term is cryptographically small, so the remaining uncertainty in the delay is the attacker's speed ℓ, not guessing. Each extra byte costs <i>n</i> bytes of puzzle, 512 bytes at the reference parameters.</p>
-  <ul class="attacks">
-    <li><b>Guess the key.</b> A guess of the 32-byte key is checked against <i>C</i> with one hash and is right with chance 2<sup>−256</sup>.</li>
-    <li><b>Precompute.</b> Every puzzle draws a fresh random salt, and every step depends on it, so chains computed for one puzzle are of no use for another, except with negligible probability. Once a puzzle is public, an attacker could compute chain segments for it from states of its choice, hoping the honest chain passes through one. This is the <i>Q</i> · <i>N</i> / 2<sup>256</sup> term of the claim.</li>
-    <li><b>Use a quantum computer.</b> Quantum search needs a way to recognize the right link. A candidate for <i>x</i><sub><i>k</i></sub> can be recognized only by running chain <i>k</i> and the chains after it to the key, and only once the chains before <i>k</i> are done. Each of the roughly 2<sup>4b</sup> search steps then costs at least one whole chain in sequence, far more than running the chains honestly, and many quantum computers in parallel cut the number of steps only by the square root of their number. The idealized construction is proved secure against quantum openers (Afshar et al. 2023); the variant with short links has not been analyzed separately.</li>
-    <li><b>Get the puzzle early.</b> The attacker's clock starts when the puzzle is published. A sender who builds puzzles in advance must keep them private until use.</li>
-    <li><b>Lie about the key, or replace the message.</b> A claimed key is checked against <i>C</i> with one hash, and authenticated decryption then checks the transaction, so a wrong key is rejected at once. Once the key is known, though, anyone can seal a different transaction under the same puzzle. Whatever orders the transactions must therefore commit to the whole sealed transaction, for example by its hash, before the key comes out. Nothing checks in advance that a puzzle is well formed; see spam in section 8.</li>
-  </ul>
-
+  <p class="note">Table 1. The bound of the theorem against 10<sup>21</sup> hashes per second for the whole delay, with ℓ = 3.5 ns. With 24- and 32-byte links the guessing term is negligible even for long delays; with 16-byte links it is not.</p>
+  <p>We use 24-byte links, the shortest for which the bound stays negligible for any practical delay. With 32-byte links the guessing term falls below the other terms, so the link width drops out of the bound. That adds about 29 bits of margin for a one-minute lock and 10 for a one-year lock, at a cost of 128 bytes per puzzle, 17% of a sealed transfer. It does not protect against underestimating the attacker: both terms grow in proportion to <i>Q</i>, so an attacker <i>k</i> times stronger than assumed costs the same log<sub>2</sub> <i>k</i> bits with either width. This note relies only on the theorem. Appendix A discusses a sharper bound for 16-byte links, which we do not use.</p>
   <h2 id="limits">5. What hashes can and cannot do</h2>
   <p>The impossibility results below are proved in the random-oracle model: the hash is a random function that anyone can call, many times in parallel, and delay is counted in rounds of calls. Turning rounds into seconds takes the hardware assumption of section 4. Items marked as not proved or not analyzed are not theorems.</p>
 
@@ -464,6 +449,7 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
         <li>One puzzle covering many transactions from the same sender.</li>
         <li>Building outsourced to <i>k</i> services: each builds a puzzle and returns it with its key, and the sender encrypts under a hash of all <i>k</i> keys. The key stays secret if any one service is honest, the delay is unchanged, and size and opening work grow <i>k</i>-fold. Any one service can still spoil the result by sending a bad puzzle. Not analyzed formally.</li>
         <li>Commit–reveal in which withholding the key delays a transaction with a well-formed puzzle but cannot cancel it.</li>
+        <li>Open: whether a puzzle smaller than about <i>g</i> · <i>b</i> bytes exists for a sender working <i>g</i> ways in parallel (section 9).</li>
       </ul>
     </div>
     <div class="card no">
@@ -471,7 +457,6 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
       <ul>
         <li>A provable delay longer than the sender's total hashing, run one hash after another.</li>
         <li>Delay encryption: senders encrypt cheaply to a slot, and one computation opens all of it (proved when the setup is cheap).</li>
-        <li>A small puzzle for a highly parallel sender (believed, not proved).</li>
       </ul>
     </div>
   </div>
@@ -483,7 +468,7 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
 
   <h3>Delay encryption is out of reach</h3>
   <p>Suppose a public setup costs <i>S</i> hash calls, after which senders can encrypt to slot 1234 with <i>E</i> hash calls, while computing the slot's key takes <i>T</i> seconds of sequential work. Then running the setup and encrypting a random message is itself a time-lock puzzle that costs <i>S</i> + <i>E</i> hash calls to build. By the result above, its message can be recovered in about <i>S</i> + <i>E</i> rounds. If the setup is cheap, the delay is limited by the cost of one encryption, which is the opposite of what delay encryption promises.</p>
-  <p>This argument does not settle the case of a long setup that itself uses the hash: then <i>S</i> + <i>E</i> is large and the bound says nothing useful. If, in addition, each slot has only one key that passes a quick public check, computing it is a verifiable delay function, and those are impossible from hashes alone even with an expensive private setup (Mahmoody, Smith and Wu 2020; Guan, Riazanov and Yuan 2024; Abusalah et al. 2025).</p>
+  <p>This argument does not settle the case of a long setup that itself uses the hash: then <i>S</i> + <i>E</i> is large and the bound says nothing useful. If, in addition, each slot has only one key that passes a quick public check, computing it is a verifiable delay function, and those are impossible from hashes alone even with an expensive private setup (Mahmoody, Smith and Wu 2020; Guan, Riazanov and Yuan 2025; Abusalah et al. 2026).</p>
 
   <h3>Batching and puzzle size</h3>
   <p>Independent puzzles share nothing, so solving one teaches nothing about another, and no method is known that opens several for less than a full sequential solve each. A sender can still put many transactions under one key and one puzzle. The version that would help a mempool, where unrelated senders encrypt privately to a common slot without knowing its key, is delay encryption, covered above.</p>
@@ -508,7 +493,7 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
   </div>
 
   <h2 id="impl">6. Implementation and measurements</h2>
-  <p>chainseal implements section 3 as a complete, versioned format. A sender builds puzzles in advance and, when a transaction is ready, encrypts it under one. Anyone can then open the result in one of two ways: with the key, if the sender reveals it, or by solving the puzzle. A solve saves its progress every 10 seconds, so it can be stopped and resumed, and several puzzles can be solved at once, one per core. The code is about 4,000 lines of Rust, whose only dependencies are <code>getrandom</code> for the operating system's random numbers and <code>signal-hook</code> for stopping a solve cleanly. It has been run on macOS on an Apple M4 and on Linux on an AMD EPYC 9554P, and continuous integration builds and tests it on Linux for x86-64 and AArch64 and on macOS.</p>
+  <p>chainseal implements section 3 as a complete, versioned format. A sender builds puzzles in advance and, when a transaction is ready, encrypts it under one. Anyone can then open the result in one of two ways: with the key, if the sender reveals it, or by solving the puzzle. A solve saves its progress every 10 seconds, so it can be stopped and resumed, and several puzzles can be solved at once, one per core. The code is about 4,000 lines of Rust, whose only dependencies are <code>getrandom</code> for the operating system's random numbers and <code>signal-hook</code> for stopping a solve cleanly. It has been run on macOS on Apple M4 and M4 Max laptops and on Linux on an AMD EPYC 9554P, and continuous integration builds and tests it on Linux for x86-64 and AArch64 and on macOS. A separate program of about 560 lines measures the chain step on Apple GPUs with Metal.</p>
   <p>Encryption uses only SHA-256. The key gives an HMAC-SHA256 keystream, and a 32-byte HMAC tag covers the whole sealed transaction, so whoever lacks the key cannot change the puzzle or the ciphertext without the change being detected when the transaction is opened. A sealed transaction of <i>L</i> bytes takes 128 + <i>n</i>·<i>b</i> + <i>L</i> bytes:</p>
   <div class="table-wrap">
     <table>
@@ -532,38 +517,39 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
     <li><b>A written specification</b> fixes every byte of every format, with test vectors: 7 valid cases and 51 malformed inputs that an implementation must reject.</li>
     <li><b>A second implementation</b>, in Python, shares no code with the Rust one; it uses Python's own SHA-256 and HMAC and its own parsers. The two agree on every test vector, and each opens the other's sealed messages.</li>
     <li><b>Tests.</b> Known answers for SHA-256 and HMAC, every SHA-256 backend against plain SHA-256, round trips over many parameter sets, and end-to-end tests of the command-line tool, including interrupting and resuming a solve. A property test feeds every decoder 480,000 mutated encodings, and cargo-fuzz ran each decoder for two minutes under AddressSanitizer, about 108 million inputs in all; neither found a fault. The only <code>unsafe</code> code is in the two hardware backends.</li>
-    <li><b>Guessing ahead</b> by one chain (section 4), run at toy sizes with 1-byte links and a budget of a quarter of all values: it saved a chain on 4,958 of 20,000 puzzles, against 5,000 ± 61 expected.</li>
-    <li><b>A security audit</b> of the code and the specification by an AI model, GPT-6 Astra. It ran in nine rounds, each checking the fixes for the previous one. The first four found 10 blockers, 3 major findings, 12 minor ones and a nit, and the fifth found nothing new. Rounds 6 to 9 checked the change that derives the key from every chain end. They found that the raw mask leaked the previous end and a bug in resuming a finished solve, both fixed. They also built attackers against 1- and 2-byte links that broke two sharper versions of the guessing bound, which section 4 no longer claims. The ninth round found no blocker or major finding. The reports and the fixes are in the repository. The audit covered an earlier C implementation; the Rust one that replaced it reproduces its test vectors and command-line behaviour and was reviewed against it.</li>
+    <li><b>A security audit</b> of the code and the specification by an AI model, GPT-6 Astra. It ran in nine rounds, each checking the fixes for the previous one. The first four found 10 blockers, 3 major findings, 12 minor ones and a nit, and the fifth found nothing new. Rounds 6 to 9 checked the derivation of the key from every chain end. They found that the raw mask leaked the previous end and a bug in resuming a finished solve, both fixed. They also built attackers against 1- and 2-byte links that defeat two sharper versions of the guessing bound (Appendix A); the main text uses only the proved theorem. The ninth round found no blocker or major finding. The reports and the fixes are in the repository. The audit covered an earlier C implementation; the Rust one that replaced it reproduces its test vectors and command-line behaviour and was reviewed against it.</li>
   </ul>
-  <p class="note">Limits of this evaluation. No human cryptographer has reviewed the code or the format. The x86 version, which uses the SHA-NI instructions, was built, tested and timed on one x86 machine, a 4-core AMD EPYC 9554P cloud VM. All other timings are from an Apple M4 laptop. The <i>n</i> = 64 and shorter-delay builds were timed with 12-byte links; the link width adds only <i>n</i> mask hashes, so it does not change the build time.</p>
+  <p class="note">Limits of this evaluation. No human cryptographer has reviewed the code or the format. The x86 version, which uses the SHA-NI instructions, was built, tested and timed on one x86 machine, a 4-core AMD EPYC 9554P cloud VM. All other timings are from two Apple laptops. The GPU figures come from a separate benchmark program, not from the chainseal tool, which does not yet build puzzles on a GPU.</p>
 
   <h3>Measurements</h3>
-  <p>All measurements except the portable row use the ARMv8 SHA-256 instructions. Building runs two chains interleaved on each of the 10 cores; opening runs one chain on one core. The machine is a fanless MacBook Air M4 with 4 performance and 6 efficiency cores.</p>
+  <p>The two machines are a fanless MacBook Air with an Apple M4 (4 performance and 6 efficiency cores, a 10-core GPU) and a MacBook Pro with an Apple M4 Max (12 performance and 4 efficiency cores, a 40-core GPU). All CPU measurements except the portable row use the ARMv8 SHA-256 instructions. They were taken with 32-byte links. The link width changes only the size of the puzzle, since every chain step hashes a full 32-byte state: with 24-byte links, the reference puzzle built in 30.0 s on the M4 Max, against 30.1 s with 32-byte links. Building runs two chains interleaved on each core when there are more chains than cores, and one chain per core otherwise; opening runs one chain on one core. The M4 Air was in use during its CPU runs, with background file indexing, so its build times are somewhat pessimistic. The GPU benchmark runs one chain per GPU thread with the chain step written in Metal, and checks its results against Python's SHA-256 before it reports a rate.</p>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Measured on the M4 MacBook Air</th><th class="num">Result</th></tr></thead>
+      <thead><tr><th>Measured</th><th class="num">M4 Air</th><th class="num">M4 Max</th></tr></thead>
       <tbody>
-        <tr><td>One step of a hash chain, one core (median of 5 runs)</td><td class="num">23.3 ns</td></tr>
-        <tr><td>The same in portable Rust, without the SHA-256 instructions</td><td class="num">150 ns</td></tr>
-        <tr><td>Total hash rate, 10 cores, independent chains</td><td class="num">480 million/s</td></tr>
-        <tr><td>How much faster the sender builds a puzzle than one core opens it, for <i>n</i> ≥ 16</td><td class="num">9.4–11.2×</td></tr>
-        <tr><td>Reference puzzle: <i>n</i> = 512, <i>m</i> = 2<sup>25</sup>, 16-byte links (8,260 B)</td><td class="num">built in 36.2 s, opened in 6 min 37 s</td></tr>
-        <tr><td>Laptop-sized puzzle: <i>n</i> = 64, <i>m</i> = 2<sup>28</sup>, 16-byte links (1,092 B)</td><td class="num">built in 42.1 s</td></tr>
-        <tr><td>The 110-byte example transaction of EIP-155, sealed under the reference puzzle</td><td class="num">8,430 B; opened with the key in 11 ms</td></tr>
+        <tr><td>One step of a hash chain, one CPU core (median of 5 runs)</td><td class="num">23.2 ns</td><td class="num">24.1 ns</td></tr>
+        <tr><td>The same in portable Rust, without the SHA-256 instructions</td><td class="num">162 ns</td><td class="num">170 ns</td></tr>
+        <tr><td>Total hash rate of the CPU, independent chains</td><td class="num">461 M/s</td><td class="num">867 M/s</td></tr>
+        <tr><td>Total hash rate of the GPU, 262,144 chains or more</td><td class="num">0.71 G/s</td><td class="num">2.96 G/s</td></tr>
+        <tr><td>One step of a lone chain on the GPU</td><td class="num">5.1 µs</td><td class="num">5.3 µs</td></tr>
+        <tr><td>Reference puzzle (<i>n</i> = 16, <i>m</i> = 2<sup>30</sup>, 452 B), built on the CPU</td><td class="num">42.1 s</td><td class="num">30.1 s</td></tr>
+        <tr><td>The same puzzle, opened without the key on one core</td><td class="num">6 min 42 s</td><td class="num">–</td></tr>
+        <tr><td>The 110-byte example transaction of EIP-155, sealed under it (622 B), opened with the key</td><td class="num">12.0 ms</td><td class="num">–</td></tr>
       </tbody>
     </table>
   </div>
+  <p>The M4 Max GPU ran at 3.06 G/s for its first 30 s of continuous work and then settled near 2.88 G/s; the table gives its average over 70 s. The M4 Air figures come from 3-second runs, so they do not show whether its fanless GPU slows down over a minute.</p>
 
-  <h2 id="params">7. Choosing parameters</h2>
-  <p>Four formulas describe the scheme. Write ℓ for the attacker's time per chained hash.</p>
+  <h2 id="params">7. Choosing parameters, and paying for them</h2>
+  <p>Four formulas describe the scheme. Write ℓ for the attacker's time per chained hash and <i>R</i><sub>s</sub> for the sender's total hash rate.</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Quantity</th><th>Formula</th><th>Reference parameters</th></tr></thead>
       <tbody>
         <tr><td>Delay</td><td><i>T</i> = <i>N</i> · ℓ</td><td>2<sup>34</sup> × 3.5 ns = 60 s</td></tr>
-        <tr><td>Building time</td><td><i>N</i> ÷ (sender's total hash rate), once <i>n</i> is several times the number of chains the sender can run at once</td><td>2<sup>34</sup> ÷ 480 M/s = 36 s on the M4; measured 36.2 s</td></tr>
-        <tr><td>Puzzle size</td><td><i>n</i> · <i>b</i> + 68 bytes</td><td>512 × 16 + 68 = 8,260 B</td></tr>
-        <tr><td>Honest opening time</td><td><i>N</i> × (opener's own time per hash)</td><td>2<sup>34</sup> × 23.3 ns = 6.7 min on one M4 core</td></tr>
+        <tr><td>Building time</td><td><i>N</i> / <i>R</i><sub>s</sub>, if the sender runs all its chains at once</td><td>2<sup>34</sup> / 461 M/s = 37 s on the laptop's CPU; measured 42.1 s</td></tr>
+        <tr><td>Puzzle size</td><td><i>n</i> · <i>b</i> + 68 bytes</td><td>16 × 24 + 68 = 452 B</td></tr>
+        <tr><td>Honest opening time</td><td><i>N</i> × (opener's own time per hash)</td><td>2<sup>34</sup> × 23.2 ns = 6.6 min on one M4 core; measured 6 min 42 s</td></tr>
       </tbody>
     </table>
   </div>
@@ -573,40 +559,55 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
       <thead><tr><th>Knob</th><th>What it controls</th><th>What it costs</th><th>Suggested value</th></tr></thead>
       <tbody>
         <tr><td>Delay <i>T</i></td><td>how long the transaction stays sealed</td><td>sender work grows in proportion</td><td>12–60 s</td></tr>
-        <tr><td>Attacker speed ℓ</td><td>the security assumption</td><td>assuming a faster attacker means more work for the same delay</td><td>3.5 ns is aggressive, 10 ns conservative</td></tr>
-        <tr><td>Chains <i>n</i></td><td>how much the sender can parallelize</td><td>puzzle size grows in proportion; for a fixed delay, chains get shorter, so each guess that saves a chain is cheaper and the chance of saving one grows in proportion to <i>n</i></td><td>match the sender: 64 to 512 on the M4; thousands for a GPU or chip</td></tr>
-        <tr><td>Link width <i>b</i></td><td>resistance to guessing (section 4)</td><td>puzzle size grows in proportion</td><td>16 bytes (at least 15 for 2<sup>−64</sup> against a 10²¹ H/s fleet)</td></tr>
+        <tr><td>Attacker speed ℓ</td><td>the security assumption</td><td>assuming a faster attacker means more work for the same delay</td><td>3.5 ns is aggressive, 13 ns the fastest published design</td></tr>
+        <tr><td>Link width <i>b</i></td><td>the guessing term of the theorem (Table 1)</td><td><i>n</i> bytes of puzzle per byte of link</td><td>24 bytes; 32 for about 29 more bits</td></tr>
+        <tr><td>Chains <i>n</i></td><td>how many cores one puzzle can use</td><td>24 bytes of puzzle per chain; no effect on security</td><td>16</td></tr>
         <tr><td>Chain length <i>m</i></td><td colspan="3">not a free choice: <i>m</i> = <i>N</i> / <i>n</i></td></tr>
       </tbody>
     </table>
   </div>
-  <p>Three settings for a one-minute delay against a 3.5 ns attacker:</p>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Sender</th><th class="num"><i>n</i></th><th class="num"><i>m</i></th><th class="num"><i>b</i></th><th class="num">Puzzle</th><th class="num">Build time</th></tr></thead>
-      <tbody>
-        <tr><td>Laptop or desktop CPU, <i>n</i> = 64</td><td class="num">64</td><td class="num">2²⁸</td><td class="num">16</td><td class="num">1,092 B</td><td class="num">42.1 s (M4, measured)</td></tr>
-        <tr><td>CPU, <i>n</i> = 512 (the reference parameters)</td><td class="num">512</td><td class="num">2²⁵</td><td class="num">16</td><td class="num">8.1 KiB</td><td class="num">36.2 s (M4, measured); about 12 s or more on a 16-core desktop (est.)</td></tr>
-        <tr><td>Dedicated chip or GPU</td><td class="num">8,192</td><td class="num">2²¹</td><td class="num">16</td><td class="num">128 KiB</td><td class="num">15–100 ms on a hypothetical chain chip, about 2 s on a GPU (both est.)</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <p>On the 10-core laptop, 512 chains build about 15% faster than 64 (36.2 s against 42.1 s), at 7.6 times the size. The reference parameters use 512 so that a sender with several times more parallel lanes, such as a 16-core desktop, is not limited by the number of chains, and because 16-byte links against a 60-second delay then leave the guessing margin of Table 2. A sender should pick <i>n</i> for its own hardware. Larger <i>n</i> also makes each chain shorter, which makes saving one chain by guessing proportionally cheaper; Table 2 assumes <i>m</i> = 2<sup>25</sup>.</p>
-  <p>A shorter delay is often enough, since a transaction only has to stay sealed until the block that orders it is final. Halving the delay halves the total work <i>N</i>, the chain length, the building time and the honest opening time, and leaves the puzzle size unchanged. It also leaves the chance of opening early by guessing unchanged for fixed <i>n</i> and <i>b</i>: the attacker has half the time, but each guess costs half as many hashes. Against the same 3.5 ns attacker:</p>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th class="num">Delay</th><th class="num"><i>N</i></th><th class="num"><i>m</i> at <i>n</i> = 64</th><th class="num">Build, <i>n</i> = 64</th><th class="num"><i>m</i> at <i>n</i> = 512</th><th class="num">Build, <i>n</i> = 512</th><th class="num">Opening, one M4 core</th></tr></thead>
-      <tbody>
-        <tr><td class="num">60 s</td><td class="num">2³⁴</td><td class="num">2²⁸</td><td class="num">42.1 s</td><td class="num">2²⁵</td><td class="num">36.2 s</td><td class="num">6.6 min</td></tr>
-        <tr><td class="num">30 s</td><td class="num">2³³</td><td class="num">2²⁷</td><td class="num">23.9 s</td><td class="num">2²⁴</td><td class="num">20.4 s</td><td class="num">3.3 min</td></tr>
-        <tr><td class="num">15 s</td><td class="num">2³²</td><td class="num">2²⁶</td><td class="num">11.6 s</td><td class="num">2²³</td><td class="num">10.2 s</td><td class="num">1.7 min</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <p>The puzzles are 1,092 B at <i>n</i> = 64 and 8.1 KiB at <i>n</i> = 512 in every row, with 16-byte links. All build times were measured on the M4 laptop; the 30 s and 15 s runs had a busier machine (about 420 M steps/s against 464), so on an idle one they take about half and a quarter of the 60 s times. The calculator below has presets for all three delays.</p>
 
+  <h3>Where the building time comes from</h3>
+  <p>A sender spends <i>N</i> / <i>R</i><sub>s</sub> = <i>T</i> / (ℓ · <i>R</i><sub>s</sub>) seconds building a <i>T</i>-second lock, so the cost is best stated as a ratio: 1/(ℓ · <i>R</i><sub>s</sub>) seconds of building per second of delay. It is the product of two factors. The assumed attacker computes one chained hash 6.6 times faster than one of the laptop's cores (3.5 ns against 23.2 ns), and the laptop as a whole hashes 10.6 times faster than one core running one chain (461 M/s against 43.3 M/s); 6.6 / 10.6 ≈ 0.62. The measured ratio, 0.70, is a little higher, because building one puzzle does not keep every core at its best rate to the end. The number of hashes cannot be reduced (section 5), so only these two factors can change: the attacker's assumed advantage, and the sender's total hash rate. Neither needs to change much for the scheme to be usable, because the building time is not spent while the transaction waits.</p>
+  <ul>
+    <li><b>Build in advance.</b> A puzzle does not depend on the transaction it will seal, so a wallet can keep a stock of puzzles and build more while the machine is idle or charging. The building time is then a cost per transaction, not a delay. On the laptop's CPU, all cores running for a day would build about 2,100 one-minute puzzles; most users send far fewer transactions.</li>
+    <li><b>Build in bulk on a GPU.</b> A GPU has no SHA-256 instructions, but it has many more lanes. On the laptop, Metal computes 0.71 billion chained hashes per second, 1.5 times the CPU, which brings the ratio to 0.4 and the cost of a one-minute puzzle to 24 s. On the M4 Max, the GPU computes 2.96 billion per second, 3.4 times its CPU, or 5.8 s per puzzle. A lone chain on the GPU takes 5.1 µs per step, more than 200 times slower than one CPU core, so the GPU reaches these rates only with about 65,536 chains in flight, that is, thousands of 16-chain puzzles built at once. It suits building a stock, not one puzzle on demand. For the same reason, a GPU does not help an attacker, who needs one fast chain.</li>
+    <li><b>Use more hardware.</b> The M4 Max laptop, with 16 cores, built a reference puzzle on its CPU in 30.1 s. A sender without capable hardware can outsource building to several services and combine their keys (section 5).</li>
+    <li><b>Lock for less time, or assume a slower attacker.</b> Building time is proportional to the delay, and a transaction only needs to stay sealed until its place in the order can no longer change; if that happens when its block is proposed, one 12-second slot suffices. Halving the delay halves the total work <i>N</i>, the building time and the honest opening time, leaves the puzzle size unchanged and barely changes the bound of the theorem: against the same 3.5 ns attacker, a 30-second lock takes about 21 s to build on the laptop's CPU and a 15-second lock about 11 s. Assuming a slower attacker has the same effect. Table 2 shows the cost of a one-minute lock for every assumed advantage <i>A</i>: at <i>A</i> = 1, the fastest published design, it takes 11 s on the laptop's CPU.</li>
+  </ul>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th class="num">Advantage <i>A</i></th><th class="num">ℓ</th><th class="num">Hashes <i>N</i></th><th class="num">Chain length <i>m</i></th><th class="num">Build, laptop CPU</th><th class="num">Build, laptop GPU</th><th class="num">Open, one M4 core</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td class="num">13.0 ns</td><td class="num">2<sup>32.1</sup></td><td class="num">2<sup>28.1</sup></td><td class="num">11 s</td><td class="num">6.5 s</td><td class="num">1.8 min</td></tr>
+        <tr><td class="num">2</td><td class="num">6.5 ns</td><td class="num">2<sup>33.1</sup></td><td class="num">2<sup>29.1</sup></td><td class="num">23 s</td><td class="num">13.0 s</td><td class="num">3.6 min</td></tr>
+        <tr><td class="num"><b>3.7</b></td><td class="num"><b>3.5 ns</b></td><td class="num"><b>2<sup>34</sup></b></td><td class="num"><b>2<sup>30</sup></b></td><td class="num"><b>42.1 s</b></td><td class="num"><b>24 s</b></td><td class="num"><b>6.7 min</b></td></tr>
+        <tr><td class="num">4.5</td><td class="num">2.9 ns</td><td class="num">2<sup>34.3</sup></td><td class="num">2<sup>30.3</sup></td><td class="num">51 s</td><td class="num">29 s</td><td class="num">8.0 min</td></tr>
+        <tr><td class="num">10</td><td class="num">1.3 ns</td><td class="num">2<sup>35.4</sup></td><td class="num">2<sup>31.4</sup></td><td class="num">113 s</td><td class="num">65 s</td><td class="num">17.8 min</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Table 2. A one-minute delay against an attacker with advantage <i>A</i> over the fastest published SHA-256 core, with the reference parameters <i>n</i> = 16 and 24-byte links; the puzzle is 452 bytes in every row. <i>A</i> = 4.5 is the fast end of the circuit model of section 4 (its slow end, 1.3, is close to <i>A</i> = 1), and <i>A</i> = 10 is the VDF precedent. The laptop is the M4 MacBook Air of section 6. Only the bold row's CPU build and opening were measured; the other times scale them linearly in <i>N</i>. The GPU column is the time per puzzle when many puzzles are built at once, from the GPU's measured hash rate (section 6). Opening times are computed from the measured time per hash; the measured opening of the bold row took 6 min 42 s.</p>
+
+
+  <h3>Choosing the number of chains</h3>
+  <p>The number of chains does not affect security: the theorem depends on <i>n</i> only through <i>P</i> ≈ <i>N</i>. It sets the size, 24 bytes per chain, and how many cores can work on one puzzle at once. One puzzle can never be built faster than one chain, <i>m</i> steps on one core, so <i>n</i> must be at least the number of chains the sender can run at once for one puzzle to use all of the sender's hardware. On the laptop's CPU, each core runs two chains interleaved at about 1.5 times the rate of one; with fewer than two chains per core, the builder runs one chain per core instead.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th class="num">Chains <i>n</i></th><th class="num">Puzzle</th><th class="num">Build, M4 Air (10 cores)</th><th class="num">Build, M4 Max (16 cores)</th></tr></thead>
+      <tbody>
+        <tr><td class="num">10</td><td class="num">308 B</td><td class="num">54.3 s</td><td class="num">–</td></tr>
+        <tr><td class="num"><b>16</b></td><td class="num"><b>452 B</b></td><td class="num"><b>42.1 s</b></td><td class="num"><b>30.1 s</b></td></tr>
+        <tr><td class="num">20</td><td class="num">548 B</td><td class="num">37.8 s</td><td class="num">–</td></tr>
+        <tr><td class="num">24</td><td class="num">644 B</td><td class="num">–</td><td class="num">23.8 s</td></tr>
+        <tr><td class="num">32</td><td class="num">836 B</td><td class="num">42.9 s</td><td class="num">19.8 s</td></tr>
+        <tr><td class="num">64</td><td class="num">1,604 B</td><td class="num">42.5 s</td><td class="num">19.8 s</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Table 3. Building one one-minute puzzle (<i>N</i> = 2<sup>34</sup>) with all CPU cores; sizes are for 24-byte links, times were measured with 32-byte links (section 6). The M4 Max is fastest from about two chains per core, 1.5 times faster than with <i>n</i> = 16. The M4 Air, which is fanless and was indexing files during these runs, took 38 to 43 s for every <i>n</i> from 16 up, so heat and other work mattered more there than <i>n</i>. Fewer chains than cores leaves cores idle (<i>n</i> = 10). A sender that builds several puzzles at once uses all its cores whatever <i>n</i> is: five 16-chain puzzles built together on the M4 Air took 37.5 s each. So <i>n</i> need not be tuned to the machine. We use 16, which also covers phones, with 6 to 8 cores.</p>
     <h3 id="knobs">Calculator</h3>
-  <p>Set the delay, the attacker's speed, the number of chains and the link width. The calculator shows the chain length, the puzzle size, how long each kind of sender takes to build it, how long honest openers take, and the chance that a guessing attacker opens it early. Only the M4 figures are calibrated by measurement; everything else is an estimate.</p>
+  <p>Set the delay, the attacker's speed, the number of chains and the link width. The calculator shows the chain length, the puzzle size, the bound of section 4, how long each kind of sender takes to build one puzzle or many, and how long honest openers take. Only the Apple figures are calibrated by measurement; everything else is an estimate.</p>
   <div class="calc wide" id="calc">
     <div class="controls">
       <div class="ctl">
@@ -618,43 +619,41 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
       <div class="ctl">
         <label for="inL">Attacker time per sequential SHA-256</label>
         <select id="inL">
-          <option value="3.5" selected>3.5 ns: very fast custom chip (assumed)</option>
-          <option value="6">6 ns: aggressive custom ASIC</option>
-          <option value="10">10 ns: conservative custom ASIC</option>
+          <option value="1.3">1.3 ns: A = 10, the VDF precedent</option>
+          <option value="2.9">2.9 ns: A = 4.5, fast end of the circuit model</option>
+          <option value="3.5" selected>3.5 ns: A = 3.7, the design point</option>
+          <option value="6.5">6.5 ns: A = 2</option>
+          <option value="13">13 ns: A = 1, fastest published core</option>
           <option value="17">17 ns: Zen 5, round instructions only</option>
-          <option value="23.3">23.3 ns: M4, measured</option>
+          <option value="23.2">23.2 ns: M4, measured</option>
           <option value="37.4">37.4 ns: EPYC 9554P (Zen 4), measured</option>
         </select>
         <span class="hint">sets the total work N = delay / latency</span>
       </div>
       <div class="ctl">
-        <label for="inN">Number of chains n = 2^<output id="outNlog">9</output></label>
-        <input type="range" id="inN" min="2" max="18" step="1" value="9">
-        <span class="hint">more chains: senders that run more chains at once build faster; the puzzle grows</span>
+        <label for="inN">Number of chains n = 2^<output id="outNlog">4</output></label>
+        <input type="range" id="inN" min="1" max="14" step="1" value="4">
+        <span class="hint">more chains: one puzzle can use more cores; the puzzle grows</span>
       </div>
       <div class="ctl">
         <label for="inB">Link width b</label>
         <select id="inB">
-          <option value="4">4 bytes</option>
-          <option value="6">6 bytes</option>
-          <option value="8">8 bytes</option>
-          <option value="10">10 bytes</option>
-          <option value="11">11 bytes</option>
           <option value="12">12 bytes</option>
-          <option value="14">14 bytes</option>
-          <option value="16" selected>16 bytes (recommended)</option>
+          <option value="16">16 bytes</option>
           <option value="20">20 bytes</option>
+          <option value="24" selected>24 bytes (recommended)</option>
+          <option value="32">32 bytes</option>
         </select>
-        <span class="hint">sets the guessing margin; chainseal supports up to 32</span>
+        <span class="hint">sets the guessing term of the bound; chainseal supports 1 to 32</span>
       </div>
       <div class="ctl">
-        <label for="inR">Attacker's guessing fleet</label>
+        <label for="inR">Attacker's total hash rate</label>
         <select id="inR">
-          <option value="1e15">10¹⁵ H/s</option>
-          <option value="1e18" selected>10¹⁸ H/s</option>
-          <option value="1e21">10²¹ H/s: about the Bitcoin network</option>
+          <option value="1e18">10¹⁸ H/s</option>
+          <option value="1e21" selected>10²¹ H/s: about the Bitcoin network</option>
+          <option value="1e24">10²⁴ H/s</option>
         </select>
-        <span class="hint">hardware that runs whole chains at this rate; none exists</span>
+        <span class="hint">all hashes the attacker computes during the delay</span>
       </div>
     </div>
 
@@ -662,14 +661,14 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
       <div class="stat"><div class="k">Total hashes N</div><div class="v" id="sN">–</div><div class="s" id="sN2"></div></div>
       <div class="stat"><div class="k">Steps per chain m</div><div class="v" id="sM">–</div><div class="s" id="sM2"></div></div>
       <div class="stat"><div class="k">Puzzle size</div><div class="v" id="sS">–</div><div class="s">n·b + 68 B (parameters, salt, commitment)</div></div>
-      <div class="stat"><div class="k">Early-opening chance</div><div class="v" id="sA">–</div><div class="s" id="sA2">per puzzle, of opening one chain early by guessing</div></div>
-      <div class="stat"><div class="k">Early openings per year</div><div class="v" id="sY">–</div><div class="s">expected, if the fleet always has puzzles to attack</div></div>
+      <div class="stat"><div class="k">Chance of opening early</div><div class="v" id="sA">–</div><div class="s">the bound of section 4, per puzzle</div></div>
+      <div class="stat"><div class="k">Building per second of delay</div><div class="v" id="sY">–</div><div class="s">M4 Air CPU, one puzzle at a time</div></div>
     </div>
 
     <h3>Building time, by device</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Sender's device</th><th class="num">Chains at once</th><th class="num">Achieved rate</th><th class="num">Wall time</th><th class="num">Energy at rated power</th><th>Basis</th></tr></thead>
+        <thead><tr><th>Sender's device</th><th class="num">Chains at once</th><th class="num">One puzzle</th><th class="num">Per puzzle, many at once</th><th class="num">Energy per puzzle</th><th>Basis</th></tr></thead>
         <tbody id="devRows"></tbody>
       </table>
     </div>
@@ -677,7 +676,7 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
     <figure>
       <svg id="chart" viewBox="0 0 760 300" role="img" aria-label="Encryption wall time against the number of chains for each device, on log scales."></svg>
       <div class="legend" id="legend"></div>
-      <figcaption>Building time against the number of chains, from an idealized model: the device runs up to a fixed number of chains at once, and each step costs the longer of its single-chain latency and its share of total throughput. Past the point where a line goes flat, more chains only make the puzzle bigger. Only the M4 line is calibrated; it is within about 10% of the measured build times. The vertical line marks the current n.</figcaption>
+      <figcaption>Building time for one puzzle against the number of chains, from an idealized model: the device runs up to a fixed number of chains at once, and each step costs the longer of its single-chain latency and its share of total throughput. Past the point where a line goes flat, more chains only make the puzzle bigger. A device whose line is still falling at the current n builds faster per puzzle by building many puzzles at once, as in the table. Only the Apple lines are calibrated by measurement. The vertical line marks the current n.</figcaption>
     </figure>
 
     <h3>Opening the puzzle</h3>
@@ -732,43 +731,35 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
   </figure>
   <ul>
     <li><b>Commit–reveal with a fallback.</b> The user sends the encrypted transaction, the puzzle and the commitment <i>C</i>. After ordering, the user reveals <i>K</i>, and nodes check H(<i>K</i>) = <i>C</i>. The ordering must commit to the whole sealed transaction, not just to <i>C</i>: once <i>K</i> is known, anyone can seal a different transaction under the same puzzle. Solving is needed only for users who stay silent, and a deposit can charge them for it. A deposit that is forfeited when a solve fails also deters cancelling with a malformed puzzle. Execution rules must say what a transaction opened late may still do.</li>
-    <li><b>Opening silent users' puzzles needs dedicated hardware.</b> To open within about <i>T</i>, solvers need chips as fast as the attacker the delay is priced against. On laptops, a one-minute puzzle takes about 6.6 minutes. Either the network runs solver chips, or late-opened transactions execute in a later slot.</li>
-    <li><b>Solving cost.</b> If every transaction in a 12-second slot of 200 had to be opened by solvers, with one-minute puzzles, that would keep about 1,000 attacker-speed chain circuits busy at all times, or about 6,700 M4 cores. In the normal case almost none are needed, since users reveal their keys.</li>
-    <li><b>Bandwidth.</b> A signed ETH transfer is about 110 bytes. Sealed under a laptop puzzle (<i>n</i> = 64) it takes 1,262 bytes, about 11× more, and under the reference puzzle (<i>n</i> = 512) it takes 8,430 bytes, about 77× more. These sizes include the encryption's own 60 bytes.</li>
-    <li><b>Energy and phones.</b> One puzzle took 36.2 s at an estimated 20 W on the laptop, about 0.2 Wh. That is 1% of a 20 Wh phone battery if a phone were as efficient; no phone was measured. Puzzles do not depend on the transaction, so a wallet can build a stock while charging and spend one per transaction. Phones can also outsource building to several services, as in section 5.</li>
+    <li><b>Opening silent users' puzzles needs dedicated hardware.</b> To open within about <i>T</i>, solvers need chips as fast as the attacker the delay is priced against. On a laptop, a one-minute puzzle takes about 6.7 minutes. Either the network runs solver chips, or late-opened transactions execute in a later slot.</li>
+    <li><b>Solving cost.</b> If every transaction in a 12-second slot, about 270 in the blocks we sampled, had to be opened by solvers, with one-minute puzzles, that would keep about 1,350 attacker-speed chain circuits busy at all times, or about 8,900 M4 cores. In the normal case almost none are needed, since users reveal their keys.</li>
+    <li><b>Bandwidth.</b> Sealing adds 128 + <i>n</i> · <i>b</i> bytes to a transaction, 512 bytes with the reference parameters: the 452-byte puzzle and 60 bytes for the encryption. A signed ETH transfer is about 110 bytes, so sealed it takes 622 bytes, about 5.7 times more. Most transactions are larger than a transfer: in 20 consecutive mainnet blocks sampled on 22 October 2026, the median transaction was 183 bytes and the mean about 560, so sealing makes the median transaction about 3.8 times larger and the mean about twice as large.</li>
+    <li><b>Gas and block space.</b> Sent as calldata, the added bytes are nearly all random and so pay the price of nonzero bytes: 16 gas each, or 40 under the floor of EIP-7623 that applies to transactions carrying mostly data. That is about 8,200–20,500 gas, against 21,000 for a plain transfer. At the base fee of about 0.34 gwei in the sample and an ETH price of $2,400, that is under 2 cents. EIP-7976, proposed for the Glamsterdam upgrade, would raise the floor to 64 gas per byte, about 33,000 gas. A contract should not store the puzzle: storage costs over 20,000 gas per 32-byte word, about 320,000 gas for 512 bytes. It needs to keep only the 32-byte hash of the sealed transaction, which binds the ordering to it, and the puzzle only has to stay available until it is opened. The sampled blocks held about 271 transactions and used 27 million gas each, so sealing every transaction would add about 2.2 million gas per block, a twelfth of current use. A blob carries about 127 KB at a separate and usually much lower price, enough for about 250 puzzles, and is kept for about 18 days, far longer than any puzzle needs.</li>
+    <li><b>Energy and phones.</b> One puzzle took 42.1 s on the laptop's CPU at an estimated 20 W, about 0.23 Wh. That would be about 1% of a 20 Wh phone battery if a phone were as efficient; no phone was measured. Current phones have 6 to 8 CPU cores, most of them efficiency cores, and all have SHA-256 instructions. A wallet can build its stock of puzzles while charging (section 7), or outsource building to several services (section 5).</li>
     <li><b>Spam.</b> The bare construction gives no way to check, before solving, that a puzzle leads to its committed key, so a malformed puzzle is found only after a full solve. A proof system or a trusted builder could check it, at extra cost. Fees and deposits must be collectable without the key, and the number of open puzzles per sender should be capped.</li>
     <li><b>Related designs.</b> Threshold-encrypted mempools release keys from a committee: Shutter's keypers, Ferveo (Bebel and Ojha 2022) and FairBlock (Momeni, Gorbunov and Zhang 2022), with batched schemes that keep unselected transactions private (Choudhuri et al. 2024); Passerat-Palmbach (2026) surveys them. Radius's PVDE (2022) seals each transaction under an RSA time-lock puzzle with a zero-knowledge proof that the puzzle is well formed, and multiparty delay encryption (Khajehpour et al. 2023) opens a whole batch with one timed computation. Buterin proposed time-locked transactions as an alternative to commit–reveal in 2018, and later contrasted costly per-transaction time locks with delay encryption (2023, 2024). Voluntary opening backed by forced opening is the pattern of timed commitments (Boneh and Naor 2000). chainseal plays the role of PVDE's puzzle with a hash in place of RSA: it needs no setup and no committee, at the price of more work for the sender and a puzzle that cannot be checked in advance.</li>
   </ul>
 
   <h2 id="open">9. Open questions</h2>
-  <p>For per-transaction time locks, no new construction is needed: the chained puzzle is optimal up to a constant factor among random-oracle constructions, the parameters are workable, and an implementation exists. What is missing is analysis, measurements on more hardware, and the network design. For delay encryption, new ideas are needed, and they must go beyond hashes, at least when the setup is cheap. The open work, roughly in order of importance:</p>
+  <p>For per-transaction time locks, no new construction is needed: the chained puzzle is optimal up to a constant factor among random-oracle constructions, its delay is proved in the random-oracle model (though the proof has not been checked by machine or by independent reviewers), the parameters are workable, and an implementation exists. What is missing is a better estimate of the attacker's hardware, measurements on more hardware, and the network design. For delay encryption, new ideas are needed, and they must go beyond hashes, at least when the setup is cheap. The open work, roughly in order of importance:</p>
   <ol class="open">
     <li><b>How fast can chained SHA-256 be?</b> Every parameter is priced against this. A careful circuit-level estimate, ideally from chip designers, would turn the advantage factor <i>A</i> ≈ 3.7, that is 3.5 ns, into a defensible number. An alternative is a hash whose sequential speed differs less between laptops and custom chips.</li>
-    <li><b>A concrete proof of the claim in section 4.</b> One statement with explicit terms for attacker speed and hardware budget, link width, precomputation, the number of puzzles attacked, and quantum attackers, in a form a deployment could cite. It should promise secrecy until shortly before the nominal delay, say 0.9 <i>T</i>, except with a stated probability. The asymptotic results exist, and a weaker concrete bound is proved (section 4); the claim itself is not.</li>
-    <li><b>Measurements beyond one laptop.</b> chainseal has been timed only on an Apple M4 and on one x86 server core (37 ns per chained hash). Timing it on x86 desktops, on phones and on GPUs would replace the estimates in sections 4 and 7 with measurements.</li>
+    <li><b>A sharper bound for short links.</b> A reviewed proof of the bound in Appendix A would allow 16-byte links and save 128 bytes per puzzle.</li>
+    <li><b>Measurements on more hardware, and building on GPUs.</b> chainseal has been timed on two Apple laptops and one x86 server core (37 ns per chained hash), and the chain step on two Apple GPUs. Timing it on x86 desktops, phones and discrete GPUs would replace the remaining estimates in section 7, and the tool should build batches of puzzles on a GPU itself.</li>
     <li><b>A lower bound on puzzle size.</b> Chained puzzles need about <i>b</i> bytes per chain the sender runs in parallel. Does every hash-only time lock that lets the sender work <i>g</i> ways in parallel need size proportional to <i>g</i>, or is there a smaller puzzle?</li>
     <li><b>Mechanism design.</b> Who runs solvers and how they are paid (a published key can be copied, so the reward cannot simply go to whoever posts it first), who pays for silent users, how late-opened transactions execute, how malformed puzzles are handled, and how the puzzle bytes fit the bandwidth budget.</li>
     <li><b>Delay encryption beyond hashes.</b> Compare isogeny, lattice and batch-solvable constructions on setup, quantum security and cost against the hash-only baseline measured here.</li>
   </ol>
 
-  <h2 id="appendix">Appendix: early estimates, checked</h2>
-  <p>This work began from a handful of back-of-the-envelope estimates for the construction, made before any code existed. The first set used <i>n</i> = 2<sup>13</sup> chains of <i>m</i> = 2<sup>27</sup> hashes, 2<sup>40</sup> in all. Here is how each estimate holds up against the measurements and the circuit model.</p>
-  <div class="table-wrap wide">
-    <table>
-      <thead><tr><th style="min-width:14rem">Estimate</th><th style="min-width:18rem">Check</th><th>Verdict</th></tr></thead>
-      <tbody>
-        <tr><td class="claim">An ideal ASIC does 2⁴⁰ sequential hashes in 1–3 hours.</td><td>That is 3.3–9.8 ns per hash. A rough circuit model gives 2.3–16 ns before routing and registers, 5–30 ns after. It is a fast but plausible attacker; no such chip exists to check.</td><td><span class="chip ok">plausible best case</span></td></tr>
-        <tr><td class="claim">A one-minute lock: <i>m</i> = 2²¹, <i>n</i> = 2¹³.</td><td>2³⁴ hashes at 3.5 ns is 60 s.</td><td><span class="chip ok">holds</span></td></tr>
-        <tr><td class="claim">A consumer CPU encrypts in about 37 s.</td><td>Measured 36.2 s on the M4 Air. A 16-core desktop is untested; its instruction timings suggest no faster than about 12 s.</td><td><span class="chip ok">holds</span></td></tr>
-        <tr><td class="claim"><i>n</i> = 2⁹ with 12-byte links gives 6 kB.</td><td>Holds, with <i>m</i> = 2²⁵ to keep the delay at one minute. The links take 6,144 bytes; with the parameters, salt and commitment, 6,212. The default is now 16-byte links, 8,260 bytes.</td><td><span class="chip ok">holds, with <i>m</i> = 2²⁵</span></td></tr>
-        <tr><td class="claim">A $1000 ASIC computes 2⁴⁰ hashes in 0.1–2 s.</td><td>Miners deliver up to about 96 TH/s per $1000 on independent hashes, so the throughput exists. But miners cannot run chains, and a chain step needs low latency: if one step took 100 ns, one 2²⁷-step chain of the first set would take 13 s. Neither the latency nor the price of a chain chip is known.</td><td><span class="chip warn">throughput yes, latency open</span></td></tr>
-        <tr><td class="claim">A $10 consumer ASIC encrypts in a few milliseconds.</td><td>That needs 3.4 TH/s for $10. One mining chip does about 1.2 TH/s on independent hashes and costs about $30, and each 2²¹-step chain takes at least 7 ms at the assumed attacker speed. No chain chip has been built.</td><td><span class="chip warn">unverified, likely optimistic</span></td></tr>
-        <tr><td class="claim">A hash-only puzzle cannot need more sequential time than its builder's number of hash calls.</td><td>Correct, counted in rounds of hashing: this is the Mahmoody–Moran–Vadhan bound of section 5.</td><td><span class="chip ok">holds</span></td></tr>
-        <tr><td class="claim">A hash-only puzzle cannot be much smaller than its builder's number of parallel hash calls.</td><td>Proved only for restricted kinds of key exchange (Haitner et al. 2019). For time-lock puzzles it is open; see section 5.</td><td><span class="chip warn">restricted cases only</span></td></tr>
-        <tr><td class="claim">Consumer SHA hardware is within 10× of the optimum.</td><td>M4: 23.3 ns against an assumed best of 3.3–9.8 ns, so 2.4–7×. This compares a measurement with an estimate.</td><td><span class="chip ok">plausible</span></td></tr>
-      </tbody>
-    </table>
+  <h2 id="appendix">Appendix A. A sharper bound for short links</h2>
+  <p>Nothing in the main text depends on this appendix. It records what we know about short links, in case a smaller puzzle is worth the extra assumption.</p>
+  <p>The theorem of section 4 charges the attacker as if one right guess of a link could save all the remaining work, so its guessing term, <i>Q</i> / 2<sup>8<i>b</i></sup>, does not depend on how much is saved. That is probably loose. Because the key needs the end of every chain, a guessed link is confirmed only when the attacker's own chains reach it, and until then every run from a guess is blind. So a guess that saves a whole chain has itself cost a whole chain of hashes. This suggests:</p>
+  <div class="box">
+    <p class="label">Conjecture (random-oracle model)</p>
+    <p>An attacker that makes at most <i>Q</i> queries saves at least <i>d</i> rounds against the honest opener with probability at most about 2<i>Q</i> / (2<sup>8<i>b</i></sup> · min(<i>d</i>, <i>m</i>)), plus terms of order <i>QP</i> / 2<sup>256</sup>.</p>
   </div>
+  <p>For 16-byte links, a one-minute lock with <i>n</i> = 16 and <i>R</i> = 10<sup>21</sup> H/s, this is about 2<sup>−81</sup> for saving a whole chain or more. It does not help small savings: for saving one round it is about 2<sup>−51</sup>, no better than the theorem. The cap at one chain cannot be removed. The security audit (section 6) built attackers against 1- and 2-byte links that defeat two stronger versions: charging each guess its whole saving fails against an attacker that merges guessed runs reaching the same link, and squaring the probability for savings of more than half fails against one that prepares short starts for every value of a link.</p>
+  <p>Status. An AI model, GPT-6 Astra, wrote a proof of the conjecture with the constant 2, in the model of the theorem without preprocessing. A second model, Claude Opus, checked it step by step and against the known attacks, and found gaps in rigor that it judged fixable but no error. A separate search for counterexamples at toy sizes found none. No person has reviewed the proof, so we do not rely on it. If it holds, 16-byte links would make the puzzle 324 bytes instead of 580, while savings of less than a chain would still be bounded only by the theorem.</p>
 
   <h2 id="refs">References</h2>
   <ul class="refs">
@@ -829,9 +820,11 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
   // Encryptor profiles. R: aggregate hash/s; P: chains in flight at full throughput;
   // lmin: fastest per-step time for a lone chain; W: rated watts, assumed drawn for the whole run.
   const DEV = [
-    { name: "MacBook Air M4, 10 cores", R: 480e6, P: 20, lmin: 23.3e-9, W: 20, basis: "measured; power estimated", est: false, color: "var(--accent)" },
-    { name: "Desktop Zen 5, 16 cores, SHA-NI", R: 1.4e9, P: 64, lmin: 17e-9, W: 200, basis: "best case from instruction timings", est: true, color: "var(--ok)" },
-    { name: "Phone, 6 cores", R: 1.5e8, P: 24, lmin: 25e-9, W: 6, basis: "hypothetical; no phone measured", est: true, color: "var(--muted)" },
+    { name: "M4 Air CPU, 10 cores", R: 4.61e+08, P: 20, lmin: 23.2e-9, W: 20, basis: "measured; power estimated", est: false, color: "var(--accent)" },
+    { name: "M4 Air GPU, 10 cores", R: 7.1e+08, P: 65536, lmin: 5.1e-6, W: 10, basis: "measured; power estimated", est: false, color: "#7a4fd6" },
+    { name: "M4 Max CPU, 16 cores", R: 8.67e+08, P: 32, lmin: 24.1e-9, W: 60, basis: "measured; power estimated", est: false, color: "var(--ok)" },
+    { name: "M4 Max GPU, 40 cores", R: 2.96e+09, P: 262144, lmin: 5.3e-6, W: 40, basis: "measured; power estimated", est: false, color: "#b0569b" },
+    { name: "Phone, 6–8 cores", R: 1.5e8, P: 12, lmin: 25e-9, W: 6, basis: "hypothetical; no phone measured", est: true, color: "var(--muted)" },
     { name: "RTX 5090 GPU", R: 27e9, P: 65536, lmin: 1e-6, W: 575, basis: "hashcat rate; chain speed guessed", est: true, color: "var(--warn)" },
     { name: "Chain ASIC, hypothetical", R: 2e11, P: 4000, lmin: 10e-9, W: 20, basis: "hypothetical device", est: true, color: "var(--bad)" }
   ];
@@ -895,30 +888,32 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
     $("sM").textContent = m0 >= 1 ? "2^" + Math.log2(m).toFixed(2) : "< 1";
     $("sM2").textContent = m0 >= 1 ? "one chain = " + fmtTime(m * lAtt) + " for the attacker" : "too many chains for this delay";
     $("sS").textContent = fmtBytes(n * b + 68);
-    // Guessing ahead by one chain: each guess costs one chain of m hashes and wins with probability 2^-8b.
+    // The theorem of section 4: Q/2^8b + (3QN' + N'^2 + Q + 1)/2^256, with Q = R*T and N' = n(m+3)+1.
     const R = Number($("inR").value);
-    // Expected chains saved mu = R*T / (m * 2^8b). With mu >= 1 the attacker expects to save about mu chains.
-    const space = Math.pow(2, 8 * b);
-    const trials = R / (m * space);
-    const p = trials * T;
-    $("sA").textContent = p >= 1 ? "near 1" : p >= 1e-3 ? (p * 100).toPrecision(2) + "%" : sci(p);
-    $("sA2").textContent = p >= 1 ? "about " + p.toPrecision(2) + " chains saved, " + fmtTime(p * T / n) + " early" : "per puzzle, of opening one chain early by guessing";
-    const perYear = trials * 31557600;
-    $("sY").textContent = perYear >= 1 && perYear < 1e4 ? perYear.toPrecision(2) : sci(perYear);
+    const Q = R * T, Np = n * (m + 3) + 1;
+    const lg = (x) => Math.log2(x);
+    // Sum in log space: the terms underflow doubles.
+    const terms = [lg(Q) - 8 * b, lg(3) + lg(Q) + lg(Np) - 256, 2 * lg(Np) - 256, lg(Q + 1) - 256];
+    const top = Math.max(...terms);
+    const p = top + lg(terms.reduce((a, t) => a + Math.pow(2, t - top), 0));
+    $("sA").textContent = p >= -1 ? "near 1" : "2^" + p.toFixed(0);
+    $("sY").textContent = (encTime(DEV[0], n, m) / T).toFixed(2) + " s";
 
     const rows = DEV.map(d => {
       const t = encTime(d, n, m);
-      return `<tr><td>${d.name}</td><td class="num">${d.P.toLocaleString()}</td><td class="num">${fmtRate(N / t)} of ${fmtRate(d.R)}</td>` +
-        `<td class="num">${fmtTime(t)}</td>` +
-        `<td class="num">${fmtJ(d.W * t)}</td><td>${d.est ? '<span class="chip est">' + d.basis + '</span>' : d.basis}</td></tr>`;
+      const tb = N / d.R;
+      return `<tr><td>${d.name}</td><td class="num">${d.P.toLocaleString()}</td><td class="num">${fmtTime(t)}</td>` +
+        `<td class="num">${fmtTime(tb)}</td>` +
+        `<td class="num">${fmtJ(d.W * tb)}</td><td>${d.est ? '<span class="chip est">' + d.basis + '</span>' : d.basis}</td></tr>`;
     });
     $("devRows").innerHTML = rows.join("");
 
     const sol = [
       ["Attacker model", lAtt, "the delay you set"],
-      ["Custom ASIC at 10 ns", 10e-9, "estimate"],
+      ["Published core, A = 1", 13e-9, "synthesis (Baldanzi et al.)"],
       ["Zen 5 desktop", 17e-9, "round instructions only (uops.info)"],
-      ["M4, one core", 23.3e-9, "measured"],
+      ["M4, one core", 23.2e-9, "measured"],
+      ["M4 Max, one core", 24.1e-9, "measured"],
       ["EPYC 9554P (Zen 4), one core", 37.4e-9, "measured"]
     ];
     $("solRows").innerHTML = sol.map(([nm, l, note]) =>
@@ -930,7 +925,7 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
   function drawChart(N, nlog) {
     const svg = $("chart");
     const W = 760, H = 300, L = 64, R = 20, Tp = 16, B = 44;
-    const xs = (k) => L + (k - 2) / 16 * (W - L - R);
+    const xs = (k) => L + (k - 1) / 13 * (W - L - R);
     const ymin = -3, ymax = 4; // log10 seconds: 1 ms .. 10^4 s
     const ys = (t) => Tp + (ymax - Math.log10(t)) / (ymax - ymin) * (H - Tp - B);
     let s = "";
@@ -940,7 +935,7 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
       const lab = e < 0 ? Math.pow(10, e + 3) + " ms" : e < 2 ? Math.pow(10, e) + " s" : (e === 2 ? "100 s" : e === 3 ? "1000 s" : "10⁴ s");
       s += `<text x="${L - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${lab}</text>`;
     }
-    for (let k = 2; k <= 18; k += 2) {
+    for (let k = 2; k <= 14; k += 2) {
       const x = xs(k);
       s += `<line x1="${x}" y1="${H - B}" x2="${x}" y2="${H - B + 5}" stroke="var(--muted)"/>`;
       s += `<text x="${x}" y="${H - B + 18}" text-anchor="middle" font-size="11" fill="var(--muted)">2^${k}</text>`;
@@ -951,7 +946,7 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
     s += `<line x1="${xc}" y1="${Tp}" x2="${xc}" y2="${H - B}" stroke="var(--ink)" stroke-dasharray="3 3"/>`;
     for (const d of DEV) {
       const pts = [];
-      for (let k = 2; k <= 18; k += 0.25) {
+      for (let k = 1; k <= 14; k += 0.25) {
         const n = Math.pow(2, k), m = N / n;
         if (m < 1) break;
         let t = encTime(d, Math.round(n), m);

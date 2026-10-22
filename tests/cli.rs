@@ -123,7 +123,7 @@ fn cli_c_numeric_syntax_and_backend_override() -> TestResult {
             String::from_utf8_lossy(&out.stderr)
         );
         let (p, _) = chainseal::secret_decode(&out.stdout)?;
-        assert_eq!((p.m(), p.b()), (2, 16));
+        assert_eq!((p.m(), p.b()), (2, 24));
     }
     for (delay, step_ns, want) in [
         ("0x1.00000000000008p0", "1e9", 1),

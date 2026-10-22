@@ -1,0 +1,9 @@
+# MacBook Pro, Apple M4 Max (16 cores), 2026-10-22: reference puzzle with 24-byte links
+$ chainseal gen -n 16 -m 2^30 -o /tmp/s24-$i   (twice, default b = 24)
+puzzle: n = 16 chains, m = 1073741824 steps each, b = 24-byte links, 452 bytes
+built in 30.0 s on 16 threads (armv8-sha2), 572.3 M steps/s
+puzzle: n = 16 chains, m = 1073741824 steps each, b = 24-byte links, 452 bytes
+built in 30.1 s on 16 threads (armv8-sha2), 570.4 M steps/s
+  link bytes b   24
+  puzzle size    452 bytes
+

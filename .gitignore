@@ -3,3 +3,4 @@
 __pycache__/
 /tests/vectors.tmp
 /target
+/bench/metal/chainseal-metal

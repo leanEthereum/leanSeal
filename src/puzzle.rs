@@ -349,23 +349,26 @@ pub fn generate_from(
     };
     let next = AtomicUsize::new(0);
     let done = AtomicU64::new(0);
-    let threads = if opts.threads == 0 {
+    let cpus = if opts.threads == 0 {
         cpu_count()
     } else {
         opts.threads
-    }
-    .min((n as usize).div_ceil(be.lanes()));
+    };
+    // Two interleaved chains per thread give the most throughput, but one chain
+    // per thread finishes sooner when there is a thread for every chain.
+    let width = if n as usize <= cpus { 1 } else { be.lanes() };
+    let threads = cpus.min((n as usize).div_ceil(width));
     let y = std::thread::scope(|scope| -> Result<Vec<[u8; 32]>> {
         let mut jobs = Vec::new();
         let worker = || -> Result<Vec<(usize, Secret<[u8; 32]>)>> {
             crate::backend::fast_qos();
             let mut ends = Vec::new();
             loop {
-                let start = next.fetch_add(be.lanes(), Ordering::Relaxed);
+                let start = next.fetch_add(width, Ordering::Relaxed);
                 if start >= n as usize {
                     break;
                 }
-                let lanes = be.lanes().min(n as usize - start);
+                let lanes = width.min(n as usize - start);
                 let mut st = Secret([[0; 8]; 2]);
                 let mut tails = [Tail::new(&salt, 0); 2];
                 for l in 0..lanes {
