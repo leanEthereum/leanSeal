@@ -721,22 +721,20 @@ fn run_jobs(
                 eprintln!("chainseal: {e}");
                 rc = e.exit_code();
             }
-            Some(Ok(_)) => {
-                if !quiet {
-                    let steps = j.done() - j.start_done;
-                    eprintln!(
-                        "{}: solved in {}, {:.2} ns/step",
-                        j.path.display(),
-                        fmt_duration(j.elapsed),
-                        if steps > 0 {
-                            j.elapsed * 1e9 / steps as f64
-                        } else {
-                            0.
-                        }
-                    );
-                }
+            Some(Ok(_)) if !quiet => {
+                let steps = j.done() - j.start_done;
+                eprintln!(
+                    "{}: solved in {}, {:.2} ns/step",
+                    j.path.display(),
+                    fmt_duration(j.elapsed),
+                    if steps > 0 {
+                        j.elapsed * 1e9 / steps as f64
+                    } else {
+                        0.
+                    }
+                );
             }
-            None => {}
+            Some(Ok(_)) | None => {}
         }
     }
     Ok(rc)
