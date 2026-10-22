@@ -1,5 +1,7 @@
 # chainseal
 
+[![CI](https://github.com/quangvdao/chainseal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/quangvdao/chainseal/actions/workflows/ci.yml)
+
 chainseal encrypts a message so that anyone can read it after a fixed amount of sequential SHA-256 work, and the sender can let everyone read it at once by publishing a key. It uses nothing but SHA-256.
 
 It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1, the variant in which each link is a hash iterated many times), instantiated with SHA-256 for encrypted mempools as Vitalik Buterin proposed. [SPEC.md](SPEC.md) defines the format, and [the guide](https://quangvdao.github.io/chainseal/) explains the idea, the parameters and the measurements.
@@ -118,7 +120,7 @@ Each core computes two chains at once at about 1.5 times the rate of one. The bu
 
 **What the delay rests on.**
 
-- SHA-256 and its compression function behave as random oracles. Under this model, SPEC.md section 8 proves that an attacker making `Q` queries in total finishes even one round before the honest solver with probability at most `Q/2^(8b) + (3QN + N² + Q + 1)/2^256`, where `N = n(m + 3) + 1`. With the default 24-byte links and `Q = 10^21` queries per second for the whole delay, about the Bitcoin network, this is about `2^-116` for a one-minute puzzle and `2^-97` for a one-year one (`2^-145` and `2^-107` with 32-byte links). The proof is written out but not machine-checked or independently reviewed.
+- SHA-256 and its compression function behave as random oracles. Under this model, SPEC.md section 8 proves that an attacker making `Q` queries in total finishes even one round before the honest solver with probability at most `Q/2^(8b) + (3QP + P² + Q + 1)/2^256`, where `P = n(m + 3) + 1`. With the default 24-byte links and `Q = 10^21` queries per second for the whole delay, about the Bitcoin network, this is about `2^-116` for a one-minute puzzle and `2^-97` for a one-year one (`2^-145` and `2^-107` with 32-byte links). The proof is written out but not machine-checked or independently reviewed.
 - Nobody computes one chained SHA-256 step much faster than `ℓ`, the fastest attainable latency of one compression on the best hardware. The delay is `n·m·ℓ` seconds, so a faster solver opens the envelope sooner. Set `m` against the fastest attacker you assume, not against your own machine.
 - Shorter links weaken the first term of the bound: with 16-byte links it is about `2^-52` for a minute and `2^-33` for a year. chainseal relies only on this proved bound, so use links of 24 bytes or more; the tool warns when `-b` is below 24. A puzzle with `n = 1` has no hidden link, and its delay rests on the one chain alone.
 - There is no analysis of chainseal's encoding against quantum attackers.
