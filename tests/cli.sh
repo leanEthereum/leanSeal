@@ -24,7 +24,7 @@ flip() {  # flip FILE OFFSET: XOR one bit of the byte at OFFSET, so the file alw
 printf 'the vote is 7 to 2' > msg
 
 # A stored puzzle: gen, encrypt with it, reveal the key, open three ways.
-"$CS" gen -q -n 8 -m 2000 -o sec
+"$CS" gen -q -n 8 -m 2000 -b 24 -o sec
 [ "$(stat -c %a sec 2>/dev/null || stat -f %Lp sec)" = 600 ] || fail "secret file is not private"
 "$CS" encrypt -q -s sec -i msg -o env
 KEY=$("$CS" key sec)
@@ -37,7 +37,7 @@ SOLVED=$("$CS" solve -q env | cut -d' ' -f1)
 "$CS" info env > info.txt && grep -q 'chains n       8' info.txt || fail "info"
 
 # Envelope sizes: 128 + n*b + len (SPEC.md section 6.2).
-[ "$(wc -c < env | tr -d ' ')" = $((128 + 8 * 16 + 18)) ] || fail "envelope size"
+[ "$(wc -c < env | tr -d ' ')" = $((128 + 8 * 24 + 18)) ] || fail "envelope size"
 
 # Fresh puzzle in one go, from stdin, with --delay; empty message.
 printf '' | "$CS" encrypt -q -n 4 -d 0.01 --step-ns 25 --secret-out sec2 -o env2
@@ -61,6 +61,11 @@ expect_exit 2 "$CS" gen -d 1e308h -o x
 expect_exit 2 "$CS" gen -d 1 --step-ns inf -o x
 expect_exit 2 "$CS" gen -d nan -o x
 expect_exit 1 "$CS" open msg -k "$KEY"
+# The secret may not share the envelope's destination, even through stdout.
+expect_exit 2 "$CS" encrypt -q -m 5 -i msg -o env3 --secret-out ./env3
+set +e; "$CS" encrypt -q -m 5 -i msg -o - --secret-out same > same 2>/dev/null; code=$?; set -e
+[ "$code" = 2 ] || fail "encrypt with stdout on the secret file exited $code, wanted 2"
+[ ! -s same ] || fail "encrypt wrote to the file that is both envelope and secret"
 
 # Several puzzles solved in parallel.
 "$CS" encrypt -q -n 2 -m 50000 -i msg -o p1 --secret-out s1

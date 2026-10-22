@@ -145,7 +145,7 @@ fn resolve(p: &Path) -> PathBuf {
         .unwrap_or_else(|_| parent.to_path_buf())
         .join(p.file_name().unwrap_or(p.as_os_str()))
 }
-/// Compare output against a checkpoint, including redirected stdout and hard links.
+/// Compare output (a path or "-") against another file, including redirected stdout and hard links.
 pub fn is_output(out: impl AsRef<Path>, path: impl AsRef<Path>) -> bool {
     let out = out.as_ref();
     let path = path.as_ref();

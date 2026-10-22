@@ -109,16 +109,21 @@ pub fn build(work: u64, n: u32, threads: usize, b: u8, backend: Backend) -> Resu
 pub struct AttackResult {
     /// Guesses per puzzle.
     pub budget: u64,
-    /// Fraction of the link space tested.
+    /// Fraction of the link space tested, which is this strategy's expected success rate.
     pub expected: f64,
-    /// Number of successful early openings.
+    /// Puzzles whose key was recovered by one of the guesses.
     pub wins: u64,
     /// Binomial standard deviation.
     pub sd: f64,
     /// Elapsed seconds.
     pub seconds: f64,
 }
-/// Run the bounded experiment that guesses one link ahead (SPEC section 8).
+/// Run the toy experiment that guesses the last link (SPEC section 8).
+///
+/// It counts how often a candidate set of last links contains the right one,
+/// which measures the success of this one guessing strategy. It does not run
+/// the guesses as a parallel schedule or time them, so it does not show that a
+/// puzzle opens early or test the bound of SPEC section 8.
 pub fn attack(
     b: u8,
     n: u32,

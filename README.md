@@ -31,6 +31,8 @@ The decoders are fuzzed with cargo-fuzz (`cd fuzz && cargo +nightly fuzz run puz
 
 ## Use
 
+`make` leaves the tool at `target/release/chainseal`. The examples below assume it is on your `PATH`; `cargo install --path .` puts it in `~/.cargo/bin`.
+
 ```sh
 # Sender: build a puzzle ahead of time. 16 chains of 2^30 steps is about
 # 6.6 minutes of sequential work on an Apple M4, and about 40 s to build there.
@@ -51,7 +53,7 @@ chainseal solve a.env b.env c.env     # several puzzles at once, one core each
 
 Instead of `-m`, you can give `-d 10m` to choose `m` for a target delay. By default, the delay is measured against this machine's speed for one chain; `--step-ns` sets another solver speed. `chainseal info FILE` describes any chainseal file.
 
-The crate is also a library. It is not on crates.io; depend on it with `chainseal = { git = "https://github.com/quangvdao/chainseal" }`.
+The crate is also a library. It is not on crates.io; depend on it with `chainseal = { git = "https://github.com/quangvdao/chainseal" }`. The example below draws its nonce with `getrandom`, so it also needs `getrandom = "0.2"`. Every envelope sealed under one key needs a fresh nonce.
 
 ```rust
 use chainseal::backend::Backend;

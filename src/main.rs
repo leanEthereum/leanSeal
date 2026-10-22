@@ -531,6 +531,9 @@ fn gen_or_encrypt(command: &str, args: &[OsString], be: Backend) -> CliResult<i3
             _ => p.option(*c, text(v)?)?,
         }
     }
+    if p.m > 0 && p.delay > 0. {
+        return Err(usage("give -m STEPS or -d DELAY, not both"));
+    }
     let out = out.ok_or_else(|| {
         usage(if command == "gen" {
             "gen needs -o SECRET and no other arguments"
@@ -564,6 +567,24 @@ fn gen_or_encrypt(command: &str, args: &[OsString], be: Backend) -> CliResult<i3
     }
     if secret.is_some() && (p.m > 0 || p.delay > 0. || secret_out.is_some()) {
         return Err(usage("-s uses a stored puzzle: no -m, -d or --secret-out"));
+    }
+    if let Some(path) = secret_out {
+        // A secret written into the envelope's stream would publish the key.
+        if out == "-" && path == "-" {
+            return Err(usage(
+                "the envelope and the secret cannot both go to stdout; choose a file for --secret-out",
+            ));
+        }
+        let (first, second) = if path == "-" {
+            (path, out)
+        } else {
+            (out, path)
+        };
+        if is_output(first, second) {
+            return Err(usage(
+                "the secret file is the envelope file; choose another --secret-out",
+            ));
+        }
     }
     let input = input.unwrap_or(OsStr::new("-"));
     let mut msg = read_file(input).map_err(|e| Failure::io(input, e))?;
@@ -1076,7 +1097,7 @@ fn bench(args: &[OsString], be: Backend) -> CliResult<i32> {
         }
         let r = benchmark::attack(attack_b, n, m, trials, fraction, be)
             .map_err(|e| code("attack", e))?;
-        output(&format!("## guessing ahead by one chain, b = {attack_b} (2^{} values), n = {n}, m = {m}\nbudget per puzzle   {} guesses = {:.3} of all values, {} steps (honest solve: {})\nopened early        {} of {trials} puzzles = {:.3}; bound Q/(m*2^(8b)) = {:.3}, expected {:.1} +- {:.1}\ntime                {:.2} s\n",8*attack_b,r.budget,r.expected,r.budget.wrapping_mul(m),u64::from(n).wrapping_mul(m),r.wins,r.wins as f64/trials as f64,r.expected,trials as f64*r.expected,r.sd,r.seconds))?;
+        output(&format!("## guessing ahead by one chain, b = {attack_b} (2^{} values), n = {n}, m = {m}\nbudget per puzzle   {} guesses = {:.3} of all values, {} steps (honest solve: {})\nlast link guessed   {} of {trials} puzzles = {:.3}; this strategy expects {:.3} = {:.1} +- {:.1}\ntime                {:.2} s\n",8*attack_b,r.budget,r.expected,r.budget.wrapping_mul(m),u64::from(n).wrapping_mul(m),r.wins,r.wins as f64/trials as f64,r.expected,trials as f64*r.expected,r.sd,r.seconds))?;
         if (r.wins as f64 - trials as f64 * r.expected).abs() > 4. * r.sd + 1. {
             return Ok(1);
         }

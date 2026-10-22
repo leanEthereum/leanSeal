@@ -1,8 +1,12 @@
 use crate::hash::{ct_equal, hmac, th};
 use crate::secret::Secret;
 use crate::{array, bytes, Error, Puzzle, Result, MAX_MSG};
-/// Encode a secret containing a puzzle and its verified key.
+/// Encode a secret containing a puzzle and its key, after checking the key
+/// against the puzzle's commitment.
 pub fn secret_encode(p: &Puzzle, key: &[u8; 32]) -> Result<Vec<u8>> {
+    if !p.check_key(key) {
+        return Err(Error::Commit);
+    }
     let enc = p.encode()?;
     let mut v = bytes(40 + enc.len())?;
     v[..8].copy_from_slice(b"CSSK\x01\0\0\0");
@@ -33,6 +37,11 @@ fn stream(key: &[u8; 32], input: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 /// Seal a plaintext using an explicit nonce.
+///
+/// The nonce must be fresh: draw it from a cryptographically secure random
+/// number generator, and never use one nonce twice with the same key. A key
+/// may seal several messages, each under its own nonce. Reusing a nonce under
+/// the same key reveals the XOR of the two plaintexts (SPEC.md section 8).
 pub fn seal(p: &Puzzle, key: &[u8; 32], nonce: &[u8; 16], message: &[u8]) -> Result<Vec<u8>> {
     if message.len() > MAX_MSG {
         return Err(Error::Range);

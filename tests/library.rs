@@ -308,6 +308,9 @@ fn checkpoint_stop_resume_and_finished_states() -> TestResult {
     let mut bad = secret;
     bad[8] ^= 1;
     assert_eq!(secret_decode(&bad), Err(Error::Commit));
+    let mut wrong = key;
+    wrong[0] ^= 1;
+    assert_eq!(secret_encode(&p, &wrong), Err(Error::Commit));
     Ok(())
 }
 #[test]

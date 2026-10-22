@@ -174,6 +174,18 @@ fn cli_option_error_diagnostics() -> TestResult {
         ),
         (vec!["gen", "-o"], "option requires an argument -- 'o'"),
         (vec!["gen", "--out"], "option '--out' requires an argument"),
+        (
+            vec!["gen", "-m", "5", "-d", "1", "-o", "x"],
+            "give -m STEPS or -d DELAY, not both",
+        ),
+        (
+            vec!["encrypt", "-m", "5", "-o", "-", "--secret-out", "-"],
+            "the envelope and the secret cannot both go to stdout; choose a file for --secret-out",
+        ),
+        (
+            vec!["encrypt", "-m", "5", "-o", "env", "--secret-out", "env"],
+            "the secret file is the envelope file; choose another --secret-out",
+        ),
     ] {
         let result = command(&t).args(args).output()?;
         assert_eq!(result.status.code(), Some(2));
