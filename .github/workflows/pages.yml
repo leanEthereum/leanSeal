@@ -30,12 +30,30 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      # A CI run for an older commit can finish after a newer one; deploy only
+      # the commit that is still the head of main.
+      - id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          head=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
+          if [ "$head" = "$SHA" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "main is now at $head; not deploying $SHA"
+            echo "latest=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.current.outputs.latest == 'true'
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - if: steps.current.outputs.latest == 'true'
+        uses: actions/configure-pages@v5
+      - if: steps.current.outputs.latest == 'true'
+        uses: actions/upload-pages-artifact@v3
         with:
           path: docs
       - id: deployment
+        if: steps.current.outputs.latest == 'true'
         uses: actions/deploy-pages@v4
