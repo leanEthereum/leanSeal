@@ -6,28 +6,28 @@ It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (C
 
 Authors: Vitalik Buterin, Quang Dao and Justin Drake.
 
-**Status: proof of concept.** The format is versioned and fully specified. It has test vectors and a second implementation, in Python, that shares no code with the C one. An AI model audited the code in several rounds; the reports and the fixes are in [audit/](audit/). No human cryptographer has reviewed it. Do not protect anything valuable with it.
+**Status: proof of concept.** The format is versioned and fully specified. It has test vectors and a second implementation, in Python, that shares no code with the Rust one. An AI model audited an earlier C implementation in several rounds; the reports and the fixes are in [audit/](audit/). The Rust implementation replaced it, reproduces its test vectors and command-line behaviour, was reviewed against it, and has fuzzed decoders. No human cryptographer has reviewed it. Do not protect anything valuable with it.
 
 ## Build and test
 
-You need a C11 compiler, `make` and a POSIX system with pthreads. For the full test suite you also need `python3`, version 3.11 or later. The demo also uses `xxd` and `perl`. Everything here was run on macOS on an Apple M4. The build, the tests and the sanitizer runs also pass on Linux x86-64 (Ubuntu 24.04, gcc 13, AMD EPYC 9554P); Linux aarch64 has not been run.
+You need Rust 1.80 or later and a POSIX system. For the full test suite you also need `make`, `sh` and `python3`, version 3.11 or later. The demo also uses `xxd` and `perl`. Everything here was run on macOS on an Apple M4, and the tests also pass on Linux x86-64 (Ubuntu 24.04, AMD EPYC 9554P). Continuous integration runs them on Linux x86-64, Linux aarch64 and macOS on Apple silicon.
 
 ```sh
-make            # builds ./chainseal
-make test       # unit tests, CLI tests, test vectors, Python cross-check
-make sanitize   # the same under AddressSanitizer and UndefinedBehaviorSanitizer
-make tsan       # the threaded paths under ThreadSanitizer
+make            # cargo build --release: target/release/chainseal
+make test       # cargo tests, CLI tests, test vectors, Python cross-check
 make bench      # latency, throughput, build time against n, toy attack
 sh demo.sh      # time-lock the EIP-155 example transaction, open it both ways
 ```
 
 The tool has three SHA-256 backends. It uses an accelerated one when the CPU supports it, and the portable one otherwise:
 
-- `armv8-sha2`, for ARMv8 CPUs with the SHA-2 instructions. It is built on Apple silicon, and on Linux aarch64, where the Makefile enables those instructions. At run time the tool uses it only if the CPU reports them.
-- `x86-sha-ni`, for x86-64 CPUs with the SHA extensions, detected with CPUID. Its logic is also checked under emulation (`tests/shani_emu`). It was run and timed on an AMD EPYC 9554P (Zen 4): 42.3 ns/step for one chain, against 23.3 on the M4.
+- `armv8-sha2`, for ARMv8 CPUs with the SHA-2 instructions. It is built on every aarch64 target, and the tool uses it only if the CPU reports those instructions at run time.
+- `x86-sha-ni`, for x86-64 CPUs with the SHA extensions, detected with CPUID. It was run and timed on an AMD EPYC 9554P (Zen 4): 37.4 ns/step for one chain, against 23.3 on the M4.
 - `portable`, everywhere.
 
-Set `CHAINSEAL_BACKEND` to force one. The tool refuses a backend that this build or this CPU does not have. `chainseal selftest` checks every available backend against plain SHA-256.
+Set `CHAINSEAL_BACKEND` to force one. The tool refuses a backend that this build or this CPU does not have. `chainseal selftest` checks every available backend against plain SHA-256. The accelerated backends are the only `unsafe` code in the crate.
+
+The decoders are fuzzed with cargo-fuzz (`cd fuzz && cargo +nightly fuzz run puzzle`, and likewise `envelope`, `secret` and `checkpoint`); `tests/decode_props.rs` runs the same checks on every `cargo test`.
 
 ## Use
 
@@ -51,6 +51,29 @@ chainseal solve a.env b.env c.env     # several puzzles at once, one core each
 
 Instead of `-m`, you can give `-d 10m` to choose `m` for a target delay. By default, the delay is measured against this machine's speed for one chain; `--step-ns` sets another solver speed. `chainseal info FILE` describes any chainseal file.
 
+The crate is also a library. It is not on crates.io; depend on it with `chainseal = { git = "https://github.com/quangvdao/chainseal" }`.
+
+```rust
+use chainseal::backend::Backend;
+use chainseal::{generate, seal, Envelope, GenOptions};
+
+fn main() -> Result<(), chainseal::Error> {
+    // Sender: build a puzzle (4 chains of 2^20 steps) and seal a message.
+    let opts = GenOptions { threads: chainseal::cpu_count(), backend: None, progress: None };
+    let (puzzle, key) = generate(4, 1 << 20, 16, &opts)?;
+    let mut nonce = [0u8; 16];
+    getrandom::getrandom(&mut nonce).map_err(|_| chainseal::Error::Rng)?;
+    let bytes = seal(&puzzle, &key, &nonce, b"hello")?;
+
+    // Anyone: solve the puzzle in sequence, then open the envelope.
+    let env = Envelope::decode(&bytes)?;
+    let mut cursor = env.puzzle.cursor();
+    let solved = env.puzzle.solve(&mut cursor, Backend::best()?, 0, |_| false)?;
+    assert_eq!(env.open(&solved)?, b"hello");
+    Ok(())
+}
+```
+
 ## How it works
 
 The sender draws random links `x_1 … x_n` and runs `n` independent chains of `m` SHA-256 steps, one per link, all in parallel. Each step hashes the 32-byte state together with the puzzle's salt and the chain's index. That is still one SHA-256 compression, and it ties every step to one chain of one puzzle.
@@ -70,7 +93,7 @@ Sizes:
 
 ## Measurements
 
-These are from `chainseal bench all` and `demo.sh` on an Apple M4 (MacBook Air, 10 cores). The logs are in [bench-results/](bench-results/), which also has an x86 run on a 4-vCPU AMD EPYC 9554P VM (`x86-epyc-9554p.txt`): 42.3 ns/step for one chain, 93 M steps/s on all four vCPUs.
+These are from `chainseal bench all` and `demo.sh` on an Apple M4 (MacBook Air, 10 cores). The logs are in [bench-results/](bench-results/), which also has an x86 run on a 4-vCPU AMD EPYC 9554P VM (`x86-epyc-9554p.txt`): 37.4 ns/step for one chain, 173 M steps/s on all four vCPUs.
 
 | Quantity | Value |
 |---|---|
@@ -85,7 +108,7 @@ The build speedup is how much faster the sender builds a puzzle than a single-co
 
 **What chainseal is meant to give.**
 
-- *Confidentiality until the work is done.* An honest solver needs `n·m` chain steps in sequence. The design assumes that nobody can open an envelope much sooner, as set out below. This is an assumption, not a proven bound.
+- *Confidentiality until the work is done.* An honest solver needs `n·m` chain steps in sequence. The design assumes that nobody can open an envelope much sooner, as set out below. In the random-oracle model the round count is proved (SPEC.md section 8); that rounds take as long as assumed, and the sharper bound on link guessing, are assumptions.
 - *Integrity, until the key is known.* Any change to an envelope's puzzle, nonce, ciphertext or tag makes opening fail. Once the key is public, revealed or solved, anyone can seal a different message under the same puzzle. So the puzzle and its commitment do not identify a message: refer to an envelope by a hash of all its bytes.
 - *A checkable fast path.* A revealed key is checked against the commitment before it is used.
 
@@ -111,15 +134,17 @@ The build speedup is how much faster the sender builds a puzzle than a single-co
 | Path | Contents |
 |---|---|
 | `SPEC.md` | the normative format |
-| `src/sha256.c` | portable SHA-256, HMAC-SHA256, labelled hashes |
-| `src/chain.c` | the chain step: ARMv8, x86 SHA-NI and portable backends |
-| `src/chainseal.c` | puzzles, solving, checkpoints, secrets, envelopes |
-| `src/rng.c` | OS randomness, plus a seeded generator for test vectors only |
-| `src/cli.c`, `src/bench.c`, `src/vectors.c`, `src/util.c` | the command-line tool |
-| `tests/` | unit tests, CLI tests, cross-tests, `vectors.json` |
-| `ref/chainseal_ref.py` | a separate Python implementation that shares no code with the C one |
+| `src/hash.rs` | portable SHA-256, HMAC-SHA256, labelled hashes |
+| `src/backend/` | the chain step: ARMv8, x86 SHA-NI and portable backends |
+| `src/puzzle.rs`, `src/envelope.rs` | puzzles, solving, checkpoints, secrets, envelopes |
+| `src/runtime.rs` | parallel generation and solving of several puzzles |
+| `src/rng.rs` | a seeded generator for test vectors only (OS randomness comes from `getrandom`) |
+| `src/main.rs`, `src/benchmark.rs`, `src/vectors.rs`, `src/signal.rs` | the command-line tool |
+| `tests/` | library and CLI tests, decoder property tests, shell CLI tests, cross-tests, `vectors.json` |
+| `fuzz/` | cargo-fuzz targets for the four decoders |
+| `ref/chainseal_ref.py` | a separate Python implementation that shares no code with the Rust one |
 | `bench-results/` | benchmark and demo logs |
-| `audit/` | the audit reports and what was fixed |
+| `audit/` | the audit reports on the earlier C implementation and what was fixed |
 
 ## License
 

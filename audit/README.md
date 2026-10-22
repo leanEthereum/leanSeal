@@ -2,6 +2,8 @@
 
 An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited chainseal for security and correctness. It read the code and the documents and ran the tests. It reproduced most failures with scratch programs, and established the rest from the source or by arithmetic. It had no permission to change the code.
 
+These rounds audited the C implementation, whose last commit is `ffde496`. A Rust implementation has since replaced it; the review of the port is summarised at the end of this file.
+
 | Round | Commit | Report | Verdict |
 |---|---|---|---|
 | 1 | `dd063aa` | [round-1.md](round-1.md) | fix first: 4 blockers, 3 major, 5 minor |
