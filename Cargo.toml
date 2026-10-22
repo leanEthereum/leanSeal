@@ -1,0 +1,17 @@
+[package]
+name = "chainseal"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+
+[dependencies]
+getrandom = "0.2"
+signal-hook = "0.3"
+
+[dev-dependencies]
+serde_json = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
