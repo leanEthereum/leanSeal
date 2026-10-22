@@ -1,4 +1,5 @@
 use crate::hash::{ct_equal, hmac, th};
+use crate::secret::Secret;
 use crate::{array, bytes, Error, Puzzle, Result, MAX_MSG};
 /// Encode a secret containing a puzzle and its verified key.
 pub fn secret_encode(p: &Puzzle, key: &[u8; 32]) -> Result<Vec<u8>> {
@@ -39,8 +40,8 @@ pub fn seal(p: &Puzzle, key: &[u8; 32], nonce: &[u8; 16], message: &[u8]) -> Res
     if !p.check_key(key) {
         return Err(Error::Commit);
     }
-    let kenc = th("chainseal/v1/enc", &[key, nonce]);
-    let kmac = th("chainseal/v1/mac", &[key, nonce]);
+    let kenc = Secret(th("chainseal/v1/enc", &[key, nonce]));
+    let kmac = Secret(th("chainseal/v1/mac", &[key, nonce]));
     let enc = p.encode()?;
     let mut v = bytes(8 + enc.len() + 20 + message.len() + 32)?;
     v[..8].copy_from_slice(b"CSEN\x01\0\0\0");
@@ -50,7 +51,7 @@ pub fn seal(p: &Puzzle, key: &[u8; 32], nonce: &[u8; 16], message: &[u8]) -> Res
     v[at + 16..at + 20].copy_from_slice(&(message.len() as u32).to_be_bytes());
     let end = at + 20 + message.len();
     v[at + 20..end].copy_from_slice(&stream(&kenc, message)?);
-    let tag = hmac(&kmac, &v[..end]);
+    let tag = hmac(&kmac[..], &v[..end]);
     v[end..].copy_from_slice(&tag);
     Ok(v)
 }
@@ -100,9 +101,12 @@ impl<'a> Envelope<'a> {
         if !self.puzzle.check_key(key) {
             return Err(Error::Commit);
         }
-        let kenc = th("chainseal/v1/enc", &[key, &self.nonce]);
-        let kmac = th("chainseal/v1/mac", &[key, &self.nonce]);
-        if !ct_equal(&hmac(&kmac, &self.data[..self.data.len() - 32]), self.tag) {
+        let kenc = Secret(th("chainseal/v1/enc", &[key, &self.nonce]));
+        let kmac = Secret(th("chainseal/v1/mac", &[key, &self.nonce]));
+        if !ct_equal(
+            &hmac(&kmac[..], &self.data[..self.data.len() - 32]),
+            self.tag,
+        ) {
             return Err(Error::Tag);
         }
         stream(&kenc, self.ct)

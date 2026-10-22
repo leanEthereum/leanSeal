@@ -56,10 +56,10 @@ impl Backend {
     }
     /// Select the environment override, or the fastest supported engine.
     pub fn best() -> crate::Result<Self> {
-        if let Ok(name) = std::env::var("CHAINSEAL_BACKEND") {
-            Self::find(&name).ok_or(crate::Error::Backend)
-        } else {
-            Ok(Self::available()[0])
+        match std::env::var("CHAINSEAL_BACKEND") {
+            Ok(name) => Self::find(&name).ok_or(crate::Error::Backend),
+            Err(std::env::VarError::NotPresent) => Ok(Self::available()[0]),
+            Err(std::env::VarError::NotUnicode(_)) => Err(crate::Error::Backend),
         }
     }
     /// Stable command-line name.

@@ -33,14 +33,19 @@ pub fn latency_samples(backend: Backend, seconds: f64) -> (f64, f64) {
     (r[2], r[0])
 }
 /// Aggregate independent chain steps per second.
-pub fn throughput(backend: Backend, threads: usize, lanes: usize, seconds: f64) -> f64 {
+pub fn throughput(
+    backend: Backend,
+    threads: usize,
+    lanes: usize,
+    seconds: f64,
+) -> std::io::Result<f64> {
     let stop = AtomicBool::new(false);
     let t0 = Instant::now();
     let total = std::thread::scope(|scope| {
         let mut jobs = Vec::new();
         for _ in 0..threads {
             let stop = &stop;
-            jobs.push(scope.spawn(move || {
+            match crate::thread::spawn(scope, move || {
                 crate::backend::fast_qos();
                 let mut st = vec![[0; 8]; lanes];
                 let tails: Vec<_> = (1..=lanes).map(|i| Tail::new(&[0; 16], i as u32)).collect();
@@ -51,13 +56,22 @@ pub fn throughput(backend: Backend, threads: usize, lanes: usize, seconds: f64) 
                 }
                 std::hint::black_box(st);
                 total
-            }));
+            }) {
+                Ok(job) => jobs.push(job),
+                Err(e) => {
+                    stop.store(true, Ordering::Relaxed);
+                    for job in jobs {
+                        let _ = job.join();
+                    }
+                    return Err(e);
+                }
+            }
         }
         std::thread::sleep(Duration::from_secs_f64(seconds));
         stop.store(true, Ordering::Relaxed);
-        jobs.into_iter().map(|h| h.join().unwrap_or(0)).sum::<u64>()
-    });
-    total as f64 / t0.elapsed().as_secs_f64()
+        Ok(jobs.into_iter().map(|h| h.join().unwrap_or(0)).sum::<u64>())
+    })?;
+    Ok(total as f64 / t0.elapsed().as_secs_f64())
 }
 /// One build measurement.
 pub struct BuildRow {
@@ -155,10 +169,14 @@ pub fn attack(
 }
 /// Check every backend against ordinary SHA-256 with deterministic random states.
 pub fn selftest() -> Result<Vec<(&'static str, bool)>> {
+    selftest_with(|be, st, tails, steps| be.run_lanes(st, tails, steps))
+}
+fn selftest_with(
+    mut run: impl FnMut(Backend, &mut [[u32; 8]], &[Tail], u64),
+) -> Result<Vec<(&'static str, bool)>> {
     let mut rng = crate::rng::TestRng::new(b"selftest");
     let mut result = Vec::new();
     for be in Backend::available() {
-        let mut ok = true;
         for lanes in 1..=be.lanes() {
             for steps in (1..=65).step_by(16) {
                 let mut st = vec![[0; 8]; lanes];
@@ -182,11 +200,14 @@ pub fn selftest() -> Result<Vec<(&'static str, bool)>> {
                     }
                     want.push(bytes_to_words(crate::array(&input[..32])?));
                 }
-                be.run_lanes(&mut st, &tails, steps as u64);
-                ok &= st == want;
+                run(be, &mut st, &tails, steps as u64);
+                if st != want {
+                    result.push((be.name(), false));
+                    return Ok(result);
+                }
             }
         }
-        result.push((be.name(), ok));
+        result.push((be.name(), true));
     }
     let mut salt = [0; 16];
     let mut x = [0; 80];
@@ -200,4 +221,30 @@ pub fn selftest() -> Result<Vec<(&'static str, bool)>> {
         return Err(Error::Tag);
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn throughput_spawn_failure_stops_started_workers() {
+        for started in 0..3 {
+            let result =
+                crate::thread::fail_after(started, || throughput(Backend::PORTABLE, 3, 1, 0.001));
+            assert!(result.is_err());
+        }
+        assert!(throughput(Backend::PORTABLE, 1, 1, 0.001).unwrap() > 0.);
+    }
+    #[test]
+    fn selftest_stops_at_first_mismatch() {
+        let mut calls = 0;
+        let result = selftest_with(|be, st, tails, steps| {
+            calls += 1;
+            be.run_lanes(st, tails, steps);
+            st[0][0] ^= 1;
+        })
+        .unwrap();
+        assert_eq!(calls, 1);
+        assert_eq!(result, vec![(Backend::available()[0].name(), false)]);
+    }
 }

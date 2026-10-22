@@ -1,5 +1,6 @@
 use crate::backend::{Backend, Tail};
 use crate::hash::{bytes_to_words, ct_equal, th, words_to_bytes};
+use crate::secret::{wipe, Erase, Secret};
 use crate::{array, bytes, Error, Result, MAX_M, MAX_N, MAX_WORK};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
@@ -123,20 +124,20 @@ impl Puzzle {
     }
     /// Run an individual chain from a clear link.
     pub fn run_chain(&self, i: u32, x: &[u8], backend: Backend) -> Result<[u8; 32]> {
-        let mut st = bytes_to_words(self.chain_start(i, x)?);
+        let mut st = Secret(bytes_to_words(self.chain_start(i, x)?));
         backend.run(&mut st, &Tail::new(&self.salt, i), self.m);
-        Ok(words_to_bytes(st))
+        Ok(words_to_bytes(*st))
     }
     /// Derive and check a key from all chain ends in order.
     pub fn key_from_ends(&self, y: &[[u8; 32]]) -> Result<[u8; 32]> {
         if y.len() != self.n as usize {
             return Err(Error::Range);
         }
-        let mut a = self.context();
+        let mut a = Secret(self.context());
         for end in y {
-            a = th("chainseal/v1/acc", &[&a, end]);
+            *a = th("chainseal/v1/acc", &[&a[..], end]);
         }
-        let k = th("chainseal/v1/key", &[&self.context(), &a]);
+        let k = th("chainseal/v1/key", &[&self.context(), &a[..]]);
         if self.check_key(&k) {
             Ok(k)
         } else {
@@ -191,9 +192,9 @@ impl Puzzle {
             if cur.i == self.n {
                 break;
             }
-            let y = words_to_bytes(cur.state);
-            cur.acc = th("chainseal/v1/acc", &[&cur.acc, &y]);
-            let mut x = self.chain_mask(&y);
+            let y = Secret(words_to_bytes(cur.state));
+            cur.acc = th("chainseal/v1/acc", &[&cur.acc, &y[..]]);
+            let mut x = Secret(self.chain_mask(&y));
             let off = cur.i as usize * self.b as usize;
             for (v, z) in x.iter_mut().zip(&self.links[off..off + self.b as usize]) {
                 *v ^= z;
@@ -202,8 +203,9 @@ impl Puzzle {
             cur.j = 0;
             cur.state = bytes_to_words(self.chain_start(cur.i, &x[..self.b as usize])?);
         }
-        let a = th("chainseal/v1/acc", &[&cur.acc, &words_to_bytes(cur.state)]);
-        let k = th("chainseal/v1/key", &[&self.context(), &a]);
+        let end = Secret(words_to_bytes(cur.state));
+        let a = Secret(th("chainseal/v1/acc", &[&cur.acc, &end[..]]));
+        let k = th("chainseal/v1/key", &[&self.context(), &a[..]]);
         if self.check_key(&k) {
             Ok(k)
         } else {
@@ -222,6 +224,17 @@ pub struct Cursor {
     pub state: [u32; 8],
     /// Accumulator of preceding chain ends.
     pub acc: [u8; 32],
+}
+impl Erase for Cursor {
+    fn erase(&mut self) {
+        self.state.erase();
+        wipe(&mut self.acc);
+    }
+}
+impl Drop for Cursor {
+    fn drop(&mut self) {
+        self.erase();
+    }
 }
 impl Cursor {
     /// Total number of completed steps.
@@ -303,10 +316,11 @@ pub fn generate(n: u32, m: u64, b: u8, opts: &GenOptions<'_>) -> Result<(Puzzle,
         return Err(Error::Range);
     }
     let mut salt = [0; 16];
-    let mut x = bytes(n as usize * b as usize)?;
+    let mut x = Secret(bytes(n as usize * b as usize)?);
     getrandom::getrandom(&mut salt).map_err(|_| Error::Rng)?;
-    getrandom::getrandom(&mut x).map_err(|_| Error::Rng)?;
-    let (p, k, _) = generate_from(n, m, b, salt, &x, opts)?;
+    getrandom::getrandom(&mut x[..]).map_err(|_| Error::Rng)?;
+    let (p, k, ends) = generate_from(n, m, b, salt, &x, opts)?;
+    let _ends = Secret(ends);
     Ok((p, k))
 }
 /// Generate deterministically from a salt and clear links, also returning all chain ends.
@@ -343,40 +357,47 @@ pub fn generate_from(
     .min((n as usize).div_ceil(be.lanes()));
     let y = std::thread::scope(|scope| -> Result<Vec<[u8; 32]>> {
         let mut jobs = Vec::new();
-        for _ in 0..threads {
-            let p = &p;
-            let next = &next;
-            let done = &done;
-            jobs.push(scope.spawn(move || -> Result<Vec<(usize, [u8; 32])>> {
-                crate::backend::fast_qos();
-                let mut ends = Vec::new();
-                loop {
-                    let start = next.fetch_add(be.lanes(), Ordering::Relaxed);
-                    if start >= n as usize {
-                        break;
-                    }
-                    let lanes = be.lanes().min(n as usize - start);
-                    let mut st = [[0; 8]; 2];
-                    let mut tails = [Tail::new(&salt, 0); 2];
-                    for l in 0..lanes {
-                        let i = (start + l + 1) as u32;
-                        tails[l] = Tail::new(&salt, i);
-                        let off = (start + l) * b as usize;
-                        st[l] = bytes_to_words(p.chain_start(i, &x[off..off + b as usize])?);
-                    }
-                    let mut j = 0;
-                    while j < m {
-                        let steps = (m - j).min(1 << 22);
-                        be.run_lanes(&mut st[..lanes], &tails[..lanes], steps);
-                        j += steps;
-                        done.fetch_add(steps * lanes as u64, Ordering::Relaxed);
-                    }
-                    for (l, s) in st[..lanes].iter().enumerate() {
-                        ends.push((start + l, words_to_bytes(*s)));
-                    }
+        let worker = || -> Result<Vec<(usize, Secret<[u8; 32]>)>> {
+            crate::backend::fast_qos();
+            let mut ends = Vec::new();
+            loop {
+                let start = next.fetch_add(be.lanes(), Ordering::Relaxed);
+                if start >= n as usize {
+                    break;
                 }
-                Ok(ends)
-            }));
+                let lanes = be.lanes().min(n as usize - start);
+                let mut st = Secret([[0; 8]; 2]);
+                let mut tails = [Tail::new(&salt, 0); 2];
+                for l in 0..lanes {
+                    let i = (start + l + 1) as u32;
+                    tails[l] = Tail::new(&salt, i);
+                    let off = (start + l) * b as usize;
+                    st[l] = bytes_to_words(p.chain_start(i, &x[off..off + b as usize])?);
+                }
+                let mut j = 0;
+                while j < m {
+                    let steps = (m - j).min(1 << 22);
+                    be.run_lanes(&mut st[..lanes], &tails[..lanes], steps);
+                    j += steps;
+                    done.fetch_add(steps * lanes as u64, Ordering::Relaxed);
+                }
+                for (l, s) in st[..lanes].iter().enumerate() {
+                    ends.push((start + l, Secret(words_to_bytes(*s))));
+                }
+            }
+            Ok(ends)
+        };
+        let mut local = Vec::new();
+        for _ in 0..threads {
+            match crate::thread::spawn(scope, worker) {
+                Ok(job) => jobs.push(job),
+                Err(_) => {
+                    if jobs.is_empty() {
+                        local = worker()?;
+                    }
+                    break;
+                }
+            }
         }
         if let Some(f) = opts.progress {
             while jobs.iter().any(|j| !j.is_finished()) {
@@ -385,29 +406,81 @@ pub fn generate_from(
             }
             f(u64::from(n) * m, u64::from(n) * m);
         }
-        let mut y = Vec::new();
+        let mut y = Secret(Vec::<[u8; 32]>::new());
         y.try_reserve_exact(n as usize).map_err(|_| Error::Memory)?;
         y.resize(n as usize, [0; 32]);
+        for (i, end) in &local {
+            y[*i] = **end;
+        }
         for job in jobs {
-            for (i, end) in job.join().map_err(|_| Error::Memory)?? {
-                y[i] = end;
+            let ends = job.join().map_err(|_| Error::Memory)??;
+            for (i, end) in &ends {
+                y[*i] = **end;
             }
         }
-        Ok(y)
+        Ok(std::mem::take(&mut *y))
     })?;
     p.links[..b as usize].copy_from_slice(&x[..b as usize]);
-    let mut a = p.context();
+    let mut a = Secret(p.context());
     for (i, end) in y.iter().enumerate() {
-        a = th("chainseal/v1/acc", &[&a, end]);
+        *a = th("chainseal/v1/acc", &[&a[..], end]);
         if i + 1 < n as usize {
-            let mask = p.chain_mask(end);
+            let mask = Secret(p.chain_mask(end));
             let off = (i + 1) * b as usize;
             for (j, v) in mask[..b as usize].iter().enumerate() {
                 p.links[off + j] = v ^ x[off + j];
             }
         }
     }
-    let key = th("chainseal/v1/key", &[&p.context(), &a]);
+    let key = th("chainseal/v1/key", &[&p.context(), &a[..]]);
     p.commit = th("chainseal/v1/commit", &[&p.context(), &key]);
     Ok((p, key, y))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn cursor_erasure_clears_state_and_accumulator() {
+        let mut cursor = Cursor {
+            i: 2,
+            j: 5,
+            state: [42; 8],
+            acc: [19; 32],
+        };
+        cursor.erase();
+        assert_eq!(cursor.state, [0; 8]);
+        assert_eq!(cursor.acc, [0; 32]);
+    }
+    #[test]
+    fn generation_spawn_failures_preserve_every_byte() {
+        let x = [19; 17 * 12];
+        for be in Backend::available() {
+            let opts = GenOptions {
+                threads: 4,
+                backend: Some(be),
+                progress: None,
+            };
+            let (reference, key, ends) = generate_from(17, 9, 12, [23; 16], &x, &opts).unwrap();
+            for started in 0..4 {
+                let progress = std::cell::Cell::new(0);
+                let cb = |done, total| {
+                    assert!(done <= total);
+                    progress.set(done);
+                };
+                let options = GenOptions {
+                    progress: Some(&cb),
+                    ..opts
+                };
+                let (actual, actual_key, actual_ends) = crate::thread::fail_after(started, || {
+                    generate_from(17, 9, 12, [23; 16], &x, &options)
+                })
+                .unwrap();
+                assert_eq!(actual.encode().unwrap(), reference.encode().unwrap());
+                assert_eq!(actual_key, key);
+                assert_eq!(actual_ends, ends);
+                assert_eq!(progress.get(), 17 * 9);
+            }
+        }
+    }
 }

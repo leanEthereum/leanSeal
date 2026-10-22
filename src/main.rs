@@ -1,7 +1,10 @@
 #![deny(unsafe_code)]
 use chainseal::{backend::Backend, benchmark, runtime::*, *};
 use std::{
+    ffi::{OsStr, OsString},
     io::{self, IsTerminal, Write},
+    os::unix::ffi::{OsStrExt, OsStringExt},
+    path::Path,
     time::Instant,
 };
 const USAGE:&str="usage: chainseal <command> [options]\n\nSender:\n  gen -o SECRET (-m STEPS | -d DELAY) [-n CHAINS] [-b BYTES]\n        build a puzzle in advance and keep it, with its key, in SECRET\n  encrypt -o ENVELOPE (-s SECRET | -m STEPS | -d DELAY) [-i MESSAGE] [--secret-out FILE]\n        encrypt MESSAGE (default stdin) under a stored or freshly built puzzle\n  key SECRET            print the key, to open an envelope early\n\nReceiver:\n  solve FILE...         solve puzzles (envelopes or bare puzzles), one thread each,\n                        saving progress to FILE.ckpt; print each key\n  open ENVELOPE (-k KEY | -s SECRET | --solve) [-o MESSAGE]\n        check the key and the tag, then write the message (default stdout)\n  info FILE             describe a puzzle, envelope, secret or checkpoint\n\nMeasurement:\n  bench [latency | throughput | build | attack | all]\n  selftest              check every backend against plain SHA-256, then a round trip\n  vectors               print the test vectors as JSON\n\nPuzzle options:\n  -n, --chains N        chains (default 64); match the sender's parallelism\n  -m, --steps M         hash steps per chain, e.g. 2^28\n  -d, --delay T         or: choose m for a delay of T (90, 10m, 2h) ...\n      --step-ns L       ... against a solver taking L ns per step (default: this machine)\n  -b, --link-bytes B    link width (default 16; see SPEC.md section 8)\n  -j, --threads J       build threads (default: all cores)\n  -q, --quiet\n\nBackends: set CHAINSEAL_BACKEND=portable|armv8-sha2|x86-sha-ni to override.\n";
@@ -20,7 +23,7 @@ impl From<Failure> for CliError {
 fn usage(msg: &str) -> CliError {
     CliError::Usage(Some(msg.into()))
 }
-fn code(what: &str, e: Error) -> CliError {
+fn code(what: impl AsRef<OsStr>, e: Error) -> CliError {
     Failure::code(what, e).into()
 }
 fn output(s: &str) -> CliResult<()> {
@@ -289,10 +292,15 @@ fn opt(name: &'static str, short: char, value: bool) -> Opt {
     Opt { name, short, value }
 }
 struct Args {
-    opts: Vec<(char, String)>,
-    pos: Vec<String>,
+    opts: Vec<(char, OsString)>,
+    pos: Vec<OsString>,
 }
-fn parse(args: &[String], spec: &[Opt], shorts: &str) -> CliResult<Args> {
+fn text(value: &OsStr) -> CliResult<&str> {
+    value
+        .to_str()
+        .ok_or_else(|| usage("option value is not valid UTF-8"))
+}
+fn parse(args: &[OsString], spec: &[Opt], shorts: &str) -> CliResult<Args> {
     let mut r = Args {
         opts: Vec::new(),
         pos: Vec::new(),
@@ -302,62 +310,80 @@ fn parse(args: &[String], spec: &[Opt], shorts: &str) -> CliResult<Args> {
     while i < args.len() {
         let a = &args[i];
         i += 1;
-        if end || a == "-" || !a.starts_with('-') {
+        let bytes = a.as_bytes();
+        if end || bytes == b"-" || !bytes.starts_with(b"-") {
             r.pos.push(a.clone());
             continue;
         }
-        if a == "--" {
+        if bytes == b"--" {
             end = true;
             continue;
         }
-        if let Some(a) = a.strip_prefix("--") {
-            let (name, value) = a.split_once('=').map_or((a, None), |(n, v)| (n, Some(v)));
-            let candidates: Vec<_> = spec.iter().filter(|s| s.name == name).collect();
-            let candidates = if candidates.is_empty() {
+        if let Some(long) = bytes.strip_prefix(b"--") {
+            let split = long.iter().position(|b| *b == b'=');
+            let (name, value) =
+                split.map_or((long, None), |at| (&long[..at], Some(&long[at + 1..])));
+            let name = text(OsStr::from_bytes(name))?;
+            let exact: Vec<_> = spec.iter().filter(|s| s.name == name).collect();
+            let candidates: Vec<_> = if exact.is_empty() {
                 spec.iter().filter(|s| s.name.starts_with(name)).collect()
             } else {
-                candidates
+                exact
             };
+            if candidates.is_empty() {
+                return Err(usage(&format!("unrecognized option '--{name}'")));
+            }
             if candidates.len() != 1 {
-                return Err(CliError::Usage(None));
+                let names = candidates
+                    .iter()
+                    .map(|o| format!(" '--{}'", o.name))
+                    .collect::<String>();
+                return Err(usage(&format!(
+                    "option '--{name}' is ambiguous; possibilities:{names}"
+                )));
             }
             let o = candidates[0];
             let v = if o.value {
                 if let Some(v) = value {
-                    v.to_owned()
+                    OsString::from_vec(v.to_vec())
                 } else {
-                    let v = args.get(i).ok_or(CliError::Usage(None))?.clone();
+                    let v = args
+                        .get(i)
+                        .ok_or_else(|| usage(&format!("option '--{name}' requires an argument")))?
+                        .clone();
                     i += 1;
                     v
                 }
             } else {
                 if value.is_some() {
-                    return Err(CliError::Usage(None));
+                    return Err(usage(&format!(
+                        "option '--{name}' doesn't allow an argument"
+                    )));
                 }
-                String::new()
+                OsString::new()
             };
             r.opts.push((o.short, v));
         } else {
-            let chars: Vec<_> = a[1..].char_indices().collect();
-            for (at, c) in chars {
-                if !shorts.contains(c) {
-                    return Err(CliError::Usage(None));
-                }
+            for (at, &b) in bytes[1..].iter().enumerate() {
+                let c = char::from(b);
                 let o = spec
                     .iter()
-                    .find(|o| o.short == c)
-                    .ok_or(CliError::Usage(None))?;
+                    .find(|o| o.short == c && shorts.contains(c))
+                    .ok_or_else(|| usage(&format!("invalid option -- '{c}'")))?;
                 let v = if o.value {
-                    let rest = &a[1 + at + c.len_utf8()..];
+                    let rest = &bytes[at + 2..];
                     if !rest.is_empty() {
-                        rest.to_owned()
+                        OsString::from_vec(rest.to_vec())
                     } else {
-                        let v = args.get(i).ok_or(CliError::Usage(None))?.clone();
+                        let v = args
+                            .get(i)
+                            .ok_or_else(|| usage(&format!("option requires an argument -- '{c}'")))?
+                            .clone();
                         i += 1;
                         v
                     }
                 } else {
-                    String::new()
+                    OsString::new()
                 };
                 r.opts.push((c, v));
                 if o.value {
@@ -368,6 +394,7 @@ fn parse(args: &[String], spec: &[Opt], shorts: &str) -> CliResult<Args> {
     }
     Ok(r)
 }
+
 struct Params {
     n: u32,
     m: u64,
@@ -474,7 +501,7 @@ impl Params {
         Ok((p, key))
     }
 }
-fn gen_or_encrypt(command: &str, args: &[String], be: Backend) -> CliResult<i32> {
+fn gen_or_encrypt(command: &str, args: &[OsString], be: Backend) -> CliResult<i32> {
     let mut spec = PARAM.to_vec();
     spec.push(opt("out", 'o', true));
     if command == "encrypt" {
@@ -497,11 +524,11 @@ fn gen_or_encrypt(command: &str, args: &[String], be: Backend) -> CliResult<i32>
     let (mut out, mut input, mut secret, mut secret_out) = (None, None, None, None);
     for (c, v) in &parsed.opts {
         match c {
-            'o' => out = Some(v.as_str()),
-            'i' => input = Some(v.as_str()),
-            's' => secret = Some(v.as_str()),
-            'S' => secret_out = Some(v.as_str()),
-            _ => p.option(*c, v)?,
+            'o' => out = Some(v.as_os_str()),
+            'i' => input = Some(v.as_os_str()),
+            's' => secret = Some(v.as_os_str()),
+            'S' => secret_out = Some(v.as_os_str()),
+            _ => p.option(*c, text(v)?)?,
         }
     }
     let out = out.ok_or_else(|| {
@@ -519,13 +546,16 @@ fn gen_or_encrypt(command: &str, args: &[String], be: Backend) -> CliResult<i32>
         save_secret(out, &puzzle, &key)?;
         key.fill(0);
         if !p.quiet {
-            eprintln!("wrote {out} (keep it private until you use it)");
+            eprintln!(
+                "wrote {} (keep it private until you use it)",
+                Path::new(out).display()
+            );
         }
         return Ok(0);
     }
     let mut pos = parsed.pos.iter();
     if input.is_none() {
-        input = pos.next().map(String::as_str);
+        input = pos.next().map(OsString::as_os_str);
     }
     if pos.next().is_some() {
         return Err(usage(
@@ -535,11 +565,15 @@ fn gen_or_encrypt(command: &str, args: &[String], be: Backend) -> CliResult<i32>
     if secret.is_some() && (p.m > 0 || p.delay > 0. || secret_out.is_some()) {
         return Err(usage("-s uses a stored puzzle: no -m, -d or --secret-out"));
     }
-    let input = input.unwrap_or("-");
+    let input = input.unwrap_or(OsStr::new("-"));
     let mut msg = read_file(input).map_err(|e| Failure::io(input, e))?;
     if msg.len() > MAX_MSG {
         return Err(code(
-            if input == "-" { "stdin" } else { input },
+            if input == "-" {
+                OsStr::new("stdin")
+            } else {
+                input
+            },
             Error::Range,
         ));
     }
@@ -557,7 +591,8 @@ fn gen_or_encrypt(command: &str, args: &[String], be: Backend) -> CliResult<i32>
     }
     if !p.quiet {
         eprintln!(
-            "wrote {out}: {} bytes (puzzle {} + message {} + 60)",
+            "wrote {}: {} bytes (puzzle {} + message {} + 60)",
+            Path::new(out).display(),
             env.len(),
             68 + puzzle.links().len(),
             msg.len()
@@ -567,7 +602,7 @@ fn gen_or_encrypt(command: &str, args: &[String], be: Backend) -> CliResult<i32>
     msg.fill(0);
     Ok(0)
 }
-fn load_job(path: &str, checkpoints: bool) -> CliResult<SolveJob> {
+fn load_job(path: &OsStr, checkpoints: bool) -> CliResult<SolveJob> {
     let job = SolveJob::load(path, checkpoints).map_err(|e| {
         if e.code == Some(Error::Mismatch) {
             CliError::Message(
@@ -583,7 +618,8 @@ fn load_job(path: &str, checkpoints: bool) -> CliResult<SolveJob> {
     })?;
     if job.resumed {
         eprintln!(
-            "{path}: resuming at chain {} of {}, {} steps done",
+            "{}: resuming at chain {} of {}, {} steps done",
+            Path::new(path).display(),
             job.cursor.i,
             job.puzzle.n(),
             fmt_si(job.start_done as f64)
@@ -595,7 +631,7 @@ fn run_jobs(
     jobs: &mut [SolveJob],
     be: Backend,
     stop_after: u64,
-    ready: Option<&str>,
+    ready: Option<&Path>,
     quiet: bool,
 ) -> CliResult<i32> {
     let show = !quiet && io::stderr().is_terminal();
@@ -634,7 +670,26 @@ fn run_jobs(
             );
         }
     })
-    .map_err(|e| Failure::io("solve", e))?;
+    .map_err(|e| {
+        let message = e.to_string();
+        if message != format!("could not start {count} solver threads") {
+            return CliError::Failure(Failure::io("solve", e));
+        }
+        for job in jobs.iter_mut() {
+            if let Some(path) = &job.checkpoint {
+                if let Some(error) = job.save_error.take() {
+                    eprintln!("chainseal: {}", Failure::io(path, error));
+                } else {
+                    eprintln!(
+                        "{}: stopped; progress saved to {}",
+                        job.path.display(),
+                        path.display()
+                    );
+                }
+            }
+        }
+        CliError::Message(message, 1)
+    })?;
     if show {
         eprintln!();
     }
@@ -648,9 +703,13 @@ fn run_jobs(
                     rc = e.exit_code();
                 } else {
                     if let Some(path) = &j.checkpoint {
-                        eprintln!("{}: stopped; progress saved to {path}", j.path);
+                        eprintln!(
+                            "{}: stopped; progress saved to {}",
+                            j.path.display(),
+                            path.display()
+                        );
                     } else {
-                        eprintln!("{}: stopped", j.path);
+                        eprintln!("{}: stopped", j.path.display());
                     }
                     if rc == 0 {
                         rc = 130;
@@ -667,7 +726,7 @@ fn run_jobs(
                     let steps = j.done() - j.start_done;
                     eprintln!(
                         "{}: solved in {}, {:.2} ns/step",
-                        j.path,
+                        j.path.display(),
                         fmt_duration(j.elapsed),
                         if steps > 0 {
                             j.elapsed * 1e9 / steps as f64
@@ -682,7 +741,7 @@ fn run_jobs(
     }
     Ok(rc)
 }
-fn solve(args: &[String], be: Backend, stop: u64, ready: Option<&str>) -> CliResult<i32> {
+fn solve(args: &[OsString], be: Backend, stop: u64, ready: Option<&Path>) -> CliResult<i32> {
     let a = parse(
         args,
         &[opt("no-checkpoint", 'N', false), opt("quiet", 'q', false)],
@@ -701,7 +760,7 @@ fn solve(args: &[String], be: Backend, stop: u64, ready: Option<&str>) -> CliRes
     let mut rc = run_jobs(&mut jobs, be, stop, ready, quiet)?;
     for j in jobs {
         if let Some(Ok(key)) = j.result {
-            if let Err(e) = output(&format!("{}  {}\n", hex(&key), j.path)) {
+            if let Err(e) = output(&format!("{}  {}\n", hex(&key), j.path.display())) {
                 if let CliError::Failure(e) = &e {
                     eprintln!("chainseal: {e}");
                 }
@@ -713,8 +772,8 @@ fn solve(args: &[String], be: Backend, stop: u64, ready: Option<&str>) -> CliRes
     }
     Ok(rc)
 }
-fn read_key(arg: &str) -> CliResult<[u8; 32]> {
-    if let Ok(k) = unhex(arg) {
+fn read_key(arg: &OsStr) -> CliResult<[u8; 32]> {
+    if let Some(k) = arg.to_str().and_then(|s| unhex(s).ok()) {
         return Ok(k);
     }
     let bad = || usage("-k takes 64 hex digits or a file holding them");
@@ -729,7 +788,7 @@ fn read_key(arg: &str) -> CliResult<[u8; 32]> {
     data.fill(0);
     result
 }
-fn open(args: &[String], be: Backend, stop: u64, ready: Option<&str>) -> CliResult<i32> {
+fn open(args: &[OsString], be: Backend, stop: u64, ready: Option<&Path>) -> CliResult<i32> {
     let a = parse(
         args,
         &[
@@ -742,13 +801,13 @@ fn open(args: &[String], be: Backend, stop: u64, ready: Option<&str>) -> CliResu
         ],
         "oksq",
     )?;
-    let (mut out, mut keyarg, mut secret) = ("-", None, None);
+    let (mut out, mut keyarg, mut secret) = (OsStr::new("-"), None, None);
     let (mut solve, mut checkpoints, mut quiet) = (false, true, false);
     for (c, v) in &a.opts {
         match c {
             'o' => out = v,
-            'k' => keyarg = Some(v.as_str()),
-            's' => secret = Some(v.as_str()),
+            'k' => keyarg = Some(v.as_os_str()),
+            's' => secret = Some(v.as_os_str()),
             'X' => solve = true,
             'N' => checkpoints = false,
             'q' => quiet = true,
@@ -765,7 +824,7 @@ fn open(args: &[String], be: Backend, stop: u64, ready: Option<&str>) -> CliResu
     let mut j = load_job(&a.pos[0], solve && checkpoints)?;
     if !j.envelope {
         return Err(CliError::Message(
-            format!("{} is a bare puzzle, not an envelope", j.path),
+            format!("{} is a bare puzzle, not an envelope", j.path.display()),
             1,
         ));
     }
@@ -809,20 +868,21 @@ fn print_puzzle(p: &Puzzle, be: Backend) -> CliResult<()> {
     output(&format!("  chains n       {}\n  steps/chain m  {}\n  link bytes b   {}\n  salt           {}\n  commitment     {}\n  puzzle id      {}\n  puzzle size    {} bytes\n  work n*m       {} steps: {} here at {:.1} ns/step\n  last-link guess  each costs m steps, succeeds with chance 2^-{}\n",
         p.n(),p.m(),p.b(),hex(p.salt()),hex(p.commitment()),hex(&p.id()),68+p.links().len(),fmt_si(work),fmt_duration(work*ns*1e-9),ns,8*u32::from(p.b())))
 }
-fn info(args: &[String], be: Backend) -> CliResult<i32> {
+fn info(args: &[OsString], be: Backend) -> CliResult<i32> {
     if args.len() != 1 {
         return Err(usage("info takes one file"));
     }
-    let path = &args[0];
+    let path = Path::new(&args[0]);
     let d = read_file(path).map_err(|e| Failure::io(path, e))?;
     if d.starts_with(b"CSPZ") {
         let p = Puzzle::decode(&d).map_err(|e| code(path, e))?;
-        output(&format!("{path}: puzzle\n"))?;
+        output(&format!("{}: puzzle\n", path.display()))?;
         print_puzzle(&p, be)?;
     } else if d.starts_with(b"CSEN") {
         let e = Envelope::decode(&d).map_err(|e| code(path, e))?;
         output(&format!(
-            "{path}: envelope, {} bytes\n  message        {} bytes\n  nonce          {}\n",
+            "{}: envelope, {} bytes\n  message        {} bytes\n  nonce          {}\n",
+            path.display(),
             d.len(),
             e.message_len(),
             hex(&e.nonce)
@@ -831,13 +891,15 @@ fn info(args: &[String], be: Backend) -> CliResult<i32> {
     } else if d.starts_with(b"CSSK") {
         let (p, _) = secret_decode(&d).map_err(|e| code(path, e))?;
         output(&format!(
-            "{path}: secret (puzzle with its key; the key matches the commitment)\n"
+            "{}: secret (puzzle with its key; the key matches the commitment)\n",
+            path.display()
         ))?;
         print_puzzle(&p, be)?;
     } else if d.starts_with(b"CSCK") {
         let (id, i, j) = checkpoint_peek(&d).map_err(|e| code(path, e))?;
         output(&format!(
-            "{path}: checkpoint\n  puzzle id      {}\n  chain i        {i}\n  steps done j   {j}\n",
+            "{}: checkpoint\n  puzzle id      {}\n  chain i        {i}\n  steps done j   {j}\n",
+            path.display(),
             hex(&id)
         ))?;
     } else {
@@ -845,7 +907,7 @@ fn info(args: &[String], be: Backend) -> CliResult<i32> {
     }
     Ok(0)
 }
-fn bench(args: &[String], be: Backend) -> CliResult<i32> {
+fn bench(args: &[OsString], be: Backend) -> CliResult<i32> {
     let spec = [
         opt("seconds", 's', true),
         opt("threads", 'j', true),
@@ -870,6 +932,7 @@ fn bench(args: &[String], be: Backend) -> CliResult<i32> {
     ) = (2., cpu_count(), 1u64 << 28, 16, 1, 16, 4, 20000, 0.25);
     for (c, v) in &a.opts {
         let r = (|| -> CliResult<()> {
+            let v = text(v)?;
             match c {
                 's' => secs = seconds(v)?,
                 'j' => threads = bounded(v, 1, 4096)? as usize,
@@ -895,8 +958,9 @@ fn bench(args: &[String], be: Backend) -> CliResult<i32> {
             return Err(CliError::Message("bad bench option".into(), 2));
         }
     }
-    let what = a.pos.first().map_or("all", String::as_str);
+    let what = a.pos.first().map(|v| text(v)).transpose()?.unwrap_or("all");
     let all = what == "all";
+    let mut rc = 0;
     let uname = std::process::Command::new("uname")
         .args(["-s", "-m"])
         .output()
@@ -930,49 +994,69 @@ fn bench(args: &[String], be: Backend) -> CliResult<i32> {
         }
     }
     if all || what == "throughput" {
-        output(&format!(
-            "## throughput: independent chains in parallel ({})\n{:>8} {:>6} {:>14} {:>16}\n",
-            be.name(),
-            "threads",
-            "lanes",
-            "M steps/s",
-            "per thread"
-        ))?;
-        for lanes in 1..=be.lanes() {
-            let r = benchmark::throughput(be, 1, lanes, secs / 4.);
+        let result = (|| -> CliResult<()> {
             output(&format!(
-                "{:8} {lanes:6} {:14.1} {:16.1}\n",
-                1,
-                r / 1e6,
-                r / 1e6
+                "## throughput: independent chains in parallel ({})\n{:>8} {:>6} {:>14} {:>16}\n",
+                be.name(),
+                "threads",
+                "lanes",
+                "M steps/s",
+                "per thread"
             ))?;
-        }
-        for count in [2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128]
-            .into_iter()
-            .filter(|c| *c < threads)
-        {
-            let r = benchmark::throughput(be, count, be.lanes(), secs / 4.);
+            for lanes in 1..=be.lanes() {
+                let r = benchmark::throughput(be, 1, lanes, secs / 4.)
+                    .map_err(|e| Failure::io("throughput", e))?;
+                output(&format!(
+                    "{:8} {lanes:6} {:14.1} {:16.1}\n",
+                    1,
+                    r / 1e6,
+                    r / 1e6
+                ))?;
+            }
+            for count in [2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128]
+                .into_iter()
+                .filter(|c| *c < threads)
+            {
+                let r = benchmark::throughput(be, count, be.lanes(), secs / 4.)
+                    .map_err(|e| Failure::io("throughput", e))?;
+                output(&format!(
+                    "{count:8} {:6} {:14.1} {:16.1}\n",
+                    be.lanes(),
+                    r / 1e6,
+                    r / 1e6 / count as f64
+                ))?;
+            }
+            let r = benchmark::throughput(be, threads, be.lanes(), secs)
+                .map_err(|e| Failure::io("throughput", e))?;
             output(&format!(
-                "{count:8} {:6} {:14.1} {:16.1}\n",
+                "{threads:8} {:6} {:14.1} {:16.1}   <- all cores\n",
                 be.lanes(),
                 r / 1e6,
-                r / 1e6 / count as f64
+                r / 1e6 / threads as f64
             ))?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            match error {
+                CliError::Failure(e) if e.what == "throughput" => eprintln!("chainseal: {e}"),
+                other => return Err(other),
+            }
+            rc = 1;
         }
-        let r = benchmark::throughput(be, threads, be.lanes(), secs);
-        output(&format!(
-            "{threads:8} {:6} {:14.1} {:16.1}   <- all cores\n",
-            be.lanes(),
-            r / 1e6,
-            r / 1e6 / threads as f64
-        ))?;
     }
     if all || what == "build" {
         let ns = benchmark::latency_ns(be, 0.5);
         output(&format!("## build: total work n*m = {} steps, {threads} threads, {}, {ns:.2} ns/step for one chain\n{:>6} {:>12} {:>10} {:>12} {:>12} {:>10} {:>8}\n",fmt_si(work as f64),be.name(),"n","m","build s","M steps/s","solve s","ratio","bytes"))?;
         let mut count = 1;
         while count <= 4096 && u64::from(count) <= work {
-            let r = benchmark::build(work, count, threads, b, be).map_err(|e| code("build", e))?;
+            let r = match benchmark::build(work, count, threads, b, be) {
+                Ok(row) => row,
+                Err(e) => {
+                    eprintln!("chainseal: build: {e}");
+                    rc = 1;
+                    break;
+                }
+            };
             let solve = r.n as f64 * r.m as f64 * ns * 1e-9;
             output(&format!(
                 "{:6} {:12} {:10.3} {:12.1} {:12.3} {:10.2} {:8}\n",
@@ -1005,6 +1089,22 @@ fn bench(args: &[String], be: Backend) -> CliResult<i32> {
             2,
         ));
     }
+    Ok(rc)
+}
+fn report_selftest(
+    tests: impl IntoIterator<Item = (&'static str, bool)>,
+    mut write: impl FnMut(&str) -> CliResult<()>,
+) -> CliResult<i32> {
+    for (name, pass) in tests {
+        write(&format!(
+            "backend {name:<12} {}\n",
+            if pass { "ok" } else { "MISMATCH" }
+        ))?;
+        if !pass {
+            return Ok(1);
+        }
+    }
+    write("round trip           ok\n")?;
     Ok(0)
 }
 fn run() -> CliResult<i32> {
@@ -1013,9 +1113,10 @@ fn run() -> CliResult<i32> {
         Ok(s) => number(&s).map_err(|_| usage("bad CHAINSEAL_TEST_STOP_AFTER"))?,
         Err(_) => 0,
     };
-    let ready = std::env::var("CHAINSEAL_TEST_READY").ok();
+    let ready = std::env::var_os("CHAINSEAL_TEST_READY").map(std::path::PathBuf::from);
     let be = Backend::best().map_err(|_| {
-        let name = std::env::var("CHAINSEAL_BACKEND").unwrap_or_default();
+        let name = std::env::var_os("CHAINSEAL_BACKEND").unwrap_or_default();
+        let name = name.to_string_lossy();
         CliError::Message(
             format!(
                 "CHAINSEAL_BACKEND={name} is not available on this machine; available:{}",
@@ -1027,15 +1128,15 @@ fn run() -> CliResult<i32> {
             2,
         )
     })?;
-    let args: Vec<_> = std::env::args().skip(1).collect();
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
     let command = args.first().ok_or(CliError::Usage(None))?;
     let a = &args[1..];
-    match command.as_str() {
+    match text(command)? {
         "help" | "--help" | "-h" => {
             output(USAGE)?;
             Ok(0)
         }
-        "gen" | "encrypt" => gen_or_encrypt(command, a, be),
+        "gen" | "encrypt" => gen_or_encrypt(text(command)?, a, be),
         "key" => {
             if a.len() != 1 {
                 return Err(usage("key takes one SECRET file"));
@@ -1055,19 +1156,10 @@ fn run() -> CliResult<i32> {
             output(&s)?;
             Ok(0)
         }
-        "selftest" => {
-            let tests = benchmark::selftest().map_err(|e| code("selftest", e))?;
-            let mut ok = true;
-            for (name, pass) in tests {
-                output(&format!(
-                    "backend {name:<12} {}\n",
-                    if pass { "ok" } else { "MISMATCH" }
-                ))?;
-                ok &= pass;
-            }
-            output("round trip           ok\n")?;
-            Ok(i32::from(!ok))
-        }
+        "selftest" => report_selftest(
+            benchmark::selftest().map_err(|e| code("selftest", e))?,
+            output,
+        ),
         _ => Err(usage("unknown command")),
     }
 }
@@ -1091,4 +1183,24 @@ fn main() {
         }
     };
     std::process::exit(rc);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn selftest_mismatch_prints_and_returns_immediately() {
+        let mut output = String::new();
+        let mut visited = 0;
+        let results = [("bad", false), ("later", true)]
+            .into_iter()
+            .inspect(|_| visited += 1);
+        let result = report_selftest(results, |s| {
+            output.push_str(s);
+            Ok(())
+        });
+        assert!(matches!(result, Ok(1)));
+        assert_eq!(visited, 1);
+        assert_eq!(output, "backend bad          MISMATCH\n");
+    }
 }
