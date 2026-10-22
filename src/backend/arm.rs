@@ -16,7 +16,7 @@ pub(super) fn run(st: &mut [[u32; 8]], t: &[Tail], steps: u64) {
 #[target_feature(enable = "sha2")]
 #[inline(never)]
 unsafe fn run_impl<const L: usize>(st: &mut [[u32; 8]], tails: &[Tail], steps: u64) {
-    // Keep table loads as loads from a common base, like the C engine.
+    // Keep table loads as loads from a common base.
     // Folding each four-word group into a separate vector constant increases
     // register pressure and spills in the two-chain loop on Apple cores.
     let constants = std::hint::black_box(&K);
@@ -189,7 +189,7 @@ pub(super) fn fast_qos() {
         extern "C" {
             fn pthread_set_qos_class_self_np(class: u32, priority: i32) -> i32;
         }
-        // Matches the C worker's scheduling request; no pointers or owned resources.
+        // Requests the user-interactive QoS class; no pointers or owned resources.
         unsafe {
             pthread_set_qos_class_self_np(0x21, 0);
         }

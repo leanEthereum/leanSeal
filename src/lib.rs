@@ -24,27 +24,27 @@ pub const MAX_M: u64 = 1 << 48;
 pub const MAX_WORK: u64 = 1 << 60;
 /// Maximum plaintext length.
 pub const MAX_MSG: usize = 1 << 24;
-/// Errors corresponding to the C CS_E* codes.
+/// Errors returned by the library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Error {
-    /// Malformed encoding (CS_EFORMAT).
+    /// Malformed encoding.
     Format = 1,
-    /// Parameter out of range (CS_ERANGE).
+    /// Parameter out of range.
     Range = 2,
-    /// Key commitment mismatch (CS_ECOMMIT).
+    /// Key commitment mismatch.
     Commit = 3,
-    /// Invalid authentication tag (CS_ETAG).
+    /// Invalid authentication tag.
     Tag = 4,
-    /// The puzzle solves to an uncommitted key (CS_EPUZZLE).
+    /// The puzzle solves to an uncommitted key.
     Puzzle = 5,
-    /// Checkpoint puzzle ID mismatch (CS_EMISMATCH).
+    /// Checkpoint puzzle ID mismatch.
     Mismatch = 6,
-    /// Allocation failed (CS_ENOMEM).
+    /// Allocation failed.
     Memory = 7,
-    /// Operating system entropy failed (CS_ERNG).
+    /// Operating system entropy failed.
     Rng = 8,
-    /// Progress callback requested a stop (CS_ESTOPPED).
+    /// Progress callback requested a stop.
     Stopped = 9,
     /// Requested backend is unavailable.
     Backend = 10,

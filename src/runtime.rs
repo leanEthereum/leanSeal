@@ -57,7 +57,7 @@ impl Failure {
             },
         }
     }
-    /// Matching C command-line exit status.
+    /// Command-line exit status for this failure.
     pub fn exit_code(&self) -> i32 {
         match self.code {
             Some(Error::Commit | Error::Tag) => 3,
@@ -173,7 +173,7 @@ pub fn hex(data: &[u8]) -> String {
     }
     s
 }
-/// Decode a fixed-size hexadecimal key, allowing the C tool's trailing whitespace.
+/// Decode a fixed-size hexadecimal key, allowing trailing whitespace.
 pub fn unhex<const N: usize>(text: &str) -> Result<[u8; N]> {
     let s = text.trim_end_matches(['\r', '\n', ' ']).as_bytes();
     if s.len() != 2 * N {
@@ -193,7 +193,7 @@ pub fn unhex<const N: usize>(text: &str) -> Result<[u8; N]> {
     }
     Ok(out)
 }
-/// Format a count using the C tool's decimal prefixes.
+/// Format a count with decimal prefixes (k, M, G, ...).
 pub fn fmt_si(mut x: f64) -> String {
     let units = ["", " k", " M", " G", " T", " P", " E"];
     let mut u = 0;
@@ -207,7 +207,7 @@ pub fn fmt_si(mut x: f64) -> String {
         format!("{x:.1}{}", units[u])
     }
 }
-/// Format elapsed time using the C tool's units.
+/// Format elapsed time in the units the tool prints.
 pub fn fmt_duration(t: f64) -> String {
     if t < 1e-3 {
         format!("{:.0} us", t * 1e6)
@@ -458,7 +458,7 @@ pub fn solve_jobs(
     }
     Ok(())
 }
-/// Apply the same scheduler hint as the C command.
+/// Ask the OS to run this thread on a performance core (macOS only).
 pub fn fast_qos() {
     crate::backend::fast_qos();
 }

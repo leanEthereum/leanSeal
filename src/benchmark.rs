@@ -118,7 +118,7 @@ pub struct AttackResult {
     /// Elapsed seconds.
     pub seconds: f64,
 }
-/// Run the same bounded last-link guessing experiment as the C tool.
+/// Run the bounded experiment that guesses one link ahead (SPEC section 8).
 pub fn attack(
     b: u8,
     n: u32,

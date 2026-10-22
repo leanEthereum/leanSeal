@@ -309,7 +309,7 @@ pub(super) fn fast_qos() {
         extern "C" {
             fn pthread_set_qos_class_self_np(class: u32, priority: i32) -> i32;
         }
-        // Matches the C worker's scheduling request; no pointers or owned resources.
+        // Requests the user-interactive QoS class; no pointers or owned resources.
         unsafe {
             pthread_set_qos_class_self_np(0x21, 0);
         }
