@@ -1,7 +1,8 @@
 #!/bin/sh
 # End-to-end demo: time-lock a signed Ethereum transaction.
 #
-#   sh demo.sh [CHAINS STEPS]     default: 512 chains of 2^18 steps (about 3 s to solve)
+#   sh demo.sh [CHAINS STEPS [PATH_TO_CHAINSEAL]]
+#                               default: 512 chains of 2^18 steps (about 3 s to solve)
 #   sh demo.sh 512 2^25           Vitalik's example: about 6.5 minutes on an Apple M4
 #
 # The sender builds the puzzle ahead of time, encrypts the transaction when it
@@ -10,7 +11,7 @@
 set -eu
 N=${1:-512}
 M=${2:-2^18}
-CS=$(cd "$(dirname "$0")" && pwd)/chainseal
+CS=${3:-$(cd "$(dirname "$0")" && pwd)/target/release/chainseal}
 [ -x "$CS" ] || { echo "build first: make" >&2; exit 1; }
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT

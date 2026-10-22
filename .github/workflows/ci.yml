@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            backend: x86-sha-ni
+          - os: ubuntu-24.04-arm
+            backend: armv8-sha2
+          - os: macos-latest
+            backend: armv8-sha2
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy --release --all-targets -- -D warnings
+      - name: Full test suite
+        run: make test
+      - name: Require hardware backend agreement
+        shell: bash
+        env:
+          EXPECTED_BACKEND: ${{ matrix.backend }}
+        run: |
+          target/release/chainseal selftest | tee selftest.log
+          grep -Eq "^backend ${EXPECTED_BACKEND}[[:space:]]+ok$" selftest.log
+      - name: Portable CLI and cross tests
+        env:
+          CHAINSEAL_BACKEND: portable
+        run: |
+          sh tests/cli.sh
+          sh tests/cross.sh
+
+  msrv:
+    name: Build with MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import tomllib
+          with open("Cargo.toml", "rb") as manifest:
+              print("version=" + tomllib.load(manifest)["package"]["rust-version"])
+          PY
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build all targets with MSRV
+        run: cargo build --release --all-targets --locked

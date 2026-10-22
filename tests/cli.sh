@@ -1,6 +1,7 @@
 #!/bin/sh
-# End-to-end tests of the command-line tool. Usage: sh tests/cli.sh ./chainseal
+# End-to-end tests of the command-line tool. Usage: sh tests/cli.sh [PATH_TO_CHAINSEAL]
 set -eu
+set -- "${1:-./target/release/chainseal}"
 CS=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
