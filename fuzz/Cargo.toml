@@ -1,0 +1,44 @@
+[package]
+name = "chainseal-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+chainseal = { path = ".." }
+libfuzzer-sys = "0.4"
+
+# A workspace of its own, so the root manifest stays unchanged.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "puzzle"
+path = "fuzz_targets/puzzle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "envelope"
+path = "fuzz_targets/envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "secret"
+path = "fuzz_targets/secret.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "checkpoint"
+path = "fuzz_targets/checkpoint.rs"
+test = false
+doc = false
+bench = false

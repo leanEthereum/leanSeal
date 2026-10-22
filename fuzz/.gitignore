@@ -1,0 +1,6 @@
+/target
+/artifacts
+/coverage
+# Keep the checked-in seeds; ignore what libFuzzer adds to the corpus.
+/corpus/*/*
+!/corpus/*/seed-*
