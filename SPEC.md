@@ -210,7 +210,7 @@ For a target delay `T` against an attacker with per-step latency `ℓ`, choose `
 
 ## 10. Test vectors (informative)
 
-`tests/vectors.json` holds deterministic vectors produced by the reference C implementation. It has two lists.
+`tests/vectors.json` holds deterministic vectors. `chainseal vectors` regenerates them byte for byte, and the Python reference checks them. It has two lists.
 
 `cases`: valid puzzles. Each entry gives the parameters `n`, `m`, `b`, the random inputs `salt`, `x` (the links `x_1..x_n`), `nonce` and `message`, and the values an implementation must reproduce from them: `start` (the `s_i`), `y` (the `y_i`), `acc` (the `a_i` for i = 1..n), `key`, `commit`, `puzzle` (section 6.1), `puzzle_id`, `secret` (section 6.3) and `envelope` (section 6.2, sealed with the given nonce). `checkpoint` gives a position `i`, `j`, the state `F_i^j(s_i)` at that position, the accumulator `a_{i−1}` (`acc`), and its encoding (section 6.4). All byte strings are lowercase hex.
 

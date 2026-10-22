@@ -1,61 +1,51 @@
-# chainseal on x86_64: a cloud VM, AMD EPYC 9554P (Zen 4), 4 vCPU, 2026-10-21
+# chainseal on x86_64: a cloud VM, AMD EPYC 9554P (Zen 4), 4 vCPU, 2026-10-22
 # tests
 Linux 6.12.113 x86_64
-cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+rustc 1.95.0 (59807616e 2026-04-14)
 == make test
-sh tests/cross.sh ./chainseal
+sh tests/cross.sh target/release/chainseal
 cross tests: ok
 all tests passed
 exit 0
 == make test, x86-sha-ni forced
-sh tests/cross.sh ./chainseal
+sh tests/cross.sh target/release/chainseal
 cross tests: ok
 all tests passed
 exit 0
 == make test, portable forced
-sh tests/cross.sh ./chainseal
+sh tests/cross.sh target/release/chainseal
 cross tests: ok
 all tests passed
 exit 0
-== make sanitize
-rm -f chainseal tests/test tests/shani_emu
-rm -rf *.dSYM tests/*.dSYM
-make[1]: Leaving directory '/home/exedev/chainseal-x86'
-exit 0
-== make tsan
-rm -f chainseal tests/test tests/shani_emu
-rm -rf *.dSYM tests/*.dSYM
-make[1]: Leaving directory '/home/exedev/chainseal-x86'
-exit 0
 
-# bench (./chainseal bench all)
+# bench (target/release/chainseal bench all)
 # host Linux x86_64, 4 cpus, cpu: AMD EPYC 9554P 64-Core Processor
 ## latency: one chain, steps one after another
 backend         ns/step       best    M steps/s
-x86-sha-ni        42.29      41.54         23.6
-portable         233.57     224.09          4.3
+x86-sha-ni        37.38      36.25         26.7
+portable         230.28     228.26          4.3
 ## throughput: independent chains in parallel (x86-sha-ni)
  threads  lanes      M steps/s       per thread
-       1      1           23.3             23.3
-       1      2           39.4             39.4
-       2      2           55.7             27.9
-       4      2           93.0             23.2   <- all cores
-## build: total work n*m = 268.4 M steps, 4 threads, x86-sha-ni, 42.00 ns/step for one chain
+       1      1           25.6             25.6
+       1      2           45.4             45.4
+       2      2           78.8             39.4
+       4      2          173.1             43.3   <- all cores
+## build: total work n*m = 268.4 M steps, 4 threads, x86-sha-ni, 41.39 ns/step for one chain
      n            m    build s    M steps/s      solve s      ratio    bytes
-     1    268435456     11.246         23.9       11.273       1.00       84
-     2    134217728      6.732         39.9       11.273       1.67      100
-     4     67108864      4.113         65.3       11.273       2.74      132
-     8     33554432      3.089         86.9       11.273       3.65      196
-    16     16777216      2.996         89.6       11.273       3.76      324
-    32      8388608      3.026         88.7       11.273       3.73      580
-    64      4194304      3.196         84.0       11.273       3.53     1092
-   128      2097152      2.849         94.2       11.273       3.96     2116
-   256      1048576      3.019         88.9       11.273       3.73     4164
-   512       524288      2.708         99.1       11.273       4.16     8260
-  1024       262144      2.886         93.0       11.273       3.91    16452
-  2048       131072      2.632        102.0       11.273       4.28    32836
-  4096        65536      2.678        100.2       11.273       4.21    65604
+     1    268435456     10.070         26.7       11.112       1.10       84
+     2    134217728      5.804         46.3       11.112       1.91      100
+     4     67108864      2.961         90.7       11.112       3.75      132
+     8     33554432      1.552        173.0       11.112       7.16      196
+    16     16777216      1.611        166.7       11.112       6.90      324
+    32      8388608      1.504        178.5       11.112       7.39      580
+    64      4194304      1.467        183.0       11.112       7.57     1092
+   128      2097152      1.458        184.1       11.112       7.62     2116
+   256      1048576      1.455        184.5       11.112       7.64     4164
+   512       524288      1.410        190.4       11.112       7.88     8260
+  1024       262144      1.384        194.0       11.112       8.03    16452
+  2048       131072      1.412        190.1       11.112       7.87    32836
+  4096        65536      1.563        171.8       11.112       7.11    65604
 ## guessing ahead by one chain, b = 1 (2^8 values), n = 4, m = 16
 budget per puzzle   64 guesses = 0.250 of all values, 1024 steps (honest solve: 64)
-opened early        4960 of 20000 puzzles = 0.248; bound Q/(m*2^(8b)) = 0.250, expected 5000.0 +- 61.2
-time                14.87 s
+opened early        4949 of 20000 puzzles = 0.247; bound Q/(m*2^(8b)) = 0.250, expected 5000.0 +- 61.2
+time                6.94 s
