@@ -9,8 +9,8 @@
 //! 4. `checkpoint_peek` agrees with `Cursor::decode` on id and position.
 use crate::alloc_count::measure;
 use chainseal::{
-    backend::Backend, checkpoint_peek, seal, secret_decode, secret_encode, Cursor, Envelope,
-    Error, Puzzle, MAX_N,
+    backend::Backend, checkpoint_peek, seal, secret_decode, secret_encode, Cursor, Envelope, Error,
+    Puzzle, MAX_N,
 };
 
 /// Constant allowance on top of twice the input length.

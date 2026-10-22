@@ -58,8 +58,8 @@ fn length_fields(kind: Kind, d: &[u8]) -> Vec<(usize, usize)> {
     let mut v = vec![(at + 5, 1), (at + 8, 4), (at + 12, 8)];
     if let Kind::Envelope = kind {
         if d.len() >= 8 + 68 {
-            let nb = u32::from_be_bytes(d[16..20].try_into().unwrap()) as usize
-                * usize::from(d[13]);
+            let nb =
+                u32::from_be_bytes(d[16..20].try_into().unwrap()) as usize * usize::from(d[13]);
             v.push((76 + nb + 16, 4));
         }
     }
@@ -88,7 +88,11 @@ fn edit_length(r: &mut XorShift, kind: Kind, d: &mut Vec<u8>) {
         return;
     }
     let old = read_be(&d[off..off + w]);
-    let max = if w == 8 { u64::MAX } else { (1u64 << (8 * w)) - 1 };
+    let max = if w == 8 {
+        u64::MAX
+    } else {
+        (1u64 << (8 * w)) - 1
+    };
     let delta = 1 + r.below(40) as u64;
     let new = match r.below(8) {
         0 => 0,
@@ -106,7 +110,11 @@ fn edit_length(r: &mut XorShift, kind: Kind, d: &mut Vec<u8>) {
     if r.below(2) == 0 && new > old && new - old <= 64 * 32 {
         let at = puzzle_at(kind);
         // A count of links grows the input by b bytes each.
-        let width = if off == at + 8 { usize::from(d[at + 5]) } else { 1 };
+        let width = if off == at + 8 {
+            usize::from(d[at + 5])
+        } else {
+            1
+        };
         let grow = (new - old) as usize * width;
         let at = r.below(d.len() + 1);
         let fill: Vec<u8> = (0..grow).map(|_| r.byte()).collect();
