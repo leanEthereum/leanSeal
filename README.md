@@ -97,10 +97,10 @@ These are from `chainseal bench all` and `demo.sh` on an Apple M4 (MacBook Air, 
 
 | Quantity | Value |
 |---|---|
-| One chain | 23.3 ns/step (median of 5 runs), 23.2 ns/step (best) |
-| All cores, independent chains | 474 M steps/s |
-| Build speedup over one solver | 9.2 to 9.5 for n = 16 to 64, 10.3 to 11.4 from n = 128 up |
-| Demo: n = 512, m = 2^25 (17.2 G steps) | built in 37.8 s, opened with the key in 8 ms, solved without it in 6 min 43 s |
+| One chain | 23.3 ns/step (median of 5 runs), 23.1 ns/step (best) |
+| All cores, independent chains | 480 M steps/s |
+| Build speedup over one solver | 9.4 to 9.8 for n = 16 to 64, 10.6 to 11.2 from n = 128 up |
+| Demo: n = 512, m = 2^25 (17.2 G steps) | built in 36.2 s, opened with the key in 11 ms, solved without it in 6 min 37 s |
 
 The build speedup is how much faster the sender builds a puzzle than a single-core solver opens it. It approaches the all-core rate over the one-chain rate, about 11 here. Each core computes two chains at once, so the builder hands out chains in pairs, and it needs `n` to be several times the number of cores to keep every core busy until the end.
 

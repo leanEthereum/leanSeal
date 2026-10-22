@@ -101,3 +101,20 @@ Round 9 audited `e042e8c`, with the new hardware section of the guide, and found
 |---|---|---|
 | R9-1 | Some sentences still moved from one guessed run's cost to the general bound. | The guide's claim box is labelled "not yet proved", the "Guess ahead" bullet states the bound as the claim about every attack, and "Status" names the two sharper formulas the audit defeated. SPEC introduces the `d`-steps-ahead sentence as the single-run case. |
 | R9-2 | The circuit model mixed FO4 delays with logic levels and its endpoints could not be reproduced from the stated inputs. | The guide defines FO4, splits the 10–17 FO4 per round into the adder and the assumed rest, shows the arithmetic from 2.75–5.11 ns through 2.85–5.41 ns to 2.9–9.7 ns, and marks the one-FO4-per-level conversion of Intel's 13 levels as optimistic. |
+
+## Review of the Rust port
+
+The Rust implementation replaced the C one at `ffde496`. Its output, file formats and test vectors are byte for byte those of the C tool: `tests/vectors.json` is unchanged, and the Python reference still checks it. A review compared the port with the C code and found six places where the port handled an edge case worse than the C tool.
+
+| # | Finding | Change |
+|---|---|---|
+| P-1 | When the operating system refused a thread, the port aborted, since the release build aborts on panic. A solve of several puzzles could lose up to 10 seconds of work. | Threads start through one helper that returns an error. Generation continues on the threads that started, with an identical result. A solve saves every checkpoint, as on SIGINT, and exits with "could not start N solver threads". A benchmark reports the error. Tests force the failure after k threads. |
+| P-2 | An argument that was not UTF-8 made the tool panic. | Paths stay operating-system strings up to the file system. A text or number option that is not UTF-8 is a usage error, and so is a non-UTF-8 `CHAINSEAL_BACKEND`. |
+| P-3 | Keys and secret chain values were not overwritten after use, as the C tool did. | The clear links, the chain ends, the encryption and MAC keys and a solve's state are zeroed when dropped, without `unsafe`. |
+| P-4 | A bad option printed only the usage hint. | The tool prints getopt-style messages first, such as `invalid option` and `option '--st' is ambiguous`, listing the candidates. |
+| P-5 | `bench all` stopped at the first failed section. | It reports the failure, runs the remaining sections and exits 1 at the end. |
+| P-6 | `selftest` continued after a backend mismatch. | It stops at the first mismatch and exits 1. |
+
+Three differences from the C tool are deliberate. A broken pipe is reported as an error with exit status 1, where the C tool was killed by SIGPIPE. A key file with a NUL byte is rejected. A number with a leading vertical tab, or the exponent in `2^-00`, is rejected.
+
+Beyond the C tool's tests, a property test decodes 480,000 mutated encodings of puzzles, checkpoints and envelopes, and `cargo-fuzz` ran four targets under AddressSanitizer for about 108 million inputs with no failure. The library forbids `unsafe`; it appears only in the two hardware backends, which call the SHA-256 instructions.

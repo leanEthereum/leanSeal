@@ -1,5 +1,0 @@
-puzzle: n = 512 chains, m = 16777216 steps each, b = 12-byte links, 6212 bytes
-built in 20.4 s on 10 threads (armv8-sha2), 420.1 M steps/s
-solving takes n*m = 8.6 G steps: 3 min 40 s at 25.7 ns/step (one chain on this machine)
-wrote tx.secret (keep it private until you use it)
-load: 6.69 5.51 5.43

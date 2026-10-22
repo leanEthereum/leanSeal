@@ -1,16 +1,16 @@
 == 1. Sender builds a puzzle in advance (n = 512, m = 2^25, 16-byte links)
 puzzle: n = 512 chains, m = 33554432 steps each, b = 16-byte links, 8260 bytes
-built in 37.8 s on 10 threads (armv8-sha2), 454.7 M steps/s
-solving takes n*m = 17.2 G steps: 7 min 21 s at 25.7 ns/step (one chain on this machine)
-wrote /var/folders/xl/18r3ffrs3m39zwn2hk9chk5w0000gn/T/tmp.JFNa0GcbkF/secret (keep it private until you use it)
+built in 36.2 s on 10 threads (armv8-sha2), 474.7 M steps/s
+solving takes n*m = 17.2 G steps: 6 min 34 s at 22.9 ns/step (one chain on this machine)
+wrote $T/secret (keep it private until you use it)
 
 == 2. Sender encrypts the 110-byte transaction under it
-wrote /var/folders/xl/18r3ffrs3m39zwn2hk9chk5w0000gn/T/tmp.JFNa0GcbkF/envelope: 8430 bytes (puzzle 8260 + message 110 + 60)
+wrote $T/envelope: 8430 bytes (puzzle 8260 + message 110 + 60)
 
 == 3. Fast path: the sender reveals the key; anyone checks it and opens
-opened in 8 ms with key 3b5b86cae31d4fe1e7ed5b41ea1197823a16ed9dd5690a925501a3714b590380
+opened in 11 ms with key 07ff613614c0221fba8d64ba09474df87d621eced748fd7a5d7f510f2d486b13
 
 == 4. Slow path: without the key, anyone solves the puzzle
-/var/folders/xl/18r3ffrs3m39zwn2hk9chk5w0000gn/T/tmp.JFNa0GcbkF/envelope: solved in 6 min 43 s, 23.46 ns/step
+$T/envelope: solved in 6 min 37 s, 23.13 ns/step
 recovered transaction: f86c098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a76400008025a028ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276a067cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83
 matches the original
