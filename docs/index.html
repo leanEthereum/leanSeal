@@ -149,6 +149,22 @@ ol.open { padding-left: 1.3rem; display: grid; gap: 0.8rem; }
 .card.no .card-k { color: var(--bad); }
 td.sym { white-space: nowrap; font-family: var(--serif); font-size: 1rem; }
 ol.steps { padding-left: 1.3rem; display: grid; gap: 0.45rem; }
+.proof { border-left: 2px solid var(--rule); padding-left: 1rem; margin: 1rem 0; }
+.proof ul { padding-left: 1.2rem; display: grid; gap: 0.4rem; margin: 0.5rem 0; }
+.qed { float: right; }
+/* pseudocode: numbered lines, keywords in sans, indent by --d */
+.algos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 14px; }
+.algo { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 0.8rem 1rem 0.9rem; min-width: 0; font-size: 0.95rem; line-height: 1.55; }
+.algo-h { font-family: var(--sans); font-size: 0.85rem; padding-bottom: 0.45rem; margin-bottom: 0.45rem; border-bottom: 1px solid var(--rule); }
+.algo-h b { font-weight: 600; }
+.algo ol { list-style: none; counter-reset: ln; margin: 0; padding: 0; }
+.algo li { counter-increment: ln; position: relative; padding-left: calc(1.9rem + var(--d, 0) * 1.4rem); }
+.algo li::before { content: counter(ln); position: absolute; left: 0; width: 1.2rem; text-align: right; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); top: 0.25em; }
+.algo .kw { font-family: var(--sans); font-weight: 600; font-size: 0.88em; }
+.algo .cm { color: var(--muted); font-family: var(--sans); font-size: 0.82em; }
+.algo .lb { font-family: var(--sans); font-size: 0.78em; font-style: normal; }
+.algo-notes { font-family: var(--sans); font-size: 0.86rem; line-height: 1.5; margin: 0 0 12px; padding: 0.7rem 1rem; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; display: grid; gap: 0.2rem; }
+.algo-notes p { margin: 0; }
 ul.attacks { padding-left: 1.2rem; display: grid; gap: 0.6rem; }
 @media (max-width: 560px) {
   body { font-size: 17px; padding-block: 24px 60px; }
@@ -248,16 +264,50 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
   </div>
   <p>We call <i>n</i> = 16, <i>m</i> = 2<sup>30</sup>, <i>b</i> = 24 the <em>reference parameters</em>. They give a one-minute delay against an attacker at 3.5 ns per hash, with a 452-byte puzzle. Sections <a href="#security">3</a> and <a href="#params">5</a> explain the choice: the delay fixes <i>N</i>; 24-byte links keep the proved bound near 2<sup>−96</sup> or below for delays up to a year; and <i>n</i> only trades puzzle size against how many cores one puzzle can use.</p>
 
-  <h3 id="building-the-puzzle-the-sender">Building the puzzle (the sender)</h3>
-  <ol class="steps">
-    <li>Pick a random 16-byte salt and <i>n</i> random links <i>x</i><sub>1</sub>, …, <i>x</i><sub>n</sub> of <i>b</i> bytes each.</li>
-    <li>For each chain <i>i</i>, start from a hash of the puzzle's parameters and salt, <i>i</i> and <i>x</i><sub>i</sub>, and hash <i>m</i> times. Each step hashes the 32-byte state together with the salt and <i>i</i>. That is still one SHA-256 compression, and it makes every step specific to one chain of one puzzle. Call the end <i>y</i><sub>i</sub>. All <i>n</i> chains run at the same time on different cores.</li>
-    <li>Hide each link under a hash of the end of the previous chain: <i>z</i><sub>i</sub> = (first <i>b</i> bytes of H(<i>y</i><sub>i</sub>)) ⊕ <i>x</i><sub>i+1</sub>, for <i>i</i> = 1, …, <i>n</i> − 1.</li>
-    <li>Derive the key <i>K</i> by hashing the ends of all chains, <i>y</i><sub>1</sub>, …, <i>y</i><sub>n</sub>, in order, together with the parameters. Encrypt the transaction under <i>K</i> with authenticated encryption, and publish a commitment <i>C</i>, a 32-byte hash of <i>K</i>, so that anyone can check a claimed key with one hash.</li>
-    <li>The puzzle is the parameters, the salt, <i>x</i><sub>1</sub>, the hidden links <i>z</i><sub>1</sub>, …, <i>z</i><sub>n−1</sub>, and <i>C</i>.</li>
-  </ol>
-  <h3 id="opening-the-puzzle-anyone">Opening the puzzle (anyone)</h3>
-  <p>Run chain 1 from the public <i>x</i><sub>1</sub> to get <i>y</i><sub>1</sub>. Use it to unhide the next link, <i>x</i><sub>2</sub> = <i>z</i><sub>1</sub> ⊕ (first <i>b</i> bytes of H(<i>y</i><sub>1</sub>)). Run chain 2, unhide <i>x</i><sub>3</sub>, and so on. After all <i>n</i> chains, derive <i>K</i> from <i>y</i><sub>1</sub>, …, <i>y</i><sub>n</sub> and check it against <i>C</i>.</p>
+  <h3 id="building-the-puzzle-the-sender">Building and opening the puzzle</h3>
+  <p>Figure 1 gives the two algorithms. They follow sections 4 and 5 of <code>SPEC.md</code> exactly, with the byte encodings left out.</p>
+  <figure class="wide" id="fig-algorithms">
+    <div class="algo-notes">
+      <p><i>ctx</i> = (version, <i>b</i>, <i>n</i>, <i>m</i>, salt), 32 bytes. It is the start of every hash below except the chain step.</p>
+      <p><i>F</i><sub><i>i</i></sub>(<i>s</i>) = SHA-256(<i>s</i> ‖ salt ‖ <i>i</i>), the chain step: one SHA-256 compression on a 32-byte state. <i>F</i><sub><i>i</i></sub><sup><i>m</i></sup> applies it <i>m</i> times.</p>
+      <p>H<sub class="lb">start</sub>, H<sub class="lb">mask</sub>, H<sub class="lb">acc</sub>, H<sub class="lb">key</sub>, H<sub class="lb">commit</sub> are SHA-256 with distinct labels prefixed. [<i>v</i>]<sub><i>b</i></sub> is the first <i>b</i> bytes of <i>v</i>.</p>
+    </div>
+    <div class="algos">
+      <div class="algo">
+        <div class="algo-h"><b>Algorithm 1</b> Build(<i>n</i>, <i>m</i>, <i>b</i>), run by the sender</div>
+        <ol>
+          <li>salt ← 16 random bytes; <i>x</i><sub>1</sub>, …, <i>x</i><sub><i>n</i></sub> ← <i>b</i> random bytes each</li>
+          <li><i>ctx</i> ← (1, <i>b</i>, <i>n</i>, <i>m</i>, salt)</li>
+          <li><span class="kw">for</span> <i>i</i> = 1, …, <i>n</i> <span class="kw">in parallel do</span></li>
+          <li style="--d:1"><i>s</i><sub><i>i</i></sub> ← H<sub class="lb">start</sub>(<i>ctx</i>, <i>i</i>, <i>x</i><sub><i>i</i></sub>)</li>
+          <li style="--d:1"><i>y</i><sub><i>i</i></sub> ← <i>F</i><sub><i>i</i></sub><sup><i>m</i></sup>(<i>s</i><sub><i>i</i></sub>) <span class="cm">▷ <i>m</i> sequential steps</span></li>
+          <li><span class="kw">for</span> <i>i</i> = 1, …, <i>n</i> − 1 <span class="kw">do</span></li>
+          <li style="--d:1"><i>z</i><sub><i>i</i></sub> ← [H<sub class="lb">mask</sub>(<i>ctx</i>, <i>y</i><sub><i>i</i></sub>)]<sub><i>b</i></sub> ⊕ <i>x</i><sub><i>i</i>+1</sub> <span class="cm">▷ hide the next link</span></li>
+          <li><i>a</i> ← <i>ctx</i></li>
+          <li><span class="kw">for</span> <i>i</i> = 1, …, <i>n</i> <span class="kw">do</span> <i>a</i> ← H<sub class="lb">acc</sub>(<i>a</i>, <i>y</i><sub><i>i</i></sub>)</li>
+          <li><i>K</i> ← H<sub class="lb">key</sub>(<i>ctx</i>, <i>a</i>); <i>C</i> ← H<sub class="lb">commit</sub>(<i>ctx</i>, <i>K</i>)</li>
+          <li><span class="kw">return</span> puzzle <i>Z</i> = (<i>ctx</i>, <i>C</i>, <i>x</i><sub>1</sub>, <i>z</i><sub>1</sub>, …, <i>z</i><sub><i>n</i>−1</sub>) and key <i>K</i></li>
+        </ol>
+      </div>
+      <div class="algo">
+        <div class="algo-h"><b>Algorithm 2</b> Open(<i>Z</i>), run by anyone</div>
+        <ol>
+          <li>parse <i>Z</i> as (<i>ctx</i>, <i>C</i>, <i>x</i><sub>1</sub>, <i>z</i><sub>1</sub>, …, <i>z</i><sub><i>n</i>−1</sub>)</li>
+          <li><i>x</i> ← <i>x</i><sub>1</sub>; <i>a</i> ← <i>ctx</i></li>
+          <li><span class="kw">for</span> <i>i</i> = 1, …, <i>n</i> <span class="kw">do</span> <span class="cm">▷ in sequence</span></li>
+          <li style="--d:1"><i>y</i> ← <i>F</i><sub><i>i</i></sub><sup><i>m</i></sup>(H<sub class="lb">start</sub>(<i>ctx</i>, <i>i</i>, <i>x</i>)) <span class="cm">▷ <i>m</i> sequential steps</span></li>
+          <li style="--d:1"><i>a</i> ← H<sub class="lb">acc</sub>(<i>a</i>, <i>y</i>)</li>
+          <li style="--d:1"><span class="kw">if</span> <i>i</i> &lt; <i>n</i> <span class="kw">then</span> <i>x</i> ← [H<sub class="lb">mask</sub>(<i>ctx</i>, <i>y</i>)]<sub><i>b</i></sub> ⊕ <i>z</i><sub><i>i</i></sub> <span class="cm">▷ unhide <i>x</i><sub><i>i</i>+1</sub></span></li>
+          <li><i>K</i> ← H<sub class="lb">key</sub>(<i>ctx</i>, <i>a</i>)</li>
+          <li><span class="kw">if</span> H<sub class="lb">commit</sub>(<i>ctx</i>, <i>K</i>) ≠ <i>C</i> <span class="kw">then return</span> ⊥ <span class="cm">▷ malformed puzzle</span></li>
+          <li><span class="kw">return</span> <i>K</i></li>
+        </ol>
+      </div>
+    </div>
+    <figcaption>Figure 1. Building and opening a puzzle. The sender knows every link, so it runs the <i>n</i> chains of Algorithm 1 at the same time and finishes after <i>m</i> sequential steps. Algorithm 2 learns each link only from the end of the previous chain, so it needs <i>n</i> · <i>m</i> sequential steps. A key revealed by the sender is checked with line 8 of Algorithm 2 alone.</figcaption>
+  </figure>
+  <p>The sender's work is in lines 3 to 5 of Algorithm 1: <i>n</i> chains of <i>m</i> steps, each on its own core. Every chain step hashes the 32-byte state with the salt and the chain's index. That is still one SHA-256 compression, and it makes each step specific to one chain of one puzzle. The rest is a few hashes per chain. Each link after the first is published only masked, under a hash of the end of the chain before it (line 7). The key is a hash of all the chain ends in order, taken one at a time so that an opener carries a single 32-byte value from chain to chain (lines 8 to 10). The commitment <i>C</i> lets anyone check a claimed key with one hash. The sender then encrypts the transaction under <i>K</i> with authenticated encryption (<a href="#impl">section 4</a>) and keeps the puzzle and key until it needs them.</p>
+  <p>An opener without the key has only <i>x</i><sub>1</sub>. It runs chain 1, uses its end to unhide <i>x</i><sub>2</sub>, runs chain 2, and so on; Figure 2 shows the two schedules side by side. The only way to start a chain early is to guess its link, which the security theorem bounds (<a href="#security">section 3</a>).</p>
     <figure class="wide">
     <div class="fig-scroll">
     <svg viewBox="0 0 900 290" role="img" aria-label="The same four chains of m hash steps. The generator runs them side by side, so its wall time is m steps. The solver can only start chain i plus one after finishing chain i, because the start of the next chain is a published link XORed with a hash of the previous chain's end, so its wall time is n times m steps.">
@@ -303,7 +353,7 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
       <text x="305" y="258" font-size="11" class="muted">K hashes every end y₁, …, yₙ, so no chain can be left out.</text>
     </svg>
     </div>
-    <figcaption>Figure 1. The same <i>n</i> chains, arranged two ways in time. The sender knows every link and runs the chains side by side. An opener has to run them one after another, because each chain's starting link is hidden under the end of the previous chain. The puzzle is just the <i>n</i> links, so its size grows with <i>n</i> and not with the delay.</figcaption>
+    <figcaption>Figure 2. The same <i>n</i> chains, arranged two ways in time. The sender knows every link and runs the chains side by side. An opener has to run them one after another, because each chain's starting link is hidden under the end of the previous chain. The puzzle is just the <i>n</i> links, so its size grows with <i>n</i> and not with the delay.</figcaption>
   </figure>
 
   <h3 id="an-example-with-three-chains">An example with three chains</h3>
@@ -360,13 +410,32 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
   </div>
 
   <h3 id="the-delay-theorem">The delay theorem</h3>
+  <p><b>Model.</b> The chain steps <i>F</i><sub>1</sub>, …, <i>F</i><sub><i>n</i></sub> and the labelled hashes of Figure 1 are independent random oracles. Time is counted in <em>rounds</em>: in one round an algorithm sends any number of queries at once and then receives all their answers. Open (Algorithm 2) outputs <i>K</i> after <i>T</i><sub>open</sub> = <i>n</i>(<i>m</i> + 2) + 1 rounds and computes <i>P</i> = <i>n</i>(<i>m</i> + 3) + 1 hashes. The attacker receives the puzzle and only then makes its queries.</p>
   <div class="box">
-    <p class="label">Theorem (random-oracle model)</p>
-    <p>Model the chain step and the other labelled hashes as independent random oracles, and count time in rounds: in one round an attacker sends any number of queries at once and then receives all their answers. The honest opener obtains <i>K</i> after <i>n</i>(<i>m</i> + 2) + 1 rounds. Let <i>P</i> = <i>n</i>(<i>m</i> + 3) + 1, the number of hashes the honest opener computes. An attacker that receives the puzzle and makes at most <i>Q</i> queries in total outputs <i>K</i> in fewer rounds with probability at most</p>
-    <p style="text-align:center"><i>Q</i> / 2<sup>8<i>b</i></sup> + (3<i>QP</i> + <i>P</i><sup>2</sup> + <i>Q</i> + 1) / 2<sup>256</sup>.</p>
-    <p>The theorem is about recovering the key, and <i>Q</i> counts the queries made after the attacker receives the puzzle. Queries made before publication cost less each, by SPEC.md section 8, so counting them in <i>Q</i> keeps the bound valid. With 24-byte links the first term, the chance of guessing a link, is the largest; for a one-minute lock the others are smaller by a factor of about 2<sup>28</sup>.</p>
+    <p class="label">Theorem 1 (random-oracle model)</p>
+    <p>Let (<i>Z</i>, <i>K</i>) ← Build(<i>n</i>, <i>m</i>, <i>b</i>). For every algorithm <i>A</i> that, on input <i>Z</i>, makes at most <i>Q</i> queries,</p>
+    <p style="text-align:center">Pr[ <i>A</i>(<i>Z</i>) outputs <i>K</i> within fewer than <i>T</i><sub>open</sub> rounds ]<br>≤ <i>Q</i> / 2<sup>8<i>b</i></sup> + (3<i>QP</i> + <i>P</i><sup>2</sup> + <i>Q</i> + 1) / 2<sup>256</sup>.</p>
   </div>
-  <p><b>Why it holds.</b> Call the 32-byte values the honest opener computes, in order, the <em>honest path</em>: each chain's start value, its <i>m</i> states, its mask and its accumulator value, and then <i>K</i>. Each value on the path is the answer to a query whose input contains the value before it, or, for the start of chain <i>i</i>, the link <i>x</i><sub><i>i</i></sub>, which the puzzle hides under the mask of chain <i>i</i> − 1. An attacker can learn a value on the path before its predecessor in only three ways. It can send an input that contains a path value it has not yet seen, which means guessing 32 bytes. It can receive a path value as the answer to some other query, which is a collision. Or it can start a chain from a link whose mask it has not yet seen, which means guessing the <i>b</i>-byte link. The first two have probability at most (3<i>QP</i> + <i>P</i><sup>2</sup>) / 2<sup>256</sup> together, and the third at most <i>Q</i> / 2<sup>8<i>b</i></sup>. Without them, every value on the path becomes known only in the round after its predecessor, exactly as for the honest opener, and an attacker that outputs <i>K</i> without knowing it is right with probability at most (<i>Q</i> + 1) / 2<sup>256</sup>, counting its tests against <i>C</i>. The argument follows the soundness proof of Pietrzak and Reyzin for proofs of sequential work (their Lemmas 6 and 9), and SPEC.md section 8 writes it out for chainseal's exact encoding. It has not been machine-checked or reviewed by a third party.</p>
+  <p><b>Remarks.</b> The theorem bounds key recovery; hiding the message is a separate step, discussed below. Queries made before the puzzle is published help less than queries made after, by SPEC.md section 8, so counting them in <i>Q</i> keeps the bound valid. With 24-byte links the first term, the chance of guessing a link, dominates: for a one-minute lock the others are smaller by a factor of about 2<sup>28</sup>.</p>
+  <div class="proof">
+  <p><b>Proof.</b> We name the values Open computes and show that, unless one of three unlikely events happens, the attacker learns each of them no earlier than Open does.</p>
+  <p><i>The honest path.</i> For each chain <i>i</i>, let <i>y</i><sub><i>i</i>,0</sub> = <i>s</i><sub><i>i</i></sub> = H<sub>start</sub>(<i>ctx</i>, <i>i</i>, <i>x</i><sub><i>i</i></sub>) and <i>y</i><sub><i>i</i>,<i>k</i></sub> = <i>F</i><sub><i>i</i></sub>(<i>y</i><sub><i>i</i>,<i>k</i>−1</sub>) for <i>k</i> = 1, …, <i>m</i>, so that <i>y</i><sub><i>i</i>,<i>m</i></sub> = <i>y</i><sub><i>i</i></sub>. Let μ<sub><i>i</i></sub> = H<sub>mask</sub>(<i>ctx</i>, <i>y</i><sub><i>i</i></sub>) for <i>i</i> &lt; <i>n</i>, <i>a</i><sub>0</sub> = <i>ctx</i>, <i>a</i><sub><i>i</i></sub> = H<sub>acc</sub>(<i>a</i><sub><i>i</i>−1</sub>, <i>y</i><sub><i>i</i></sub>), and <i>K</i> = H<sub>key</sub>(<i>ctx</i>, <i>a</i><sub><i>n</i></sub>). These are the <em>path values</em>; there are at most <i>P</i> of them. Each path value <i>v</i> is the oracle's answer on one input <i>u</i>(<i>v</i>). The <em>predecessors</em> of <i>v</i> are the path values that appear in <i>u</i>(<i>v</i>), at most two of them; in addition, μ<sub><i>i</i>−1</sub> counts as a predecessor of <i>s</i><sub><i>i</i></sub>, since Open needs it to recover <i>x</i><sub><i>i</i></sub>. Let ρ(<i>v</i>) be the round in which Open receives <i>v</i>: ρ(<i>s</i><sub><i>i</i></sub>) = (<i>i</i> − 1)(<i>m</i> + 2) + 1, ρ(<i>y</i><sub><i>i</i>,<i>k</i></sub>) = ρ(<i>s</i><sub><i>i</i></sub>) + <i>k</i>, ρ(μ<sub><i>i</i></sub>) = ρ(<i>a</i><sub><i>i</i></sub>) = ρ(<i>y</i><sub><i>i</i></sub>) + 1, and ρ(<i>K</i>) = <i>n</i>(<i>m</i> + 2) + 1 = <i>T</i><sub>open</sub>. Every path value <i>v</i> other than <i>s</i><sub>1</sub> satisfies ρ(<i>v</i>) = 1 + max ρ(<i>w</i>) over its predecessors <i>w</i>.</p>
+  <p><i>Bad events.</i> A path value is <em>known</em> from the end of the round in which the attacker receives it as an answer. Define three events:</p>
+  <ul>
+    <li><i>E</i><sub>1</sub> (collision): two path values are equal, or the answer to a query that is not <i>u</i>(<i>v</i>) for any path value <i>v</i> is a path value.</li>
+    <li><i>E</i><sub>2</sub> (premature query): the attacker queries <i>u</i>(<i>v</i>) while a path value appearing in <i>u</i>(<i>v</i>) is not known, or queries H<sub>commit</sub>(<i>ctx</i>, <i>K</i>) while <i>K</i> is not known.</li>
+    <li><i>E</i><sub>3</sub> (guessed link): for some <i>i</i> ≥ 2, the attacker queries <i>u</i>(<i>s</i><sub><i>i</i></sub>) while μ<sub><i>i</i>−1</sub> is not known.</li>
+  </ul>
+  <p><i>Claim 1.</i> If none of <i>E</i><sub>1</sub>, <i>E</i><sub>2</sub>, <i>E</i><sub>3</sub> happens, no path value <i>v</i> is known before the end of round ρ(<i>v</i>). By induction on ρ(<i>v</i>); the case <i>v</i> = <i>s</i><sub>1</sub>, with ρ = 1, is immediate. Without <i>E</i><sub>1</sub>, the attacker can receive <i>v</i> only as the answer on <i>u</i>(<i>v</i>). Without <i>E</i><sub>2</sub> and <i>E</i><sub>3</sub>, it submits <i>u</i>(<i>v</i>) only after every predecessor <i>w</i> is known, which by induction is no earlier than the end of round ρ(<i>w</i>). Answers arrive at the end of a round, so <i>u</i>(<i>v</i>) is submitted in round ρ(<i>w</i>) + 1 or later for every <i>w</i>, and <i>v</i> is known no earlier than the end of round 1 + max ρ(<i>w</i>) = ρ(<i>v</i>).</p>
+  <p><i>Claim 2.</i> Pr[<i>E</i><sub>1</sub> ∨ <i>E</i><sub>2</sub> ∨ <i>E</i><sub>3</sub>] ≤ <i>Q</i> / 2<sup>8<i>b</i></sup> + (3<i>QP</i> + <i>P</i><sup>2</sup> + <i>Q</i>) / 2<sup>256</sup>. Sample the oracles lazily. A path value that is not known is a fresh uniform answer, independent of the attacker's view: the puzzle depends on path values only through <i>C</i>, an answer on an input containing <i>K</i>, and through <i>z</i><sub><i>i</i></sub> = [μ<sub><i>i</i></sub>]<sub><i>b</i></sub> ⊕ <i>x</i><sub><i>i</i>+1</sub>, which is a one-time pad with the uniform link <i>x</i><sub><i>i</i>+1</sub>. For the same reason, while μ<sub><i>i</i>−1</sub> is not known, <i>x</i><sub><i>i</i></sub> is uniform given the view. Hence:</p>
+  <ul>
+    <li>Pr[<i>E</i><sub>1</sub>] ≤ (<i>P</i><sup>2</sup> + <i>QP</i>) / 2<sup>256</sup>: at most <i>P</i><sup>2</sup> pairs of path values, and at most <i>Q</i> other answers, each uniform and so equal to one of at most <i>P</i> path values with probability at most <i>P</i> / 2<sup>256</sup>.</li>
+    <li>Pr[<i>E</i><sub>2</sub>] ≤ (2<i>QP</i> + <i>Q</i>) / 2<sup>256</sup>: a query fixes every 32-byte field of its input, so it equals <i>u</i>(<i>v</i>) with an unknown path value in a given field with probability at most 2<sup>−256</sup>; there are at most <i>P</i> inputs with at most two such fields each, and the commitment input adds one more.</li>
+    <li>Pr[<i>E</i><sub>3</sub>] ≤ <i>Q</i> / 2<sup>8<i>b</i></sup>: each query to H<sub>start</sub> names one index <i>i</i>, and it equals <i>u</i>(<i>s</i><sub><i>i</i></sub>) only if it contains <i>x</i><sub><i>i</i></sub>, which is uniform over 2<sup>8<i>b</i></sup> values. When <i>n</i> = 1 there is no hidden link and this term is absent.</li>
+  </ul>
+  <p><i>Conclusion.</i> Suppose none of the three events happens and <i>A</i> stops before round <i>T</i><sub>open</sub>. By Claim 1, <i>K</i> is not known, and since <i>E</i><sub>2</sub> did not happen, <i>A</i> never queried H<sub>commit</sub>(<i>ctx</i>, <i>K</i>). So <i>K</i> is uniform given <i>A</i>'s view, and <i>A</i> outputs it with probability at most 2<sup>−256</sup>. Adding Claim 2 gives the bound. <span class="qed">∎</span></p>
+  </div>
+  <p>The proof follows Lemmas 6 and 9 of Pietrzak and Reyzin's soundness proof for proofs of sequential work. SPEC.md section 8 gives the same argument for chainseal's byte encoding. It has not been machine-checked or reviewed by a third party.</p>
   <p><b>What it means in seconds.</b> Assumptions A2 and A3 turn rounds and queries into time. Write <i>T</i> = <i>n</i> · <i>m</i> · ℓ, and let the attacker make <i>Q</i> = <i>R</i> · <i>T</i> queries. Against <i>R</i> = 10<sup>21</sup> hashes per second, roughly the whole Bitcoin network, the bound is about 2<sup>−116</sup> for a one-minute lock and 2<sup>−97</sup> for a one-year lock. For a fixed delay it depends only weakly on the number of chains: through <i>P</i> ≈ <i>N</i>, which the delay fixes, and through the first term, which is absent when <i>n</i> = 1. It covers every saving, however small: except with this probability, the attacker does not finish even one round before the honest opener. The theorem concerns the key. Hiding the message also needs the encryption layer: under A4, an attacker who does not know <i>K</i> learns nothing from the ciphertext, and testing guesses of <i>K</i> against an envelope's tag as well as against <i>C</i> adds terms of order <i>Q</i> / 2<sup>256</sup>. SPEC.md section 8 notes this composition step but does not write it out.</p>
   <p>The attacker's total hash rate <i>R</i> is easier to price, because the hardware exists. A Bitcoin miner (S21 XP) computes 270 TH/s for about $2.8k, an RTX 5090 GPU 27 GH/s (hashcat), and the Bitcoin network about 10<sup>21</sup> H/s (October 2026). A mining pipeline finishes one double SHA-256 per clock cycle, every 3 ns in a 2013 chip at about 335 MHz (Taylor 2013), but each hash spends many cycles in the pipeline. These machines compute many independent hashes at once and say little about how fast one hash can follow another, so they bound <i>R</i> in A3, not ℓ; we take <i>R</i> = 10<sup>21</sup> H/s.</p>
 
@@ -677,7 +746,7 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
       <text x="740" y="154" font-size="11" class="muted">per silent user</text>
     </svg>
     </div>
-    <figcaption>Figure 2. Commit–reveal with a time-lock fallback. When users behave, no puzzle is ever solved. For a well-formed puzzle, withholding the key can delay a transaction but not cancel it.</figcaption>
+    <figcaption>Figure 3. Commit–reveal with a time-lock fallback. When users behave, no puzzle is ever solved. For a well-formed puzzle, withholding the key can delay a transaction but not cancel it.</figcaption>
   </figure>
   <ul>
     <li><b>Commit–reveal with a fallback.</b> This is a timed commitment: <i>C</i> commits to the transaction, revealing <i>K</i> opens it, and the puzzle lets anyone force it open. The user sends the encrypted transaction, the puzzle and the commitment <i>C</i>. After ordering, the user reveals <i>K</i>, and nodes check H(<i>K</i>) = <i>C</i>. The ordering must commit to the whole sealed transaction, not just to <i>C</i>: once <i>K</i> is known, anyone can seal a different transaction under the same puzzle. Solving is needed only for users who stay silent, and a deposit can charge them for it. Execution rules must say what a transaction opened late may still do.</li>
@@ -754,7 +823,7 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
       <text x="470" y="216" text-anchor="middle" font-size="11" class="badfill">…but on k machines, in Bob's wall time</text>
     </svg>
     </div>
-    <figcaption>Figure 3. Merkle puzzles give a quadratic gap in total work. An attacker who can rent parallel hardware breaks all the puzzles at once, in the same wall time as the honest party.</figcaption>
+    <figcaption>Figure 4. Merkle puzzles give a quadratic gap in total work. An attacker who can rent parallel hardware breaks all the puzzles at once, in the same wall time as the honest party.</figcaption>
   </figure>
   <p>Impagliazzo and Rudich (1989) showed that key exchange secure against every efficient eavesdropper cannot be built from a random oracle in a black-box way, and Barak and Mahmoody (2009) that in the random-oracle model Merkle's quadratic gap is the best possible. For a time lock, though, a gap in total work is worth nothing: the eavesdropper's <i>k</i><sup>2</sup> is <i>k</i> separate pieces of work, each as large as Bob's, so on <i>k</i> machines it takes Bob's time. An attacker who can rent hardware and only needs to win a one-minute race does exactly that. What helps is a gap in <em>sequential</em> time, which a chain provides.</p>
 
