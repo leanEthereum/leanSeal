@@ -198,6 +198,54 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
     </nav>
   </header>
 
+  <figure class="wide" id="fig-schedules">
+    <div class="fig-scroll">
+    <svg viewBox="0 0 900 290" role="img" aria-label="The same four chains of m hash steps. The generator runs them side by side, so its wall time is m steps. The solver can only start chain i plus one after finishing chain i, because the start of the next chain is a published link XORed with a hash of the previous chain's end, so its wall time is n times m steps.">
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="acc"/></marker>
+        <pattern id="steps" width="12" height="18" patternUnits="userSpaceOnUse"><rect width="12" height="18" class="soft"/><line x1="12" y1="0" x2="12" y2="18" class="acc-stroke" stroke-opacity="0.35"/></pattern>
+      </defs>
+      <text x="20" y="22" font-size="13" font-weight="600">Sender: n chains in parallel</text>
+      <text x="20" y="40" font-size="11" class="muted">wall time = m steps</text>
+      <g font-size="11">
+        <text x="40" y="76" text-anchor="end">x₁</text><rect x="48" y="63" width="168" height="18" fill="url(#steps)" class="acc-stroke" stroke-width="1"/><text x="224" y="76">y₁</text>
+        <text x="40" y="106" text-anchor="end">x₂</text><rect x="48" y="93" width="168" height="18" fill="url(#steps)" class="acc-stroke" stroke-width="1"/><text x="224" y="106">y₂</text>
+        <text x="40" y="136" text-anchor="end">x₃</text><rect x="48" y="123" width="168" height="18" fill="url(#steps)" class="acc-stroke" stroke-width="1"/><text x="224" y="136">y₃</text>
+        <text x="40" y="166" text-anchor="end">x₄</text><rect x="48" y="153" width="168" height="18" fill="url(#steps)" class="acc-stroke" stroke-width="1"/><text x="224" y="166">y₄</text>
+      </g>
+      <line x1="48" y1="190" x2="216" y2="190" stroke="currentColor"/>
+      <line x1="48" y1="186" x2="48" y2="194" stroke="currentColor"/><line x1="216" y1="186" x2="216" y2="194" stroke="currentColor"/>
+      <text x="132" y="208" text-anchor="middle" font-size="11">m hash steps</text>
+      <text x="20" y="242" font-size="11" class="muted">then publish zᵢ = H(yᵢ)[:b] ⊕ xᵢ₊₁</text>
+      <text x="20" y="258" font-size="11" class="muted">(n − 1 links of b bytes)</text>
+
+      <line x1="285" y1="20" x2="285" y2="270" class="rule"/>
+
+      <text x="305" y="22" font-size="13" font-weight="600">Opener: each chain needs the previous chain's end</text>
+      <text x="305" y="40" font-size="11" class="muted">wall time = n · m steps</text>
+      <g font-size="11">
+        <text x="312" y="76" text-anchor="end">x₁</text><rect x="318" y="63" width="130" height="18" fill="url(#steps)" class="acc-stroke"/>
+        <rect x="448" y="93" width="130" height="18" fill="url(#steps)" class="acc-stroke"/>
+        <rect x="578" y="123" width="130" height="18" fill="url(#steps)" class="acc-stroke"/>
+        <rect x="708" y="153" width="130" height="18" fill="url(#steps)" class="acc-stroke"/>
+        <path d="M 448 81 L 448 91" class="acc-stroke" stroke-width="1.6" marker-end="url(#ar2)"/>
+        <path d="M 578 111 L 578 121" class="acc-stroke" stroke-width="1.6" marker-end="url(#ar2)"/>
+        <path d="M 708 141 L 708 151" class="acc-stroke" stroke-width="1.6" marker-end="url(#ar2)"/>
+        <text x="456" y="88" class="acc">⊕ z₁</text>
+        <text x="586" y="118" class="acc">⊕ z₂</text>
+        <text x="716" y="148" class="acc">⊕ z₃</text>
+        <text x="846" y="166">y₄</text>
+      </g>
+      <line x1="318" y1="190" x2="838" y2="190" stroke="currentColor"/>
+      <line x1="318" y1="186" x2="318" y2="194" stroke="currentColor"/><line x1="838" y1="186" x2="838" y2="194" stroke="currentColor"/>
+      <text x="578" y="208" text-anchor="middle" font-size="11">n · m hash steps, no parallelism helps</text>
+      <text x="305" y="242" font-size="11" class="muted">Starting chain i + 1 early means guessing xᵢ₊₁: 2^192 candidates for a 24-byte link.</text>
+      <text x="305" y="258" font-size="11" class="muted">K hashes every end y₁, …, yₙ, so no chain can be left out.</text>
+    </svg>
+    </div>
+    <figcaption>Figure 1. leanSeal at a glance: the same <i>n</i> chains, arranged two ways in time. The sender knows every link and runs the chains side by side. An opener has to run them one after another, because each chain's starting link is hidden under the end of the previous chain. The puzzle is just the <i>n</i> links, so its size grows with <i>n</i> and not with the delay.</figcaption>
+  </figure>
+
   <section class="abstract" id="abstract" aria-labelledby="abstract-h">
     <h2 id="abstract-h">Abstract</h2>
     <p>An encrypted mempool lets block builders order transactions before they can read them, which removes their ability to front-run based on the transactions' contents. Each transaction must then open once it is ordered, without a committee that holds a decryption key and without letting its sender keep it sealed. A time-lock puzzle provides this. Efficient time-lock puzzles use repeated squaring in RSA or class groups, which needs a trusted setup or is broken by quantum computers. Puzzles built from a hash function avoid both, but the sender must compute as many hashes as the opener, only in parallel, and <a href="#ref-mmv11">Mahmoody, Moran and Vadhan (CRYPTO 2011)</a> showed that this cost is unavoidable. We ask whether it is affordable for sealing a transaction.</p>
@@ -267,7 +315,7 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
   <p>We call <i>n</i> = 16, <i>m</i> = 2<sup>30</sup>, <i>b</i> = 24 the <em>reference parameters</em>. They give a one-minute delay against an attacker at 3.5 ns per hash, with a 452-byte puzzle. Sections <a href="#security">3</a> and <a href="#params">5</a> explain the choice: the delay fixes <i>N</i>; 24-byte links keep the proved bound near 2<sup>−96</sup> or below for delays up to a year; and <i>n</i> only trades puzzle size against how many cores one puzzle can use.</p>
 
   <h3 id="building-the-puzzle-the-sender">Building and opening the puzzle</h3>
-  <p>Figure 1 gives the two algorithms. They follow sections 4 and 5 of <a href="https://github.com/leanEthereum/leanSeal/blob/main/SPEC.md#4-puzzle-generation"><code>SPEC.md</code></a> exactly, with the byte encodings left out.</p>
+  <p>Figure 2 gives the two algorithms. They follow sections 4 and 5 of <a href="https://github.com/leanEthereum/leanSeal/blob/main/SPEC.md#4-puzzle-generation"><code>SPEC.md</code></a> exactly, with the byte encodings left out.</p>
   <figure class="wide" id="fig-algorithms">
     <div class="algo-notes">
       <p><i>ctx</i> = (version, <i>b</i>, <i>n</i>, <i>m</i>, salt), 32 bytes. The start, mask, key and commitment hashes include it directly; the accumulator inherits it from <i>a</i><sub>0</sub> = <i>ctx</i>.</p>
@@ -306,57 +354,10 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
         </ol>
       </div>
     </div>
-    <figcaption>Figure 1. Building and opening a puzzle. The sender knows every link, so it runs the <i>n</i> chains of Algorithm 1 in parallel: <i>m</i> sequential chain steps, then a few hashes per chain to finish. The opener of Algorithm 2 learns each link only from the end of the previous chain, so it runs <i>n</i> · <i>m</i> chain steps in sequence. Section 3 counts the remaining oracle rounds exactly. A key revealed by the sender is checked with line 8 of Algorithm 2 alone.</figcaption>
+    <figcaption>Figure 2. Building and opening a puzzle. The sender knows every link, so it runs the <i>n</i> chains of Algorithm 1 in parallel: <i>m</i> sequential chain steps, then a few hashes per chain to finish. The opener of Algorithm 2 learns each link only from the end of the previous chain, so it runs <i>n</i> · <i>m</i> chain steps in sequence. Section 3 counts the remaining oracle rounds exactly. A key revealed by the sender is checked with line 8 of Algorithm 2 alone.</figcaption>
   </figure>
   <p>The sender's work is in lines 3 to 5 of Algorithm 1: <i>n</i> chains of <i>m</i> steps, each on its own core. Every chain step hashes the 32-byte state with the salt and the chain's index. That is still one SHA-256 compression, and it makes each step specific to one chain of one puzzle. The rest is a few hashes per chain. Each link after the first is published only masked, under a hash of the end of the chain before it (line 7). The key is a hash of all the chain ends in order, taken one at a time so that an opener carries a single 32-byte value from chain to chain (lines 8 to 10). The commitment <i>C</i> lets anyone check a claimed key with one hash. The sender then encrypts the transaction under <i>K</i> with authenticated encryption (<a href="#impl">section 4</a>) and keeps the puzzle and key until it needs them.</p>
-  <p>An opener without the key has only <i>x</i><sub>1</sub>. It runs chain 1, uses its end to unhide <i>x</i><sub>2</sub>, runs chain 2, and so on; Figure 2 shows the two schedules side by side. The only way to start a chain early is to guess its link, which the security theorem bounds (<a href="#security">section 3</a>).</p>
-    <figure class="wide">
-    <div class="fig-scroll">
-    <svg viewBox="0 0 900 290" role="img" aria-label="The same four chains of m hash steps. The generator runs them side by side, so its wall time is m steps. The solver can only start chain i plus one after finishing chain i, because the start of the next chain is a published link XORed with a hash of the previous chain's end, so its wall time is n times m steps.">
-      <defs>
-        <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="acc"/></marker>
-        <pattern id="steps" width="12" height="18" patternUnits="userSpaceOnUse"><rect width="12" height="18" class="soft"/><line x1="12" y1="0" x2="12" y2="18" class="acc-stroke" stroke-opacity="0.35"/></pattern>
-      </defs>
-      <text x="20" y="22" font-size="13" font-weight="600">Sender: n chains in parallel</text>
-      <text x="20" y="40" font-size="11" class="muted">wall time = m steps</text>
-      <g font-size="11">
-        <text x="40" y="76" text-anchor="end">x₁</text><rect x="48" y="63" width="168" height="18" fill="url(#steps)" class="acc-stroke" stroke-width="1"/><text x="224" y="76">y₁</text>
-        <text x="40" y="106" text-anchor="end">x₂</text><rect x="48" y="93" width="168" height="18" fill="url(#steps)" class="acc-stroke" stroke-width="1"/><text x="224" y="106">y₂</text>
-        <text x="40" y="136" text-anchor="end">x₃</text><rect x="48" y="123" width="168" height="18" fill="url(#steps)" class="acc-stroke" stroke-width="1"/><text x="224" y="136">y₃</text>
-        <text x="40" y="166" text-anchor="end">x₄</text><rect x="48" y="153" width="168" height="18" fill="url(#steps)" class="acc-stroke" stroke-width="1"/><text x="224" y="166">y₄</text>
-      </g>
-      <line x1="48" y1="190" x2="216" y2="190" stroke="currentColor"/>
-      <line x1="48" y1="186" x2="48" y2="194" stroke="currentColor"/><line x1="216" y1="186" x2="216" y2="194" stroke="currentColor"/>
-      <text x="132" y="208" text-anchor="middle" font-size="11">m hash steps</text>
-      <text x="20" y="242" font-size="11" class="muted">then publish zᵢ = H(yᵢ)[:b] ⊕ xᵢ₊₁</text>
-      <text x="20" y="258" font-size="11" class="muted">(n − 1 links of b bytes)</text>
-
-      <line x1="285" y1="20" x2="285" y2="270" class="rule"/>
-
-      <text x="305" y="22" font-size="13" font-weight="600">Opener: each chain needs the previous chain's end</text>
-      <text x="305" y="40" font-size="11" class="muted">wall time = n · m steps</text>
-      <g font-size="11">
-        <text x="312" y="76" text-anchor="end">x₁</text><rect x="318" y="63" width="130" height="18" fill="url(#steps)" class="acc-stroke"/>
-        <rect x="448" y="93" width="130" height="18" fill="url(#steps)" class="acc-stroke"/>
-        <rect x="578" y="123" width="130" height="18" fill="url(#steps)" class="acc-stroke"/>
-        <rect x="708" y="153" width="130" height="18" fill="url(#steps)" class="acc-stroke"/>
-        <path d="M 448 81 L 448 91" class="acc-stroke" stroke-width="1.6" marker-end="url(#ar2)"/>
-        <path d="M 578 111 L 578 121" class="acc-stroke" stroke-width="1.6" marker-end="url(#ar2)"/>
-        <path d="M 708 141 L 708 151" class="acc-stroke" stroke-width="1.6" marker-end="url(#ar2)"/>
-        <text x="456" y="88" class="acc">⊕ z₁</text>
-        <text x="586" y="118" class="acc">⊕ z₂</text>
-        <text x="716" y="148" class="acc">⊕ z₃</text>
-        <text x="846" y="166">y₄</text>
-      </g>
-      <line x1="318" y1="190" x2="838" y2="190" stroke="currentColor"/>
-      <line x1="318" y1="186" x2="318" y2="194" stroke="currentColor"/><line x1="838" y1="186" x2="838" y2="194" stroke="currentColor"/>
-      <text x="578" y="208" text-anchor="middle" font-size="11">n · m hash steps, no parallelism helps</text>
-      <text x="305" y="242" font-size="11" class="muted">Starting chain i + 1 early means guessing xᵢ₊₁: 2^192 candidates for a 24-byte link.</text>
-      <text x="305" y="258" font-size="11" class="muted">K hashes every end y₁, …, yₙ, so no chain can be left out.</text>
-    </svg>
-    </div>
-    <figcaption>Figure 2. The same <i>n</i> chains, arranged two ways in time. The sender knows every link and runs the chains side by side. An opener has to run them one after another, because each chain's starting link is hidden under the end of the previous chain. The puzzle is just the <i>n</i> links, so its size grows with <i>n</i> and not with the delay.</figcaption>
-  </figure>
+  <p>An opener without the key has only <i>x</i><sub>1</sub>. It runs chain 1, uses its end to unhide <i>x</i><sub>2</sub>, runs chain 2, and so on; Figure 1 shows the two schedules side by side. The only way to start a chain early is to guess its link, which the security theorem bounds (<a href="#security">section 3</a>).</p>
 
   <h3 id="an-example-with-three-chains">An example with three chains</h3>
   <p>Take <i>n</i> = 3 and, to keep the numbers small, <i>m</i> = 2. The table lists every value, whether it is included in the puzzle, and the first oracle round in which an opener without the key can have it, following Algorithm 2 (round 0 is publication).</p>
@@ -414,7 +415,7 @@ ol.results { padding-left: 1.3rem; display: grid; gap: 0.55rem; }
   </div>
 
   <h3 id="the-delay-theorem">The delay theorem</h3>
-  <p><b>Model.</b> The chain steps <i>F</i><sub>1</sub>, …, <i>F</i><sub><i>n</i></sub> and the labelled hashes of Figure 1 are independent random oracles. The attacker is a classical randomized algorithm <i>A</i> = (<i>A</i><sub>0</sub>, <i>A</i><sub>1</sub>) with unbounded computation. <i>A</i><sub>0</sub> runs before the puzzle exists and makes <i>Q</i><sub>pre</sub> queries; its whole state passes to <i>A</i><sub>1</sub>, which receives the puzzle and makes <i>Q</i><sub>on</sub> queries. Let <i>Q</i> = <i>Q</i><sub>pre</sub> + <i>Q</i><sub>on</sub>. Time after publication is counted in <em>oracle rounds</em>: all queries in a round are chosen before any answer from that round arrives. More hardware allows more queries in a round, but no query can use the answer of another query in the same round.</p>
+  <p><b>Model.</b> The chain steps <i>F</i><sub>1</sub>, …, <i>F</i><sub><i>n</i></sub> and the labelled hashes of Figure 2 are independent random oracles. The attacker is a classical randomized algorithm <i>A</i> = (<i>A</i><sub>0</sub>, <i>A</i><sub>1</sub>) with unbounded computation. <i>A</i><sub>0</sub> runs before the puzzle exists and makes <i>Q</i><sub>pre</sub> queries; its whole state passes to <i>A</i><sub>1</sub>, which receives the puzzle and makes <i>Q</i><sub>on</sub> queries. Let <i>Q</i> = <i>Q</i><sub>pre</sub> + <i>Q</i><sub>on</sub>. Time after publication is counted in <em>oracle rounds</em>: all queries in a round are chosen before any answer from that round arrives. More hardware allows more queries in a round, but no query can use the answer of another query in the same round.</p>
   <p><b>Honest schedule.</b> Computing each chain's mask and accumulator in the same round, Open derives <i>K</i> in oracle round <i>T</i><sub>key</sub> = <i>n</i>(<i>m</i> + 2) + 1 and returns it, checked against <i>C</i>, one round later. Build takes <i>m</i> + <i>n</i> + 3 rounds: one for the starts, <i>m</i> for the chains, <i>n</i> for the accumulator, with the masks alongside, and one each for <i>K</i> and <i>C</i>. Let <i>P</i> = <i>n</i>(<i>m</i> + 3) + 1, the number of oracle answers Open uses, <i>C</i> included.</p>
   <div class="box">
     <p class="label">Theorem 1 (classical attackers, random-oracle model)</p>

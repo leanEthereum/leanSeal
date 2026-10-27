@@ -53,7 +53,7 @@ p { margin: 0.7rem 0; }
 .metric .v { font-size: 1.7rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .metric .k { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); margin-top: 0.35rem; line-height: 1.4; }
 figure { margin: 1.2rem 0 0; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 1rem 1rem 0.8rem; }
-figure svg { width: 100%; height: auto; display: block; }
+figure svg { width: 100%; height: auto; display: block; color: var(--ink); }
 figcaption { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); margin-top: 0.6rem; line-height: 1.45; }
 .steps { counter-reset: s; list-style: none; padding: 0; margin: 1rem 0 0; display: grid; gap: 0.8rem; }
 .steps li { counter-increment: s; padding-left: 2.4rem; position: relative; }
@@ -67,8 +67,15 @@ figcaption { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); 
 .status { border-left: 3px solid var(--seq); background: var(--seq-soft); padding: 0.8rem 1.1rem; border-radius: 0 10px 10px 0; margin-top: 1rem; }
 pre { font-family: var(--mono); font-size: 0.8rem; line-height: 1.5; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 0.9rem 1rem; overflow-x: auto; }
 footer { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); margin-top: 3.5rem; border-top: 1px solid var(--rule); padding-top: 1rem; }
-.svg-par { fill: var(--accent); } .svg-seq { fill: var(--seq); } .svg-txt { fill: var(--muted); font-family: var(--sans); font-size: 13px; }
-.svg-lbl { fill: var(--ink); font-family: var(--sans); font-size: 13px; font-weight: 600; } .svg-axis { stroke: var(--rule); stroke-width: 1; }
+figure.lead { margin-top: 2rem; }
+.fig-scroll { overflow-x: auto; }
+.fig-scroll svg { min-width: 620px; }
+svg text { font-family: var(--sans); fill: currentColor; }
+svg .muted { fill: var(--muted); }
+svg .acc { fill: var(--accent); }
+svg .acc-stroke { stroke: var(--accent); }
+svg .soft { fill: var(--accent-soft); }
+svg .rule { stroke: var(--rule); }
 </style>
 </head>
 <body>
@@ -85,6 +92,54 @@ footer { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); marg
       <a class="btn" href="https://github.com/leanEthereum/leanSeal">Code</a>
     </nav>
   </header>
+
+  <figure class="lead" id="fig-schedules">
+    <div class="fig-scroll">
+    <svg viewBox="0 0 900 290" role="img" aria-label="The same four chains of m hash steps. The generator runs them side by side, so its wall time is m steps. The solver can only start chain i plus one after finishing chain i, because the start of the next chain is a published link XORed with a hash of the previous chain's end, so its wall time is n times m steps.">
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="acc"/></marker>
+        <pattern id="steps" width="12" height="18" patternUnits="userSpaceOnUse"><rect width="12" height="18" class="soft"/><line x1="12" y1="0" x2="12" y2="18" class="acc-stroke" stroke-opacity="0.35"/></pattern>
+      </defs>
+      <text x="20" y="22" font-size="13" font-weight="600">Sender: n chains in parallel</text>
+      <text x="20" y="40" font-size="11" class="muted">wall time = m steps</text>
+      <g font-size="11">
+        <text x="40" y="76" text-anchor="end">x₁</text><rect x="48" y="63" width="168" height="18" fill="url(#steps)" class="acc-stroke" stroke-width="1"/><text x="224" y="76">y₁</text>
+        <text x="40" y="106" text-anchor="end">x₂</text><rect x="48" y="93" width="168" height="18" fill="url(#steps)" class="acc-stroke" stroke-width="1"/><text x="224" y="106">y₂</text>
+        <text x="40" y="136" text-anchor="end">x₃</text><rect x="48" y="123" width="168" height="18" fill="url(#steps)" class="acc-stroke" stroke-width="1"/><text x="224" y="136">y₃</text>
+        <text x="40" y="166" text-anchor="end">x₄</text><rect x="48" y="153" width="168" height="18" fill="url(#steps)" class="acc-stroke" stroke-width="1"/><text x="224" y="166">y₄</text>
+      </g>
+      <line x1="48" y1="190" x2="216" y2="190" stroke="currentColor"/>
+      <line x1="48" y1="186" x2="48" y2="194" stroke="currentColor"/><line x1="216" y1="186" x2="216" y2="194" stroke="currentColor"/>
+      <text x="132" y="208" text-anchor="middle" font-size="11">m hash steps</text>
+      <text x="20" y="242" font-size="11" class="muted">then publish zᵢ = H(yᵢ)[:b] ⊕ xᵢ₊₁</text>
+      <text x="20" y="258" font-size="11" class="muted">(n − 1 links of b bytes)</text>
+
+      <line x1="285" y1="20" x2="285" y2="270" class="rule"/>
+
+      <text x="305" y="22" font-size="13" font-weight="600">Opener: each chain needs the previous chain's end</text>
+      <text x="305" y="40" font-size="11" class="muted">wall time = n · m steps</text>
+      <g font-size="11">
+        <text x="312" y="76" text-anchor="end">x₁</text><rect x="318" y="63" width="130" height="18" fill="url(#steps)" class="acc-stroke"/>
+        <rect x="448" y="93" width="130" height="18" fill="url(#steps)" class="acc-stroke"/>
+        <rect x="578" y="123" width="130" height="18" fill="url(#steps)" class="acc-stroke"/>
+        <rect x="708" y="153" width="130" height="18" fill="url(#steps)" class="acc-stroke"/>
+        <path d="M 448 81 L 448 91" class="acc-stroke" stroke-width="1.6" marker-end="url(#ar2)"/>
+        <path d="M 578 111 L 578 121" class="acc-stroke" stroke-width="1.6" marker-end="url(#ar2)"/>
+        <path d="M 708 141 L 708 151" class="acc-stroke" stroke-width="1.6" marker-end="url(#ar2)"/>
+        <text x="456" y="88" class="acc">⊕ z₁</text>
+        <text x="586" y="118" class="acc">⊕ z₂</text>
+        <text x="716" y="148" class="acc">⊕ z₃</text>
+        <text x="846" y="166">y₄</text>
+      </g>
+      <line x1="318" y1="190" x2="838" y2="190" stroke="currentColor"/>
+      <line x1="318" y1="186" x2="318" y2="194" stroke="currentColor"/><line x1="838" y1="186" x2="838" y2="194" stroke="currentColor"/>
+      <text x="578" y="208" text-anchor="middle" font-size="11">n · m hash steps, no parallelism helps</text>
+      <text x="305" y="242" font-size="11" class="muted">Starting chain i + 1 early means guessing xᵢ₊₁: 2^192 candidates for a 24-byte link.</text>
+      <text x="305" y="258" font-size="11" class="muted">K hashes every end y₁, …, yₙ, so no chain can be left out.</text>
+    </svg>
+    </div>
+    <figcaption>The sender knows every link and runs its chains side by side. Anyone else must run them one after another, because each chain's starting link is hidden under the end of the previous chain. The sender's parallel width becomes everyone else's delay, and the puzzle is just the <i>n</i> links.</figcaption>
+  </figure>
 
   <section class="metrics" aria-label="The reference puzzle">
     <div class="metric"><div class="v">60 s</div><div class="k">delay against an attacker computing one chained SHA-256 every 3.5 ns</div></div>
@@ -103,24 +158,6 @@ footer { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); marg
     <li>The puzzle publishes the first link in the clear and hides each later link under a hash of the end of the chain before it. The key is a hash of every chain's end.</li>
     <li>An opener without the key learns each link only by finishing the previous chain, so it must run all <i>n</i>·<i>m</i> steps one after another, however much hardware it has.</li>
   </ol>
-  <figure>
-    <svg viewBox="0 0 640 210" role="img" aria-label="The sender runs four chains side by side; the opener must run the same four chains one after another, taking four times as long.">
-      <text class="svg-lbl" x="0" y="18">Sender: chains in parallel</text>
-      <rect class="svg-par" x="0" y="30" width="150" height="12" rx="3"/>
-      <rect class="svg-par" x="0" y="48" width="150" height="12" rx="3"/>
-      <rect class="svg-par" x="0" y="66" width="150" height="12" rx="3"/>
-      <rect class="svg-par" x="0" y="84" width="150" height="12" rx="3"/>
-      <text class="svg-txt" x="160" y="68">m steps of wall time</text>
-      <text class="svg-lbl" x="0" y="134">Opener: the same chains in sequence</text>
-      <rect class="svg-seq" x="0" y="146" width="150" height="12" rx="3"/>
-      <rect class="svg-seq" x="152" y="146" width="150" height="12" rx="3"/>
-      <rect class="svg-seq" x="304" y="146" width="150" height="12" rx="3"/>
-      <rect class="svg-seq" x="456" y="146" width="150" height="12" rx="3"/>
-      <line class="svg-axis" x1="0" y1="176" x2="606" y2="176"/>
-      <text class="svg-txt" x="0" y="198">n · m sequential steps: each chain's link is hidden under the end of the previous one</text>
-    </svg>
-    <figcaption>The sender's parallel width becomes the opener's delay. The puzzle is just the <i>n</i> links, so its size grows with the number of chains, not with the delay.</figcaption>
-  </figure>
 
   <h2>What we show</h2>
   <div class="cols">
