@@ -79,10 +79,10 @@ footer { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); marg
     <p class="tagline">Time-lock encryption from hashes alone. Seal a transaction so that anyone can open it after a fixed amount of sequential hashing, or at once when its sender reveals the key.</p>
     <p class="authors">Vitalik Buterin · Quang Dao · Justin Drake</p>
     <nav class="actions" aria-label="Project links">
-      <a class="btn primary" href="leanseal.pdf">Paper (PDF)</a>
-      <a class="btn" href="guide.html">Interactive guide</a>
-      <a class="btn" href="https://github.com/quangvdao/leanSeal/blob/main/SPEC.md">Specification</a>
-      <a class="btn" href="https://github.com/quangvdao/leanSeal">Code</a>
+
+      <a class="btn primary" href="guide.html">Read the guide</a>
+      <a class="btn" href="https://github.com/leanEthereum/leanSeal/blob/main/SPEC.md">Specification</a>
+      <a class="btn" href="https://github.com/leanEthereum/leanSeal">Code</a>
     </nav>
   </header>
 
@@ -134,14 +134,14 @@ footer { font-family: var(--sans); font-size: 0.85rem; color: var(--muted); marg
   <div class="status">leanSeal is a research proof of concept. The proof of the delay theorem has not been machine-checked or reviewed by a third party, and no human cryptographer has reviewed the code. Post-quantum security is proved for the idealized chained puzzle; a bound for leanSeal's exact encoding against quantum attackers is open. Do not protect anything valuable with it yet.</div>
 
   <h2>Try it</h2>
-<pre>git clone https://github.com/quangvdao/leanSeal && cd leanSeal
+<pre>git clone https://github.com/leanEthereum/leanSeal && cd leanSeal
 make && make test
 target/release/leanseal gen -n 16 -m 2^30 -o tx.secret     # build a puzzle
 target/release/leanseal encrypt -s tx.secret -i tx.bin -o tx.env
 target/release/leanseal open tx.env --solve -o tx.bin      # anyone, after n·m steps</pre>
 
   <footer>
-    leanSeal builds on the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011). Code licensed under Apache-2.0 or MIT. <a href="https://github.com/quangvdao/leanSeal">github.com/quangvdao/leanSeal</a>
+    leanSeal builds on the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011). Code licensed under Apache-2.0 or MIT. <a href="https://github.com/leanEthereum/leanSeal">github.com/leanEthereum/leanSeal</a>
   </footer>
 </main>
 </body>

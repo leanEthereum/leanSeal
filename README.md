@@ -1,10 +1,10 @@
 # leanSeal
 
-[![CI](https://github.com/quangvdao/leanSeal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/quangvdao/leanSeal/actions/workflows/ci.yml)
+[![CI](https://github.com/leanEthereum/leanSeal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/leanEthereum/leanSeal/actions/workflows/ci.yml)
 
 leanSeal encrypts a message so that anyone can read it after a fixed amount of sequential SHA-256 work, and the sender can let everyone read it at once by publishing a key. It uses nothing but SHA-256.
 
-It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1, the variant in which each link is a hash iterated many times), instantiated with SHA-256 for encrypted mempools as Vitalik Buterin proposed. [SPEC.md](SPEC.md) defines the format. [The paper](https://quangvdao.github.io/leanSeal/leanseal.pdf) states and proves the delay theorem and analyses the parameters and the deployment, and [the interactive guide](https://quangvdao.github.io/leanSeal/guide.html) covers the same ground with a parameter calculator.
+It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1, the variant in which each link is a hash iterated many times), instantiated with SHA-256 for encrypted mempools as Vitalik Buterin proposed. [SPEC.md](SPEC.md) defines the format, and [the guide](https://leanethereum.github.io/leanSeal/guide.html) explains the idea, proves the delay theorem, and covers the parameters, the measurements and the deployment, with a parameter calculator.
 
 Authors: Vitalik Buterin, Quang Dao and Justin Drake.
 
@@ -57,7 +57,7 @@ leanseal solve a.env b.env c.env     # several puzzles at once, one core each
 
 Instead of `-m`, you can give `-d 10m` to choose `m` for a target delay. By default, the delay is measured against this machine's speed for one chain; `--step-ns` sets another solver speed. `leanseal info FILE` describes any leanseal file.
 
-The crate is also a library. It is not on crates.io; depend on it with `leanseal = { git = "https://github.com/quangvdao/leanSeal" }`. The example below draws its nonce with `getrandom`, so it also needs `getrandom = "0.2"`. Every envelope sealed under one key needs a fresh nonce.
+The crate is also a library. It is not on crates.io; depend on it with `leanseal = { git = "https://github.com/leanEthereum/leanSeal" }`. The example below draws its nonce with `getrandom`, so it also needs `getrandom = "0.2"`. Every envelope sealed under one key needs a fresh nonce.
 
 ```rust
 use leanseal::backend::Backend;
