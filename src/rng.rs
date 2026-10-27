@@ -17,7 +17,7 @@ impl TestRng {
     pub fn fill(&mut self, mut out: &mut [u8]) {
         while !out.is_empty() {
             let block = th(
-                "chainseal/test-rng",
+                "leanseal/test-rng",
                 &[&self.seed, &self.counter.to_be_bytes()],
             );
             self.counter = self.counter.wrapping_add(1);

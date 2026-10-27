@@ -1,29 +1,29 @@
 # Metal benchmark of the chain step
 
-This program measures how fast an Apple GPU computes chainseal chain steps (SPEC.md, section 3):
+This program measures how fast an Apple GPU computes leanSeal chain steps (SPEC.md, section 3):
 `F_i(s) = SHA256(s ‖ salt ‖ be32(i))`, one SHA-256 compression per step. It answers two questions:
 
 - **Sender throughput.** How many chained hashes per second the GPU computes across many independent chains.
 - **One-chain latency.** How many nanoseconds one step takes when the GPU runs a single chain.
 
-It is a stand-alone measurement tool. It is not part of the `chainseal` crate.
+It is a stand-alone measurement tool. It is not part of the `leanseal` crate.
 
 ## Build
 
 You need macOS with Xcode command-line tools (`swiftc`) and `python3` on `PATH`.
 
 ```sh
-swiftc -O main.swift -o chainseal-metal     # or: make
+swiftc -O main.swift -o leanseal-metal     # or: make
 ```
 
 ## Run
 
 ```sh
-./chainseal-metal verify                                  # check all kernels against Python hashlib
-./chainseal-metal sweep --variant premx1 --tg 64 --secs 2 # throughput for 1 ... 262144 chains
-./chainseal-metal tune --chains 65536                     # compare kernels and threadgroup sizes
-./chainseal-metal sustain --variant premx1 --tg 64 --chains 1048576 --secs 60
-./chainseal-metal source --variant premx1                 # print the generated Metal source
+./leanseal-metal verify                                  # check all kernels against Python hashlib
+./leanseal-metal sweep --variant premx1 --tg 64 --secs 2 # throughput for 1 ... 262144 chains
+./leanseal-metal tune --chains 65536                     # compare kernels and threadgroup sizes
+./leanseal-metal sustain --variant premx1 --tg 64 --chains 1048576 --secs 60
+./leanseal-metal source --variant premx1                 # print the generated Metal source
 ```
 
 Every mode except `source` first runs the correctness check. If the GPU result differs from Python `hashlib`, the program prints the mismatch and exits without reporting a rate.

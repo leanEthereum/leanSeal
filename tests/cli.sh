@@ -1,7 +1,7 @@
 #!/bin/sh
-# End-to-end tests of the command-line tool. Usage: sh tests/cli.sh [PATH_TO_CHAINSEAL]
+# End-to-end tests of the command-line tool. Usage: sh tests/cli.sh [PATH_TO_LEANSEAL]
 set -eu
-set -- "${1:-./target/release/chainseal}"
+set -- "${1:-./target/release/leanseal}"
 CS=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -87,7 +87,7 @@ set +e; "$CS" solve -q p1 p2.bad > keys 2>/dev/null; code=$?; set -e
 # watchdog kills the solver if the signal is lost.
 cp p1 endless && poke endless $((8 + 12)) '>Q' $((1 << 40))
 rm -f ready
-CHAINSEAL_TEST_READY=ready "$CS" solve -q endless > /dev/null 2>&1 &
+LEANSEAL_TEST_READY=ready "$CS" solve -q endless > /dev/null 2>&1 &
 PID=$!
 python3 -c 'import os, sys, time
 time.sleep(60)
@@ -114,7 +114,7 @@ rm -f endless endless.ckpt
 # Stop a solve partway, then resume it from the checkpoint. The test hook
 # stops the solve after 2^21 of its 2^24 steps, as an interrupt would.
 "$CS" encrypt -q -n 4 -m 2^22 -i msg -o long --secret-out slong
-set +e; CHAINSEAL_TEST_STOP_AFTER=2^21 "$CS" solve -q long > /dev/null 2>&1; code=$?; set -e
+set +e; LEANSEAL_TEST_STOP_AFTER=2^21 "$CS" solve -q long > /dev/null 2>&1; code=$?; set -e
 [ "$code" = 130 ] || fail "stopped solve exited $code, wanted 130"
 [ -s long.ckpt ] || fail "no checkpoint after stop"
 "$CS" info long.ckpt | grep -q checkpoint || fail "checkpoint info"
@@ -137,7 +137,7 @@ grep -q resuming log || fail "solve did not resume"
 [ ! -e long.ckpt ] || fail "checkpoint left after resumed solve"
 
 # A checkpoint of another puzzle is refused.
-set +e; CHAINSEAL_TEST_STOP_AFTER=2^21 "$CS" solve -q long > /dev/null 2>&1; set -e
+set +e; LEANSEAL_TEST_STOP_AFTER=2^21 "$CS" solve -q long > /dev/null 2>&1; set -e
 mv long.ckpt p1.ckpt
 expect_exit 1 "$CS" solve -q p1
 rm -f p1.ckpt

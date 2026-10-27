@@ -1,4 +1,4 @@
-//! Time-lock encryption using SHA-256 chains, implementing chainseal v1.
+//! Time-lock encryption using SHA-256 chains, implementing leanSeal v1.
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 pub mod backend;
@@ -66,7 +66,7 @@ impl fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
-/// A chainseal operation result.
+/// A leanSeal operation result.
 pub type Result<T> = std::result::Result<T, Error>;
 pub(crate) fn bytes(n: usize) -> Result<Vec<u8>> {
     let mut v = Vec::new();

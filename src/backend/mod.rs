@@ -56,7 +56,7 @@ impl Backend {
     }
     /// Select the environment override, or the fastest supported engine.
     pub fn best() -> crate::Result<Self> {
-        match std::env::var("CHAINSEAL_BACKEND") {
+        match std::env::var("LEANSEAL_BACKEND") {
             Ok(name) => Self::find(&name).ok_or(crate::Error::Backend),
             Err(std::env::VarError::NotPresent) => Ok(Self::available()[0]),
             Err(std::env::VarError::NotUnicode(_)) => Err(crate::Error::Backend),

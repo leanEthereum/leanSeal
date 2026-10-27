@@ -1,23 +1,23 @@
 CARGO ?= cargo
-CHAINSEAL = target/release/chainseal
+LEANSEAL = target/release/leanseal
 
 all:
 	$(CARGO) build --release
 
 test: all
 	$(CARGO) test --release
-	$(CHAINSEAL) selftest
-	$(CHAINSEAL) vectors > tests/vectors.tmp && cmp tests/vectors.tmp tests/vectors.json && rm tests/vectors.tmp
-	sh tests/cli.sh $(CHAINSEAL)
-	python3 ref/chainseal_ref.py check tests/vectors.json
-	sh tests/cross.sh $(CHAINSEAL)
+	$(LEANSEAL) selftest
+	$(LEANSEAL) vectors > tests/vectors.tmp && cmp tests/vectors.tmp tests/vectors.json && rm tests/vectors.tmp
+	sh tests/cli.sh $(LEANSEAL)
+	python3 ref/leanseal_ref.py check tests/vectors.json
+	sh tests/cross.sh $(LEANSEAL)
 	@echo "all tests passed"
 
 bench: all
-	$(CHAINSEAL) bench all
+	$(LEANSEAL) bench all
 
 vectors: all
-	$(CHAINSEAL) vectors > tests/vectors.json
+	$(LEANSEAL) vectors > tests/vectors.json
 
 clean:
 	$(CARGO) clean

@@ -1,5 +1,5 @@
 #![deny(unsafe_code)]
-use chainseal::{backend::Backend, benchmark, runtime::*, *};
+use leanseal::{backend::Backend, benchmark, runtime::*, *};
 use std::{
     ffi::{OsStr, OsString},
     io::{self, IsTerminal, Write},
@@ -7,7 +7,7 @@ use std::{
     path::Path,
     time::Instant,
 };
-const USAGE:&str="usage: chainseal <command> [options]\n\nSender:\n  gen -o SECRET (-m STEPS | -d DELAY) [-n CHAINS] [-b BYTES]\n        build a puzzle in advance and keep it, with its key, in SECRET\n  encrypt -o ENVELOPE (-s SECRET | -m STEPS | -d DELAY) [-i MESSAGE] [--secret-out FILE]\n        encrypt MESSAGE (default stdin) under a stored or freshly built puzzle\n  key SECRET            print the key, to open an envelope early\n\nReceiver:\n  solve FILE...         solve puzzles (envelopes or bare puzzles), one thread each,\n                        saving progress to FILE.ckpt; print each key\n  open ENVELOPE (-k KEY | -s SECRET | --solve) [-o MESSAGE]\n        check the key and the tag, then write the message (default stdout)\n  info FILE             describe a puzzle, envelope, secret or checkpoint\n\nMeasurement:\n  bench [latency | throughput | build | attack | all]\n  selftest              check every backend against plain SHA-256, then a round trip\n  vectors               print the test vectors as JSON\n\nPuzzle options:\n  -n, --chains N        chains (default 16)\n  -m, --steps M         hash steps per chain, e.g. 2^28\n  -d, --delay T         or: choose m for a delay of T (90, 10m, 2h) ...\n      --step-ns L       ... against a solver taking L ns per step (default: this machine)\n  -b, --link-bytes B    link width (default 24; see SPEC.md section 8)\n  -j, --threads J       build threads (default: all cores)\n  -q, --quiet\n\nBackends: set CHAINSEAL_BACKEND=portable|armv8-sha2|x86-sha-ni to override.\n";
+const USAGE:&str="usage: leanseal <command> [options]\n\nSender:\n  gen -o SECRET (-m STEPS | -d DELAY) [-n CHAINS] [-b BYTES]\n        build a puzzle in advance and keep it, with its key, in SECRET\n  encrypt -o ENVELOPE (-s SECRET | -m STEPS | -d DELAY) [-i MESSAGE] [--secret-out FILE]\n        encrypt MESSAGE (default stdin) under a stored or freshly built puzzle\n  key SECRET            print the key, to open an envelope early\n\nReceiver:\n  solve FILE...         solve puzzles (envelopes or bare puzzles), one thread each,\n                        saving progress to FILE.ckpt; print each key\n  open ENVELOPE (-k KEY | -s SECRET | --solve) [-o MESSAGE]\n        check the key and the tag, then write the message (default stdout)\n  info FILE             describe a puzzle, envelope, secret or checkpoint\n\nMeasurement:\n  bench [latency | throughput | build | attack | all]\n  selftest              check every backend against plain SHA-256, then a round trip\n  vectors               print the test vectors as JSON\n\nPuzzle options:\n  -n, --chains N        chains (default 16)\n  -m, --steps M         hash steps per chain, e.g. 2^28\n  -d, --delay T         or: choose m for a delay of T (90, 10m, 2h) ...\n      --step-ns L       ... against a solver taking L ns per step (default: this machine)\n  -b, --link-bytes B    link width (default 24; see SPEC.md section 8)\n  -j, --threads J       build threads (default: all cores)\n  -q, --quiet\n\nBackends: set LEANSEAL_BACKEND=portable|armv8-sha2|x86-sha-ni to override.\n";
 
 enum CliError {
     Message(String, i32),
@@ -699,7 +699,7 @@ fn run_jobs(
         for job in jobs.iter_mut() {
             if let Some(path) = &job.checkpoint {
                 if let Some(error) = job.save_error.take() {
-                    eprintln!("chainseal: {}", Failure::io(path, error));
+                    eprintln!("leanseal: {}", Failure::io(path, error));
                 } else {
                     eprintln!(
                         "{}: stopped; progress saved to {}",
@@ -720,7 +720,7 @@ fn run_jobs(
             Some(Err(Error::Stopped)) => {
                 if let Some(e) = j.save_error.take() {
                     let e = Failure::io(j.checkpoint.as_deref().unwrap_or(&j.path), e);
-                    eprintln!("chainseal: {e}");
+                    eprintln!("leanseal: {e}");
                     rc = e.exit_code();
                 } else {
                     if let Some(path) = &j.checkpoint {
@@ -739,7 +739,7 @@ fn run_jobs(
             }
             Some(Err(e)) => {
                 let e = Failure::code(&j.path, *e);
-                eprintln!("chainseal: {e}");
+                eprintln!("leanseal: {e}");
                 rc = e.exit_code();
             }
             Some(Ok(_)) if !quiet => {
@@ -781,7 +781,7 @@ fn solve(args: &[OsString], be: Backend, stop: u64, ready: Option<&Path>) -> Cli
         if let Some(Ok(key)) = j.result {
             if let Err(e) = output(&format!("{}  {}\n", hex(&key), j.path.display())) {
                 if let CliError::Failure(e) = &e {
-                    eprintln!("chainseal: {e}");
+                    eprintln!("leanseal: {e}");
                 }
                 rc = 1;
             } else if let Some(ck) = j.checkpoint {
@@ -893,11 +893,11 @@ fn info(args: &[OsString], be: Backend) -> CliResult<i32> {
     }
     let path = Path::new(&args[0]);
     let d = read_file(path).map_err(|e| Failure::io(path, e))?;
-    if d.starts_with(b"CSPZ") {
+    if d.starts_with(b"LSPZ") {
         let p = Puzzle::decode(&d).map_err(|e| code(path, e))?;
         output(&format!("{}: puzzle\n", path.display()))?;
         print_puzzle(&p, be)?;
-    } else if d.starts_with(b"CSEN") {
+    } else if d.starts_with(b"LSEN") {
         let e = Envelope::decode(&d).map_err(|e| code(path, e))?;
         output(&format!(
             "{}: envelope, {} bytes\n  message        {} bytes\n  nonce          {}\n",
@@ -907,14 +907,14 @@ fn info(args: &[OsString], be: Backend) -> CliResult<i32> {
             hex(&e.nonce)
         ))?;
         print_puzzle(&e.puzzle, be)?;
-    } else if d.starts_with(b"CSSK") {
+    } else if d.starts_with(b"LSSK") {
         let (p, _) = secret_decode(&d).map_err(|e| code(path, e))?;
         output(&format!(
             "{}: secret (puzzle with its key; the key matches the commitment)\n",
             path.display()
         ))?;
         print_puzzle(&p, be)?;
-    } else if d.starts_with(b"CSCK") {
+    } else if d.starts_with(b"LSCK") {
         let (id, i, j) = checkpoint_peek(&d).map_err(|e| code(path, e))?;
         output(&format!(
             "{}: checkpoint\n  puzzle id      {}\n  chain i        {i}\n  steps done j   {j}\n",
@@ -1057,7 +1057,7 @@ fn bench(args: &[OsString], be: Backend) -> CliResult<i32> {
         })();
         if let Err(error) = result {
             match error {
-                CliError::Failure(e) if e.what == "throughput" => eprintln!("chainseal: {e}"),
+                CliError::Failure(e) if e.what == "throughput" => eprintln!("leanseal: {e}"),
                 other => return Err(other),
             }
             rc = 1;
@@ -1071,7 +1071,7 @@ fn bench(args: &[OsString], be: Backend) -> CliResult<i32> {
             let r = match benchmark::build(work, count, threads, b, be) {
                 Ok(row) => row,
                 Err(e) => {
-                    eprintln!("chainseal: build: {e}");
+                    eprintln!("leanseal: build: {e}");
                     rc = 1;
                     break;
                 }
@@ -1092,7 +1092,7 @@ fn bench(args: &[OsString], be: Backend) -> CliResult<i32> {
     }
     if all || what == "attack" {
         if attack_b > 3 {
-            eprintln!("chainseal: attack needs -b 1, 2 or 3");
+            eprintln!("leanseal: attack needs -b 1, 2 or 3");
             return Ok(1);
         }
         let r = benchmark::attack(attack_b, n, m, trials, fraction, be)
@@ -1128,17 +1128,17 @@ fn report_selftest(
 }
 fn run() -> CliResult<i32> {
     fast_qos();
-    let stop = match std::env::var("CHAINSEAL_TEST_STOP_AFTER") {
-        Ok(s) => number(&s).map_err(|_| usage("bad CHAINSEAL_TEST_STOP_AFTER"))?,
+    let stop = match std::env::var("LEANSEAL_TEST_STOP_AFTER") {
+        Ok(s) => number(&s).map_err(|_| usage("bad LEANSEAL_TEST_STOP_AFTER"))?,
         Err(_) => 0,
     };
-    let ready = std::env::var_os("CHAINSEAL_TEST_READY").map(std::path::PathBuf::from);
+    let ready = std::env::var_os("LEANSEAL_TEST_READY").map(std::path::PathBuf::from);
     let be = Backend::best().map_err(|_| {
-        let name = std::env::var_os("CHAINSEAL_BACKEND").unwrap_or_default();
+        let name = std::env::var_os("LEANSEAL_BACKEND").unwrap_or_default();
         let name = name.to_string_lossy();
         CliError::Message(
             format!(
-                "CHAINSEAL_BACKEND={name} is not available on this machine; available:{}",
+                "LEANSEAL_BACKEND={name} is not available on this machine; available:{}",
                 Backend::available()
                     .iter()
                     .map(|b| format!(" {}", b.name()))
@@ -1186,18 +1186,18 @@ fn main() {
     let rc = match run() {
         Ok(code) => code,
         Err(CliError::Message(msg, code)) => {
-            eprintln!("chainseal: {msg}");
+            eprintln!("leanseal: {msg}");
             code
         }
         Err(CliError::Usage(msg)) => {
             if let Some(msg) = msg {
-                eprintln!("chainseal: {msg}");
+                eprintln!("leanseal: {msg}");
             }
-            eprintln!("run 'chainseal help' for usage");
+            eprintln!("run 'leanseal help' for usage");
             2
         }
         Err(CliError::Failure(err)) => {
-            eprintln!("chainseal: {err}");
+            eprintln!("leanseal: {err}");
             err.exit_code()
         }
     };

@@ -1,21 +1,23 @@
-# chainseal
+# leanSeal
 
-[![CI](https://github.com/quangvdao/chainseal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/quangvdao/chainseal/actions/workflows/ci.yml)
+[![CI](https://github.com/quangvdao/leanSeal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/quangvdao/leanSeal/actions/workflows/ci.yml)
 
-chainseal encrypts a message so that anyone can read it after a fixed amount of sequential SHA-256 work, and the sender can let everyone read it at once by publishing a key. It uses nothing but SHA-256.
+leanSeal encrypts a message so that anyone can read it after a fixed amount of sequential SHA-256 work, and the sender can let everyone read it at once by publishing a key. It uses nothing but SHA-256.
 
-It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1, the variant in which each link is a hash iterated many times), instantiated with SHA-256 for encrypted mempools as Vitalik Buterin proposed. [SPEC.md](SPEC.md) defines the format, and [the guide](https://quangvdao.github.io/chainseal/) explains the idea, the parameters and the measurements.
+It implements the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1, the variant in which each link is a hash iterated many times), instantiated with SHA-256 for encrypted mempools as Vitalik Buterin proposed. [SPEC.md](SPEC.md) defines the format. [The paper](https://quangvdao.github.io/leanSeal/leanseal.pdf) states and proves the delay theorem and analyses the parameters and the deployment, and [the interactive guide](https://quangvdao.github.io/leanSeal/guide.html) covers the same ground with a parameter calculator.
 
 Authors: Vitalik Buterin, Quang Dao and Justin Drake.
 
 **Status: proof of concept.** The format is versioned and fully specified. It has test vectors and a second implementation, in Python, that shares no code with the Rust one. An AI model audited an earlier C implementation in several rounds; the reports and the fixes are in [audit/](audit/). The Rust implementation replaced it, reproduces its test vectors and command-line behaviour, was reviewed against it, and has fuzzed decoders. No human cryptographer has reviewed it. Do not protect anything valuable with it.
+
+leanSeal was developed under the name chainseal. The audit reports in [audit/](audit/) and the logs in [bench-results/](bench-results/) predate the rename and use the old name, labels and magic bytes; the format itself was renamed before any release, so v1 uses the `leanseal/v1/` labels and the `LS` magic bytes throughout.
 
 ## Build and test
 
 You need Rust 1.80 or later and a POSIX system. For the full test suite you also need `make`, `sh` and `python3`, version 3.11 or later. The demo also uses `xxd` and `perl`. Everything here was run on macOS on an Apple M4, and the tests also pass on Linux x86-64 (Ubuntu 24.04, AMD EPYC 9554P). Continuous integration runs them on Linux x86-64, Linux aarch64 and macOS on Apple silicon.
 
 ```sh
-make            # cargo build --release: target/release/chainseal
+make            # cargo build --release: target/release/leanseal
 make test       # cargo tests, CLI tests, test vectors, Python cross-check
 make bench      # latency, throughput, build time against n, toy attack
 sh demo.sh      # time-lock the EIP-155 example transaction, open it both ways
@@ -27,46 +29,46 @@ The tool has three SHA-256 backends. It uses an accelerated one when the CPU sup
 - `x86-sha-ni`, for x86-64 CPUs with the SHA extensions, detected with CPUID. It was run and timed on an AMD EPYC 9554P (Zen 4): 37.4 ns/step for one chain, against 23.3 on the M4.
 - `portable`, everywhere.
 
-Set `CHAINSEAL_BACKEND` to force one. The tool refuses a backend that this build or this CPU does not have. `chainseal selftest` checks every available backend against plain SHA-256. The accelerated backends are the only `unsafe` code in the crate.
+Set `LEANSEAL_BACKEND` to force one. The tool refuses a backend that this build or this CPU does not have. `leanseal selftest` checks every available backend against plain SHA-256. The accelerated backends are the only `unsafe` code in the crate.
 
 The decoders are fuzzed with cargo-fuzz (`cd fuzz && cargo +nightly fuzz run puzzle`, and likewise `envelope`, `secret` and `checkpoint`); `tests/decode_props.rs` runs the same checks on every `cargo test`.
 
 ## Use
 
-`make` leaves the tool at `target/release/chainseal`. The examples below assume it is on your `PATH`; `cargo install --path .` puts it in `~/.cargo/bin`.
+`make` leaves the tool at `target/release/leanseal`. The examples below assume it is on your `PATH`; `cargo install --path .` puts it in `~/.cargo/bin`.
 
 ```sh
 # Sender: build a puzzle ahead of time. 16 chains of 2^30 steps is about
 # 6.6 minutes of sequential work on an Apple M4, and about 40 s to build there.
-chainseal gen -n 16 -m 2^30 -o tx.secret
+leanseal gen -n 16 -m 2^30 -o tx.secret
 
 # When the message is ready, encrypt it under the stored puzzle.
-chainseal encrypt -s tx.secret -i tx.bin -o tx.env
+leanseal encrypt -s tx.secret -i tx.bin -o tx.env
 
 # Fast path: the sender publishes the key and anyone opens the envelope at once.
-chainseal key tx.secret               # prints 64 hex digits
-chainseal open tx.env -k <key> -o tx.bin
+leanseal key tx.secret               # prints 64 hex digits
+leanseal open tx.env -k <key> -o tx.bin
 
 # Slow path: anyone solves the puzzle. Ctrl-C saves progress to tx.env.ckpt,
 # and running the command again resumes from there.
-chainseal open tx.env --solve -o tx.bin
-chainseal solve a.env b.env c.env     # several puzzles at once, one core each
+leanseal open tx.env --solve -o tx.bin
+leanseal solve a.env b.env c.env     # several puzzles at once, one core each
 ```
 
-Instead of `-m`, you can give `-d 10m` to choose `m` for a target delay. By default, the delay is measured against this machine's speed for one chain; `--step-ns` sets another solver speed. `chainseal info FILE` describes any chainseal file.
+Instead of `-m`, you can give `-d 10m` to choose `m` for a target delay. By default, the delay is measured against this machine's speed for one chain; `--step-ns` sets another solver speed. `leanseal info FILE` describes any leanseal file.
 
-The crate is also a library. It is not on crates.io; depend on it with `chainseal = { git = "https://github.com/quangvdao/chainseal" }`. The example below draws its nonce with `getrandom`, so it also needs `getrandom = "0.2"`. Every envelope sealed under one key needs a fresh nonce.
+The crate is also a library. It is not on crates.io; depend on it with `leanseal = { git = "https://github.com/quangvdao/leanSeal" }`. The example below draws its nonce with `getrandom`, so it also needs `getrandom = "0.2"`. Every envelope sealed under one key needs a fresh nonce.
 
 ```rust
-use chainseal::backend::Backend;
-use chainseal::{generate, seal, Envelope, GenOptions};
+use leanseal::backend::Backend;
+use leanseal::{generate, seal, Envelope, GenOptions};
 
-fn main() -> Result<(), chainseal::Error> {
+fn main() -> Result<(), leanseal::Error> {
     // Sender: build a puzzle (4 chains of 2^20 steps) and seal a message.
-    let opts = GenOptions { threads: chainseal::cpu_count(), backend: None, progress: None };
+    let opts = GenOptions { threads: leanseal::cpu_count(), backend: None, progress: None };
     let (puzzle, key) = generate(4, 1 << 20, 24, &opts)?;
     let mut nonce = [0u8; 16];
-    getrandom::getrandom(&mut nonce).map_err(|_| chainseal::Error::Rng)?;
+    getrandom::getrandom(&mut nonce).map_err(|_| leanseal::Error::Rng)?;
     let bytes = seal(&puzzle, &key, &nonce, b"hello")?;
 
     // Anyone: solve the puzzle in sequence, then open the envelope.
@@ -97,7 +99,7 @@ Sizes:
 
 ## Measurements
 
-These are from `chainseal bench latency`, `chainseal bench throughput`, `chainseal gen` and `demo.sh` on a MacBook Air (Apple M4, 10 cores, fanless) and a MacBook Pro (Apple M4 Max, 16 cores), with 32-byte links; the link width changes only the puzzle's size, and with the default 24-byte links the M4 Max built the reference puzzle in 30.0 s. The logs are in [bench-results/](bench-results/), which also has an x86 run on a 4-vCPU AMD EPYC 9554P VM (`x86-epyc-9554p.txt`): 37.4 ns/step for one chain, 173 M steps/s on all four vCPUs. The M4 Air was in use during its runs, so its build times are somewhat pessimistic.
+These are from `leanseal bench latency`, `leanseal bench throughput`, `leanseal gen` and `demo.sh` on a MacBook Air (Apple M4, 10 cores, fanless) and a MacBook Pro (Apple M4 Max, 16 cores), with 32-byte links; the link width changes only the puzzle's size, and with the default 24-byte links the M4 Max built the reference puzzle in 30.0 s. The logs are in [bench-results/](bench-results/), which also has an x86 run on a 4-vCPU AMD EPYC 9554P VM (`x86-epyc-9554p.txt`): 37.4 ns/step for one chain, 173 M steps/s on all four vCPUs. The M4 Air was in use during its runs, so its build times are somewhat pessimistic.
 
 | Quantity | M4 Air | M4 Max |
 |---|---|---|
@@ -112,7 +114,7 @@ Each core computes two chains at once at about 1.5 times the rate of one. The bu
 
 ## Threat model
 
-**What chainseal is meant to give.**
+**What leanSeal is meant to give.**
 
 - *Confidentiality until the work is done.* An honest solver needs `n·m` chain steps in sequence. In the random-oracle model, no classical attacker derives the key even one round sooner except with negligible probability (SPEC.md section 8). That a round takes as long as assumed is an assumption about hardware.
 - *Integrity, until the key is known.* Any change to an envelope's puzzle, nonce, ciphertext or tag makes opening fail. Once the key is public, revealed or solved, anyone can seal a different message under the same puzzle. So the puzzle and its commitment do not identify a message: refer to an envelope by a hash of all its bytes.
@@ -122,8 +124,8 @@ Each core computes two chains at once at about 1.5 times the rate of one. The bu
 
 - SHA-256 and its compression function behave as random oracles. Under this model, SPEC.md section 8 proves that a classical attacker making `Q_pre` queries before the puzzle exists and `Q_on` after derives the key even one round before the honest solver with probability at most `Q_on/2^(8b) + Q_pre/2^(128+8b) + (QP + P² + 1)/2^256`, where `Q = Q_pre + Q_on` and `P = n(m + 3) + 1`. With the default 24-byte links and a fleet making `R = 10^21` queries per second, about the Bitcoin network, for the whole delay `T` (`Q_on = RT`), this is about `2^-116` for a one-minute puzzle and `2^-97` for a one-year one (`2^-146` and `2^-108` with 32-byte links). The proof is written out but not machine-checked or independently reviewed.
 - Nobody computes one chained SHA-256 step much faster than `ℓ`, the fastest attainable latency of one compression on the best hardware. The delay is `n·m·ℓ` seconds, so a faster solver opens the envelope sooner. Set `m` against the fastest attacker you assume, not against your own machine.
-- Shorter links weaken the first term of the bound: with 16-byte links it is about `2^-52` for a minute and `2^-33` for a year. chainseal relies only on this proved bound, so use links of 24 bytes or more; the tool warns when `-b` is below 24. A puzzle with `n = 1` has no hidden link, and its delay rests on the one chain alone.
-- There is no analysis of chainseal's encoding against quantum attackers.
+- Shorter links weaken the first term of the bound: with 16-byte links it is about `2^-52` for a minute and `2^-33` for a year. leanSeal relies only on this proved bound, so use links of 24 bytes or more; the tool warns when `-b` is below 24. A puzzle with `n = 1` has no hidden link, and its delay rests on the one chain alone.
+- There is no analysis of leanSeal's encoding against quantum attackers.
 - The sender's random number generator is sound.
 
 **What it does not do.**
@@ -149,7 +151,7 @@ Each core computes two chains at once at about 1.5 times the rate of one. The bu
 | `src/main.rs`, `src/benchmark.rs`, `src/vectors.rs`, `src/signal.rs` | the command-line tool |
 | `tests/` | library and CLI tests, decoder property tests, shell CLI tests, cross-tests, `vectors.json` |
 | `fuzz/` | cargo-fuzz targets for the four decoders |
-| `ref/chainseal_ref.py` | a separate Python implementation that shares no code with the Rust one |
+| `ref/leanseal_ref.py` | a separate Python implementation that shares no code with the Rust one |
 | `bench-results/` | benchmark and demo logs |
 | `bench/metal/` | a separate Metal benchmark of the chain step on Apple GPUs |
 | `audit/` | the audit reports on the earlier C implementation and what was fixed |

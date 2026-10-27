@@ -1,7 +1,7 @@
 #!/bin/sh
 # End-to-end demo: time-lock a signed Ethereum transaction.
 #
-#   sh demo.sh [CHAINS STEPS [PATH_TO_CHAINSEAL]]
+#   sh demo.sh [CHAINS STEPS [PATH_TO_LEANSEAL]]
 #                               default: 16 chains of 2^22 steps (about 1.5 s to solve)
 #   sh demo.sh 16 2^30            a one-minute lock: about 6.6 minutes on an Apple M4
 #
@@ -11,7 +11,7 @@
 set -eu
 N=${1:-16}
 M=${2:-2^22}
-CS=${3:-$(cd "$(dirname "$0")" && pwd)/target/release/chainseal}
+CS=${3:-$(cd "$(dirname "$0")" && pwd)/target/release/leanseal}
 [ -x "$CS" ] || { echo "build first: make" >&2; exit 1; }
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT

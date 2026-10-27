@@ -1,5 +1,5 @@
 //! Small valid encodings: the fuzz seeds and the property test's starting points.
-use chainseal::{generate_from, rng::TestRng, seal, secret_encode, GenOptions, Puzzle};
+use leanseal::{generate_from, rng::TestRng, seal, secret_encode, GenOptions, Puzzle};
 
 /// Puzzle shapes `(n, m, b)`: n from 1 to 5, m from 1 to 100, b of 1, 16 and 32.
 pub const SHAPES: [(u32, u64, u8); 12] = [
@@ -35,7 +35,7 @@ pub struct Seed {
 
 /// Build one seed per entry of [`SHAPES`], deterministically.
 pub fn all() -> Vec<Seed> {
-    let mut rng = TestRng::new(b"chainseal fuzz seeds");
+    let mut rng = TestRng::new(b"leanseal fuzz seeds");
     SHAPES
         .iter()
         .enumerate()
@@ -58,9 +58,9 @@ pub fn all() -> Vec<Seed> {
             };
             let mut cur = puzzle.cursor();
             if tj > 0 {
-                let be = chainseal::backend::Backend::PORTABLE;
+                let be = leanseal::backend::Backend::PORTABLE;
                 let r = puzzle.solve(&mut cur, be, 1, |c| c.i == ti && c.j == tj);
-                assert_eq!(r, Err(chainseal::Error::Stopped));
+                assert_eq!(r, Err(leanseal::Error::Stopped));
             }
             let mut checkpoint = cur.encode(&puzzle).expect("encode checkpoint");
             checkpoint.extend(puzzle.encode().expect("encode puzzle"));

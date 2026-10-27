@@ -259,7 +259,7 @@ impl SolveJob {
     pub fn load(path: impl AsRef<Path>, checkpoints: bool) -> std::result::Result<Self, Failure> {
         let path = path.as_ref();
         let data = read_file(path).map_err(|e| Failure::io(path, e))?;
-        let envelope = data.starts_with(b"CSEN");
+        let envelope = data.starts_with(b"LSEN");
         let puzzle = if envelope {
             Envelope::decode(&data).map(|e| e.puzzle)
         } else {
@@ -478,7 +478,7 @@ mod tests {
         let mut random = [0; 8];
         getrandom::getrandom(&mut random).map_err(|e| io::Error::other(e.to_string()))?;
         let dir = Temp(std::env::temp_dir().join(format!(
-            "chainseal-spawn-{}-{}",
+            "leanseal-spawn-{}-{}",
             std::process::id(),
             u64::from_ne_bytes(random)
         )));

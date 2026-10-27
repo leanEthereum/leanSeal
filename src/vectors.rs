@@ -38,10 +38,10 @@ pub fn generate_vectors() -> Result<String> {
         (8, 1000, 7, 100),
         (16, 64, 12, 64),
     ];
-    let mut out = String::from("{\n  \"spec\": \"chainseal v1\",\n  \"cases\": [\n");
+    let mut out = String::from("{\n  \"spec\": \"leanseal v1\",\n  \"cases\": [\n");
     let mut built = Vec::new();
     for (k, (n, m, b, ml)) in cases.into_iter().enumerate() {
-        let mut rng = TestRng::new(format!("chainseal/v1 vector {k}").as_bytes());
+        let mut rng = TestRng::new(format!("leanseal/v1 vector {k}").as_bytes());
         let mut salt = [0; 16];
         let mut x = bytes(n as usize * b as usize)?;
         let mut nonce = [0; 16];
@@ -68,7 +68,7 @@ pub fn generate_vectors() -> Result<String> {
             starts.extend_from_slice(
                 &p.chain_start((i + 1) as u32, &x[i * b as usize..(i + 1) * b as usize])?,
             );
-            acc = th("chainseal/v1/acc", &[&acc, end]);
+            acc = th("leanseal/v1/acc", &[&acc, end]);
             accs.extend_from_slice(&acc);
         }
         let puzzle = p.encode()?;

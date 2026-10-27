@@ -1,11 +1,11 @@
 [package]
-name = "chainseal"
+name = "leanseal"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
 description = "Chained-hash time-lock puzzles and authenticated encryption using SHA-256"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/quangvdao/chainseal"
+repository = "https://github.com/quangvdao/leanSeal"
 readme = "README.md"
 authors = ["Vitalik Buterin", "Quang Dao", "Justin Drake"]
 keywords = ["time-lock", "encryption", "sha256", "cryptography"]
@@ -17,7 +17,7 @@ include = [
     "/tests/*.rs",
     "/tests/*.sh",
     "/tests/vectors.json",
-    "/ref/chainseal_ref.py",
+    "/ref/leanseal_ref.py",
     "/Makefile",
     "/demo.sh",
     "/SPEC.md",

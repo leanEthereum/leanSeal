@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent, deliberately straightforward chainseal v1 reference.
+"""Independent, deliberately straightforward leanseal v1 reference.
 
 All format rules and cryptographic formulas come from SPEC.md. Decoders parse
 fields directly; they never use an encoder to decide whether bytes are valid.
@@ -62,7 +62,7 @@ def context(n, m, b, salt):
 
 
 def start(ctx, i, link):
-    return th("chainseal/v1/start", ctx + i.to_bytes(4, "big") + link)
+    return th("leanseal/v1/start", ctx + i.to_bytes(4, "big") + link)
 
 
 def chain(state, salt, i, steps):
@@ -73,11 +73,11 @@ def chain(state, salt, i, steps):
 
 
 def mask(ctx, end):
-    return th("chainseal/v1/mask", ctx + end)
+    return th("leanseal/v1/mask", ctx + end)
 
 
 def absorb(acc, end):
-    return th("chainseal/v1/acc", acc + end)
+    return th("leanseal/v1/acc", acc + end)
 
 
 def derive_key(ctx, ends):
@@ -87,11 +87,11 @@ def derive_key(ctx, ends):
     for end in ends:
         acc = absorb(acc, end)
         accs.append(acc)
-    return th("chainseal/v1/key", ctx + acc), accs
+    return th("leanseal/v1/key", ctx + acc), accs
 
 
 def commitment(ctx, key):
-    return th("chainseal/v1/commit", ctx + key)
+    return th("leanseal/v1/commit", ctx + key)
 
 
 def check_key(puzzle, key):
@@ -107,7 +107,7 @@ def encode_puzzle(n, m, b, salt, commit, links):
     require(len(links) == n, "wrong number of encoded links")
     for link in links:
         fixed(link, b, "link")
-    return b"CSPZ" + ctx + commit + b"".join(links)
+    return b"LSPZ" + ctx + commit + b"".join(links)
 
 
 def generate(n, m, b, salt, links):
@@ -129,24 +129,24 @@ def generate(n, m, b, salt, links):
 
 
 def puzzle_id(raw):
-    return th("chainseal/v1/puzzle-id", raw)
+    return th("leanseal/v1/puzzle-id", raw)
 
 
 def encode_secret(raw_puzzle, key):
     fixed(key, 32, "key")
-    return b"CSSK\x01\0\0\0" + key + raw_puzzle
+    return b"LSSK\x01\0\0\0" + key + raw_puzzle
 
 
 def encode_checkpoint(raw_puzzle, i, j, state, acc):
     fixed(state, 32, "checkpoint state")
     fixed(acc, 32, "checkpoint accumulator")
-    return (b"CSCK\x01\0\0\0" + puzzle_id(raw_puzzle)
+    return (b"LSCK\x01\0\0\0" + puzzle_id(raw_puzzle)
             + i.to_bytes(4, "big") + j.to_bytes(8, "big") + state + acc)
 
 
 def crypt(message, key, nonce):
     """The same XOR operation encrypts and decrypts."""
-    k_enc = th("chainseal/v1/enc", key + nonce)
+    k_enc = th("leanseal/v1/enc", key + nonce)
     output = bytearray()
     for offset in range(0, len(message), 32):
         block = mac(k_enc, (offset // 32).to_bytes(8, "big"))
@@ -160,9 +160,9 @@ def encode_envelope(raw_puzzle, key, nonce, message):
     fixed(nonce, 16, "nonce")
     require(len(message) <= MAX_MESSAGE, "message too long")
     ciphertext = crypt(message, key, nonce)
-    prefix = (b"CSEN\x01\0\0\0" + raw_puzzle + nonce
+    prefix = (b"LSEN\x01\0\0\0" + raw_puzzle + nonce
               + len(ciphertext).to_bytes(4, "big") + ciphertext)
-    k_mac = th("chainseal/v1/mac", key + nonce)
+    k_mac = th("leanseal/v1/mac", key + nonce)
     return prefix + mac(k_mac, prefix)
 
 
@@ -180,7 +180,7 @@ def parse_puzzle_at(data, offset):
     Enclosing decoders, or decode_puzzle, enforce the entire input length.
     """
     raw = data[offset:]
-    header(raw, b"CSPZ", 6)
+    header(raw, b"LSPZ", 6)
     require(len(raw) >= 68, "truncated puzzle header")
     b = raw[5]
     n = int.from_bytes(raw[8:12], "big")
@@ -203,7 +203,7 @@ def decode_puzzle(data):
 
 
 def decode_envelope(data):
-    header(data, b"CSEN")
+    header(data, b"LSEN")
     puzzle, p = parse_puzzle_at(data, 8)
     require(len(data) >= p + 52, "truncated envelope")
     length = int.from_bytes(data[p + 16:p + 20], "big")
@@ -215,7 +215,7 @@ def decode_envelope(data):
 
 
 def decode_secret(data):
-    header(data, b"CSSK")
+    header(data, b"LSSK")
     require(len(data) >= 40, "truncated secret key")
     key = data[8:40]
     puzzle, end = parse_puzzle_at(data, 40)
@@ -230,7 +230,7 @@ def checkpoint_position(puzzle, i, j):
 
 
 def decode_checkpoint(data, puzzle):
-    header(data, b"CSCK")
+    header(data, b"LSCK")
     require(len(data) == 116, "incorrect checkpoint length")
     require(hmac.compare_digest(data[8:40], puzzle_id(puzzle["raw"])),
             "checkpoint puzzle id mismatch")
@@ -265,14 +265,14 @@ def solve_puzzle(puzzle, checkpoint=None):
         link = xor(mask(puzzle["ctx"], y)[:puzzle["b"]], puzzle["links"][i])
         i, j = i + 1, 0
         state = start(puzzle["ctx"], i, link)
-    key = th("chainseal/v1/key", puzzle["ctx"] + acc)
+    key = th("leanseal/v1/key", puzzle["ctx"] + acc)
     check_key(puzzle, key)
     return key
 
 
 def open_envelope(envelope, key):
     check_key(envelope["puzzle"], key)
-    k_mac = th("chainseal/v1/mac", key + envelope["nonce"])
+    k_mac = th("leanseal/v1/mac", key + envelope["nonce"])
     require(hmac.compare_digest(mac(k_mac, envelope["authenticated"]), envelope["tag"]),
             "envelope authentication failed")
     # No plaintext is produced before BOTH commitment and tag checks succeed.
@@ -494,7 +494,7 @@ def main():
                 write_file(args.secret_out, encode_secret(generated["puzzle"], generated["key"]), private=True)
         elif args.command == "solve":
             raw = read_file(args.file)
-            puzzle = decode_envelope(raw)["puzzle"] if raw[:4] == b"CSEN" else decode_puzzle(raw)
+            puzzle = decode_envelope(raw)["puzzle"] if raw[:4] == b"LSEN" else decode_puzzle(raw)
             emit(solve_puzzle(puzzle).hex().encode("ascii") + b"\n")
         elif args.command == "key":
             secret = decode_secret(read_file(args.file))
@@ -509,7 +509,7 @@ def main():
             emit(plaintext)
         return 0
     except (ValueError, OSError, KeyError, TypeError, IndexError, OverflowError) as error:
-        emit(f"chainseal: {error}\n".encode("utf-8", "replace"), 2)
+        emit(f"leanseal: {error}\n".encode("utf-8", "replace"), 2)
         return 1
 
 

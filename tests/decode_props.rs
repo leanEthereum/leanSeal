@@ -8,7 +8,7 @@ mod checks;
 #[path = "../fuzz/src/seeds.rs"]
 mod seeds;
 
-use chainseal::{Error, Puzzle, MAX_MSG, MAX_N};
+use leanseal::{Error, Puzzle, MAX_MSG, MAX_N};
 use std::time::Instant;
 
 #[global_allocator]

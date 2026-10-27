@@ -1,10 +1,10 @@
-chainseal-metal: main.swift
-	swiftc -O main.swift -o chainseal-metal
+leanseal-metal: main.swift
+	swiftc -O main.swift -o leanseal-metal
 
-verify: chainseal-metal
-	./chainseal-metal verify
+verify: leanseal-metal
+	./leanseal-metal verify
 
 clean:
-	rm -f chainseal-metal
+	rm -f leanseal-metal
 
 .PHONY: verify clean

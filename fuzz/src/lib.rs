@@ -1,4 +1,4 @@
-//! Fuzz support for chainseal's decoders.
+//! Fuzz support for leanseal's decoders.
 //!
 //! `tests/decode_props.rs` includes these modules by path, so the fuzz
 //! targets and the stable property test check the same invariants.

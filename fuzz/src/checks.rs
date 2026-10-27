@@ -8,7 +8,7 @@
 //!    `Commit` or `Tag`.
 //! 4. `checkpoint_peek` agrees with `Cursor::decode` on id and position.
 use crate::alloc_count::measure;
-use chainseal::{
+use leanseal::{
     backend::Backend, checkpoint_peek, seal, secret_decode, secret_encode, Cursor, Envelope, Error,
     Puzzle, MAX_N,
 };
@@ -110,7 +110,7 @@ pub fn checkpoint(data: &[u8]) -> Option<Cursor> {
     let peek = bounded(ck, || checkpoint_peek(ck));
     if let Ok((_, i, j)) = peek {
         assert!((1..=MAX_N).contains(&i));
-        assert!(j <= chainseal::MAX_M && u64::from(i) * j <= chainseal::MAX_WORK);
+        assert!(j <= leanseal::MAX_M && u64::from(i) * j <= leanseal::MAX_WORK);
     }
     let p = puzzle(rest)?;
     match bounded(ck, || Cursor::decode(&p, ck)) {

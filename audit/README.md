@@ -1,6 +1,6 @@
 # Audit
 
-An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited chainseal for security and correctness. It read the code and the documents and ran the tests. It reproduced most failures with scratch programs, and established the rest from the source or by arithmetic. It had no permission to change the code.
+An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited leanSeal (then named chainseal) for security and correctness. It read the code and the documents and ran the tests. It reproduced most failures with scratch programs, and established the rest from the source or by arithmetic. It had no permission to change the code.
 
 These rounds audited the C implementation, whose last commit is `ffde496`. A Rust implementation has since replaced it; the review of the port is summarised at the end of this file.
 
@@ -21,9 +21,9 @@ These rounds audited the C implementation, whose last commit is `ffde496`. A Rus
 | # | Finding | Change |
 |---|---|---|
 | 1 | Integrity was claimed without limit, but once the key is public anyone can seal a new message under the same puzzle. | README and SPEC section 8 now limit integrity to parties who do not know the key, and say that systems must refer to an envelope by a hash of all its bytes. SPEC section 8 separates the assumptions: HMAC-SHA256 as a PRF for secrecy and the tag, collision resistance for binding. |
-| 2 | The delay and the `2^-45` figure were stated for every attack, but the analysis covers only guessing the last link. | README and SPEC section 8 now call `n·m` the honest solver's work, scope the figure to that one attack, say what it does not cover (other guesses, key search, `n = 1`, quantum attackers), and state that the MMV theorem is asymptotic and is not a proof for chainseal. |
-| 3 | `chainseal info` accepted checkpoints that section 6 forbids. | A new `cs_checkpoint_peek` checks everything that does not need the puzzle; `info` and the decoder both use it. CLI tests cover a version-2 checkpoint. |
-| 4 | Backend selection and forcing were overstated. | The ARMv8 backend now checks the CPU at run time on Linux, and the Makefile enables it for Linux aarch64. `CHAINSEAL_BACKEND` naming an unavailable backend is an error. The README says which backends were run. |
+| 2 | The delay and the `2^-45` figure were stated for every attack, but the analysis covers only guessing the last link. | README and SPEC section 8 now call `n·m` the honest solver's work, scope the figure to that one attack, say what it does not cover (other guesses, key search, `n = 1`, quantum attackers), and state that the MMV theorem is asymptotic and is not a proof for leanseal. |
+| 3 | `leanseal info` accepted checkpoints that section 6 forbids. | A new `cs_checkpoint_peek` checks everything that does not need the puzzle; `info` and the decoder both use it. CLI tests cover a version-2 checkpoint. |
+| 4 | Backend selection and forcing were overstated. | The ARMv8 backend now checks the CPU at run time on Linux, and the Makefile enables it for Linux aarch64. `LEANSEAL_BACKEND` naming an unavailable backend is an error. The README says which backends were run. |
 | 5 | The cancellation flag was not atomic. | It is a C11 `atomic_int`. |
 | 6 | One failed puzzle in a batch discarded the keys and checkpoints of the others. | `solve` prints every key it found and returns failure if any puzzle failed. A checkpoint is deleted only after its key or plaintext has been written. A CLI test covers a batch with one bad puzzle. |
 | 7 | The Python reference wrote secret files with default permissions. | It writes them through an exclusive temporary file with mode `0600`, then renames it. |
@@ -44,7 +44,7 @@ Two test gaps the report named are closed: the C vector check feeds every invali
 | R2-3 | Comparisons with other attacks were stated without support. | README and SPEC now say that guessing the last link leaves the least work among link guesses, say why earlier links do no better, and state that no proof covers other strategies. Cross-puzzle reuse is qualified by fresh random salts. |
 | R2-4 | The README said the latency median was over 9 runs. | It is over 5 runs, as the benchmark code does. |
 | R2-5 | A huge finite step time overflowed and gave `m = 1`. | The delay is divided in an order that cannot overflow. A CLI test checks the result. |
-| R2-6 | The interrupt tests depended on timing. | A real SIGINT now goes to a solve that cannot finish (its `m` is patched to 2^40). The checkpoint-and-resume tests use a test hook, `CHAINSEAL_TEST_STOP_AFTER`, that stops a solve after a set number of steps. The signal could still arrive too early; see R3-3. |
+| R2-6 | The interrupt tests depended on timing. | A real SIGINT now goes to a solve that cannot finish (its `m` is patched to 2^40). The checkpoint-and-resume tests use a test hook, `LEANSEAL_TEST_STOP_AFTER`, that stops a solve after a set number of steps. The signal could still arrive too early; see R3-3. |
 | R2-7 | Sanitizer builds on Linux aarch64 dropped the ARMv8 backend. | The architecture flag is in its own `ARCH` variable, which the sanitizer builds keep. |
 | R2-8 | This file overstated the test coverage. | The paragraph above now says which gaps are closed and which remain. |
 
@@ -54,7 +54,7 @@ Two test gaps the report named are closed: the C vector check feeds every invali
 |---|---|---|
 | R3-1 | On a case-insensitive filesystem, `-o ALIAS.ENV.CKPT` still deleted the output when no checkpoint existed yet. | After writing the output, `open` removes the checkpoint only if it is a different file from the output, compared by device and inode. This missed output sent to stdout; see R4-1. The early refusal stays. A CLI test covers the case alias when the filesystem is case-insensitive, as it is on macOS by default. |
 | R3-2 | Subnormal times gave the wrong `m`. | The delay is divided by the step time before the units are converted, so an underflow can only happen when one step already covers the delay. CLI tests cover two subnormal pairs. |
-| R3-3 | The SIGINT test could signal before the handler was installed, and then wait forever. | A second test hook, `CHAINSEAL_TEST_READY=FILE`, creates `FILE` once the handler is installed. The test waits for it before signalling, and a watchdog kills the solve after 60 s. |
+| R3-3 | The SIGINT test could signal before the handler was installed, and then wait forever. | A second test hook, `LEANSEAL_TEST_READY=FILE`, creates `FILE` once the handler is installed. The test waits for it before signalling, and a watchdog kills the solve after 60 s. |
 | R3-4 | The test suite needed `perl`, which the README listed only for the demo. | The tests patch bytes with Python, which the suite already needs. |
 
 ## What changed after round 4
@@ -70,7 +70,7 @@ Commit `1893160` changed the design: the key now hashes the ends of all chains i
 
 | # | Finding | Change |
 |---|---|---|
-| R6-1 | A link was masked with the first `b` bytes of the previous chain's end, so a right guess of the link revealed those bytes, and with `b = 32` the whole end. One guess could then skip a chain, contrary to SPEC and README. The documents also called one chain the cheapest useful saving, though a guess can save part of a chain. | Links are masked with `TH("chainseal/v1/mask", ctx ‖ y_i)[0:b]`, so a guess reveals part of a hash of the end and nothing about the end itself. SPEC sections 4, 5 and 8, the README and the C and Python code use the new mask; the vectors are regenerated. A unit test checks that with `b = 32` the mask does not stand in for `y_1`. The documents now say that savings of less than a chain follow the same formula, and use one chain only as the example. |
+| R6-1 | A link was masked with the first `b` bytes of the previous chain's end, so a right guess of the link revealed those bytes, and with `b = 32` the whole end. One guess could then skip a chain, contrary to SPEC and README. The documents also called one chain the cheapest useful saving, though a guess can save part of a chain. | Links are masked with `TH("leanseal/v1/mask", ctx ‖ y_i)[0:b]`, so a guess reveals part of a hash of the end and nothing about the end itself. SPEC sections 4, 5 and 8, the README and the C and Python code use the new mask; the vectors are regenerated. A unit test checks that with `b = 32` the mask does not stand in for `y_1`. The documents now say that savings of less than a chain follow the same formula, and use one chain only as the example. |
 | R6-2 | A cursor returned by a successful `cs_solve` held `a_n` instead of `a_(n−1)`, so solving again from it, or from a checkpoint made from it, failed. | The final absorption uses a temporary copy, and the cursor keeps `a_(n−1)`. A unit test solves puzzles with `n` = 1, 2 and 3, then solves again from the returned cursor and from its checkpoint. |
 
 ## What changed after round 7
@@ -109,7 +109,7 @@ The Rust implementation replaced the C one at `ffde496`. Its output, file format
 | # | Finding | Change |
 |---|---|---|
 | P-1 | When the operating system refused a thread, the port aborted, since the release build aborts on panic. A solve of several puzzles could lose up to 10 seconds of work. | Threads start through one helper that returns an error. Generation continues on the threads that started, with an identical result. A solve saves every checkpoint, as on SIGINT, and exits with "could not start N solver threads". A benchmark reports the error. Tests force the failure after k threads. |
-| P-2 | An argument that was not UTF-8 made the tool panic. | Paths stay operating-system strings up to the file system. A text or number option that is not UTF-8 is a usage error, and so is a non-UTF-8 `CHAINSEAL_BACKEND`. |
+| P-2 | An argument that was not UTF-8 made the tool panic. | Paths stay operating-system strings up to the file system. A text or number option that is not UTF-8 is a usage error, and so is a non-UTF-8 `LEANSEAL_BACKEND`. |
 | P-3 | Keys and secret chain values were not overwritten after use, as the C tool did. | The clear links, the chain ends, the encryption and MAC keys and a solve's state are zeroed when dropped, without `unsafe`. |
 | P-4 | A bad option printed only the usage hint. | The tool prints getopt-style messages first, such as `invalid option` and `option '--st' is ambiguous`, listing the candidates. |
 | P-5 | `bench all` stopped at the first failed section. | It reports the failure, runs the remaining sections and exits 1 at the end. |

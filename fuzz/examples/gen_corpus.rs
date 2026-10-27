@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 
 fn main() -> std::io::Result<()> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus");
-    for s in chainseal_fuzz::seeds::all() {
+    for s in leanseal_fuzz::seeds::all() {
         for (target, bytes) in [
             ("puzzle", s.puzzle.encode().expect("encode puzzle")),
             ("envelope", s.envelope),

@@ -16,7 +16,7 @@ fn temp() -> Result<Temp, std::io::Error> {
     let mut random = [0; 8];
     getrandom::getrandom(&mut random).map_err(|e| std::io::Error::other(e.to_string()))?;
     let p = std::env::temp_dir().join(format!(
-        "chainseal-rust-test-{}-{}",
+        "leanseal-rust-test-{}-{}",
         std::process::id(),
         u64::from_ne_bytes(random)
     ));
@@ -24,10 +24,10 @@ fn temp() -> Result<Temp, std::io::Error> {
     Ok(Temp(p))
 }
 fn command(t: &Temp) -> Command {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_chainseal"));
+    let mut c = Command::new(env!("CARGO_BIN_EXE_leanseal"));
     c.current_dir(&t.0)
-        .env_remove("CHAINSEAL_TEST_STOP_AFTER")
-        .env_remove("CHAINSEAL_TEST_READY");
+        .env_remove("LEANSEAL_TEST_STOP_AFTER")
+        .env_remove("LEANSEAL_TEST_READY");
     c
 }
 #[test]
@@ -55,7 +55,7 @@ fn cli_checkpoint_stop_resume_and_signals() -> TestResult {
     );
     let stopped = command(&t)
         .args(["solve", "-q", "env"])
-        .env("CHAINSEAL_TEST_STOP_AFTER", "2^21")
+        .env("LEANSEAL_TEST_STOP_AFTER", "2^21")
         .output()?;
     assert_eq!(stopped.status.code(), Some(130));
     assert_eq!(fs::metadata(t.0.join("env.ckpt"))?.len(), 116);
@@ -75,7 +75,7 @@ fn cli_checkpoint_stop_resume_and_signals() -> TestResult {
         let _ = fs::remove_file(t.0.join("ready"));
         let mut child = command(&t)
             .args(["solve", "-q", "endless"])
-            .env("CHAINSEAL_TEST_READY", "ready")
+            .env("LEANSEAL_TEST_READY", "ready")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
@@ -114,7 +114,7 @@ fn cli_c_numeric_syntax_and_backend_override() -> TestResult {
     let t = temp()?;
     for steps in ["2", "2^1", "2e0", "0x2", "0X1p+1"] {
         let out = command(&t)
-            .env("CHAINSEAL_BACKEND", "portable")
+            .env("LEANSEAL_BACKEND", "portable")
             .args(["gen", "-q", "-n", "1", "-m", steps, "-o", "-"])
             .output()?;
         assert!(
@@ -122,7 +122,7 @@ fn cli_c_numeric_syntax_and_backend_override() -> TestResult {
             "{}",
             String::from_utf8_lossy(&out.stderr)
         );
-        let (p, _) = chainseal::secret_decode(&out.stdout)?;
+        let (p, _) = leanseal::secret_decode(&out.stdout)?;
         assert_eq!((p.m(), p.b()), (2, 24));
     }
     for (delay, step_ns, want) in [
@@ -151,10 +151,10 @@ fn cli_c_numeric_syntax_and_backend_override() -> TestResult {
             "{}",
             String::from_utf8_lossy(&out.stderr)
         );
-        assert_eq!(chainseal::secret_decode(&out.stdout)?.0.m(), want);
+        assert_eq!(leanseal::secret_decode(&out.stdout)?.0.m(), want);
     }
     let unavailable = command(&t)
-        .env("CHAINSEAL_BACKEND", "unavailable")
+        .env("LEANSEAL_BACKEND", "unavailable")
         .arg("help")
         .output()?;
     assert_eq!(unavailable.status.code(), Some(2));
@@ -191,7 +191,7 @@ fn cli_option_error_diagnostics() -> TestResult {
         assert_eq!(result.status.code(), Some(2));
         assert_eq!(
             String::from_utf8(result.stderr)?,
-            format!("chainseal: {diagnostic}\nrun 'chainseal help' for usage\n")
+            format!("leanseal: {diagnostic}\nrun 'leanseal help' for usage\n")
         );
     }
     Ok(())
@@ -206,22 +206,22 @@ fn cli_non_utf8_paths_values_and_backend() -> TestResult {
     let message = OsStr::from_bytes(b"x\xff.message");
     // APFS rejects non-UTF-8 names. Always test info/solve with the raw
     // argument, and use a lossy-name decoy to catch accidental conversion.
-    let (p, key, _) = chainseal::generate_from(
+    let (p, key, _) = leanseal::generate_from(
         2,
         17,
         16,
         [7; 16],
         &[11; 32],
-        &chainseal::GenOptions::default(),
+        &leanseal::GenOptions::default(),
     )?;
-    let data = chainseal::seal(&p, &key, &[13; 16], b"hello")?;
+    let data = leanseal::seal(&p, &key, &[13; 16], b"hello")?;
     fs::write(t.0.join("x\u{fffd}.env"), &data)?;
     let path_result = fs::write(t.0.join(name), &data);
     let info = command(&t).arg("info").arg(name).output()?;
     let stopped = command(&t)
         .args(["solve", "-q"])
         .arg(name)
-        .env("CHAINSEAL_TEST_STOP_AFTER", "1")
+        .env("LEANSEAL_TEST_STOP_AFTER", "1")
         .output()?;
     match path_result {
         Ok(()) => {
@@ -229,13 +229,13 @@ fn cli_non_utf8_paths_values_and_backend() -> TestResult {
             assert!(String::from_utf8_lossy(&info.stdout).contains("envelope"));
             assert_eq!(stopped.status.code(), Some(130));
             let checkpoint = OsStr::from_bytes(b"x\xff.env.ckpt");
-            let cursor = chainseal::Cursor::decode(&p, &fs::read(t.0.join(checkpoint))?)?;
+            let cursor = leanseal::Cursor::decode(&p, &fs::read(t.0.join(checkpoint))?)?;
             assert!(cursor.done(&p) > 0);
             let solved = command(&t).args(["solve", "-q"]).arg(name).output()?;
             assert!(solved.status.success());
             assert!(solved
                 .stdout
-                .starts_with(chainseal::runtime::hex(&key).as_bytes()));
+                .starts_with(leanseal::runtime::hex(&key).as_bytes()));
             assert!(!t.0.join(checkpoint).exists());
             fs::write(t.0.join(message), b"hello")?;
             let generated = command(&t)
@@ -271,7 +271,7 @@ fn cli_non_utf8_paths_values_and_backend() -> TestResult {
                 assert_eq!(result.status.code(), Some(1));
                 let diagnostic = String::from_utf8(result.stderr)?;
                 assert!(
-                    diagnostic.starts_with("chainseal: x\u{fffd}.env:"),
+                    diagnostic.starts_with("leanseal: x\u{fffd}.env:"),
                     "{diagnostic}"
                 );
                 assert!(!diagnostic.contains("panicked"));
@@ -294,7 +294,7 @@ fn cli_non_utf8_paths_values_and_backend() -> TestResult {
     }
     let invalid = command(&t)
         .arg("help")
-        .env("CHAINSEAL_BACKEND", OsStr::from_bytes(b"\xff"))
+        .env("LEANSEAL_BACKEND", OsStr::from_bytes(b"\xff"))
         .output()?;
     assert_eq!(invalid.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("is not available"));
@@ -323,8 +323,9 @@ fn cli_bench_all_continues_after_failed_build() -> TestResult {
         ])
         .output()?;
     assert_eq!(result.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&result.stderr)
-        .contains("chainseal: build: parameter out of range"));
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains("leanseal: build: parameter out of range")
+    );
     let stdout = String::from_utf8(result.stdout)?;
     assert!(stdout.contains("## latency:"));
     assert!(stdout.contains("## throughput:"));

@@ -1,5 +1,5 @@
 // Regression coverage corresponding to tests/test.c, plus normative JSON vectors.
-use chainseal::{
+use leanseal::{
     backend::{Backend, Tail},
     hash::*,
     rng::TestRng,
@@ -7,8 +7,8 @@ use chainseal::{
     *,
 };
 type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
-fn build(n: u32, m: u64, b: u8) -> chainseal::Result<(Puzzle, [u8; 32])> {
-    let mut rng = TestRng::new(b"chainseal unit tests");
+fn build(n: u32, m: u64, b: u8) -> leanseal::Result<(Puzzle, [u8; 32])> {
+    let mut rng = TestRng::new(b"leanseal unit tests");
     let mut salt = [0; 16];
     let mut x = vec![0; n as usize * b as usize];
     rng.fill(&mut salt);
@@ -64,7 +64,7 @@ fn hmac_rfc4231_and_labelled_hash() -> TestResult {
         (vec![0xaa;131],b"Test Using Larger Than Block-Size Key - Hash Key First".to_vec(),"60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"),
         (vec![0xaa;131],b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.".to_vec(),"9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2"),
     ] {assert_eq!(hex(&hmac(&key,&msg)),want);}
-    let label = "chainseal/v1/key";
+    let label = "leanseal/v1/key";
     let a = [1, 2, 3, 4, 5];
     let b = [9, 8, 7];
     let mut input = vec![label.len() as u8];
@@ -196,7 +196,7 @@ fn threaded_determinism_and_masks() -> TestResult {
     }
     assert_eq!(&reference.links()[..12], &x[..12]);
     for i in 1..40 {
-        let mask = labelled_hash("chainseal/v1/mask", &[&reference.context(), &ends[i - 1]])?;
+        let mask = labelled_hash("leanseal/v1/mask", &[&reference.context(), &ends[i - 1]])?;
         for j in 0..12 {
             assert_eq!(reference.links()[i * 12 + j], mask[j] ^ x[i * 12 + j]);
         }
@@ -421,7 +421,7 @@ fn decoder_truncation_extension_mutation_and_garbage() -> TestResult {
         Err(Error::Stopped)
     );
     let seeds = [p.encode()?, secret_encode(&p, &key)?, cur.encode(&p)?];
-    fn canonical(kind: usize, p: &Puzzle, d: &[u8]) -> chainseal::Result<Vec<u8>> {
+    fn canonical(kind: usize, p: &Puzzle, d: &[u8]) -> leanseal::Result<Vec<u8>> {
         match kind {
             0 => Puzzle::decode(d)?.encode(),
             1 => {
@@ -498,7 +498,7 @@ fn decoder_truncation_extension_mutation_and_garbage() -> TestResult {
         let mut d = vec![0; rnd(&mut rng, 300)];
         rng.fill(&mut d);
         if d.len() >= 5 {
-            d[..4].copy_from_slice([b"CSPZ", b"CSEN", b"CSSK", b"CSCK"][rnd(&mut rng, 4)]);
+            d[..4].copy_from_slice([b"LSPZ", b"LSEN", b"LSSK", b"LSCK"][rnd(&mut rng, 4)]);
             d[4] = 1;
         }
         if d.len() >= 8 && rnd(&mut rng, 2) == 1 {

@@ -1,6 +1,6 @@
-# chainseal v1 specification
+# leanSeal v1 specification
 
-chainseal is a time-lock encryption scheme built only from SHA-256. A sender encrypts a message so that anyone can decrypt it after doing a fixed amount of sequential hashing, and the sender can also reveal the key early. The construction is the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1, the variant in which each link is a hash iterated many times), instantiated with SHA-256 for encrypted mempools as Vitalik Buterin proposed.
+leanSeal is a time-lock encryption scheme built only from SHA-256. A sender encrypts a message so that anyone can decrypt it after doing a fixed amount of sequential hashing, and the sender can also reveal the key early. The construction is the chained-hash time-lock puzzle of Mahmoody, Moran and Vadhan (CRYPTO 2011, section 3.1, the variant in which each link is a hash iterated many times), instantiated with SHA-256 for encrypted mempools as Vitalik Buterin proposed.
 
 This document is normative. The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections marked *informative* are not part of the format.
 
@@ -17,14 +17,14 @@ Labels used in v1:
 
 | Label | Used for |
 |---|---|
-| `chainseal/v1/start` | chain start values |
-| `chainseal/v1/mask` | the masks that hide links |
-| `chainseal/v1/acc` | the hash of the chain ends |
-| `chainseal/v1/key` | the session key |
-| `chainseal/v1/commit` | the key commitment |
-| `chainseal/v1/enc` | the encryption subkey |
-| `chainseal/v1/mac` | the authentication subkey |
-| `chainseal/v1/puzzle-id` | puzzle identifiers in checkpoints |
+| `leanseal/v1/start` | chain start values |
+| `leanseal/v1/mask` | the masks that hide links |
+| `leanseal/v1/acc` | the hash of the chain ends |
+| `leanseal/v1/key` | the session key |
+| `leanseal/v1/commit` | the key commitment |
+| `leanseal/v1/enc` | the encryption subkey |
+| `leanseal/v1/mac` | the authentication subkey |
+| `leanseal/v1/puzzle-id` | puzzle identifiers in checkpoints |
 
 ## 2. Parameters
 
@@ -69,21 +69,21 @@ Inputs: parameters `n`, `m`, `b`. The generator MUST draw `salt` and the links `
 1. Let `ctx = u8(1) ‖ u8(b) ‖ 0x0000 ‖ be32(n) ‖ be64(m) ‖ salt`, 32 bytes. These are bytes `[4:36)` of the puzzle encoding (section 6.1): version, `b`, reserved, `n`, `m`, `salt`.
 2. For each `i` in 1..n, independently:
 
-       s_i = TH("chainseal/v1/start", ctx ‖ be32(i) ‖ x_i)
+       s_i = TH("leanseal/v1/start", ctx ‖ be32(i) ‖ x_i)
        y_i = F_i^m(s_i)
 
 3. For each `i` in 1..n−1, hide the next link under a mask derived from the end of chain `i`:
 
-       z_i = TH("chainseal/v1/mask", ctx ‖ y_i)[0:b] ⊕ x_{i+1}
+       z_i = TH("leanseal/v1/mask", ctx ‖ y_i)[0:b] ⊕ x_{i+1}
 
 4. Hash the chain ends in order, starting from `a_0 = ctx`:
 
-       a_i = TH("chainseal/v1/acc", a_{i−1} ‖ y_i)    for i = 1, …, n
+       a_i = TH("leanseal/v1/acc", a_{i−1} ‖ y_i)    for i = 1, …, n
 
 5. Derive the session key and its commitment:
 
-       K = TH("chainseal/v1/key", ctx ‖ a_n)
-       C = TH("chainseal/v1/commit", ctx ‖ K)
+       K = TH("leanseal/v1/key", ctx ‖ a_n)
+       C = TH("leanseal/v1/commit", ctx ‖ K)
 
 6. The puzzle is the header with commitment `C`, followed by the links `x_1 ‖ z_1 ‖ … ‖ z_{n−1}` (section 6.1).
 
@@ -96,13 +96,13 @@ Step 2 is where the generator spends its time. The `n` chains are independent an
 Given a valid puzzle:
 
 1. Read `ctx`, `x_1` and `z_1, …, z_{n−1}`. Set `x ← x_1` and `a ← ctx`.
-2. For `i` = 1, …, n: compute `y_i = F_i^m(TH("chainseal/v1/start", ctx ‖ be32(i) ‖ x))` and set `a ← TH("chainseal/v1/acc", a ‖ y_i)`. If `i < n`, set `x ← TH("chainseal/v1/mask", ctx ‖ y_i)[0:b] ⊕ z_i`.
-3. Compute `K = TH("chainseal/v1/key", ctx ‖ a)`.
-4. Accept `K` only if `TH("chainseal/v1/commit", ctx ‖ K) = C`. Otherwise the puzzle is malformed and MUST be reported as such.
+2. For `i` = 1, …, n: compute `y_i = F_i^m(TH("leanseal/v1/start", ctx ‖ be32(i) ‖ x))` and set `a ← TH("leanseal/v1/acc", a ‖ y_i)`. If `i < n`, set `x ← TH("leanseal/v1/mask", ctx ‖ y_i)[0:b] ⊕ z_i`.
+3. Compute `K = TH("leanseal/v1/key", ctx ‖ a)`.
+4. Accept `K` only if `TH("leanseal/v1/commit", ctx ‖ K) = C`. Otherwise the puzzle is malformed and MUST be reported as such.
 
 A solver that follows these steps cannot start chain `i + 1` before chain `i` ends, because its start link is hidden under the end of chain `i`. A solver can try to skip ahead by guessing a link instead; section 8 discusses this.
 
-A *revealed* key `K'` (the fast path) is checked the same way: accept it only if `TH("chainseal/v1/commit", ctx ‖ K') = C`.
+A *revealed* key `K'` (the fast path) is checked the same way: accept it only if `TH("leanseal/v1/commit", ctx ‖ K') = C`.
 
 ## 6. Encodings
 
@@ -112,7 +112,7 @@ Every encoding starts with a 4-byte magic and a version byte equal to `0x01`. Re
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 4 | magic `"CSPZ"` |
+| 0 | 4 | magic `"LSPZ"` |
 | 4 | 1 | version `0x01` |
 | 5 | 1 | `b` |
 | 6 | 2 | reserved |
@@ -128,7 +128,7 @@ Total length: `68 + n·b` bytes. `ctx` is bytes `[4:36)`.
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 4 | magic `"CSEN"` |
+| 0 | 4 | magic `"LSEN"` |
 | 4 | 1 | version `0x01` |
 | 5 | 3 | reserved |
 | 8 | 68 + n·b | puzzle (section 6.1) |
@@ -143,7 +143,7 @@ Here `p = 76 + n·b`. Total length: `128 + n·b + L` bytes.
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 4 | magic `"CSSK"` |
+| 0 | 4 | magic `"LSSK"` |
 | 4 | 1 | version `0x01` |
 | 5 | 3 | reserved |
 | 8 | 32 | `K` |
@@ -155,10 +155,10 @@ A decoder MUST check that `K` matches the puzzle's commitment.
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 4 | magic `"CSCK"` |
+| 0 | 4 | magic `"LSCK"` |
 | 4 | 1 | version `0x01` |
 | 5 | 3 | reserved |
-| 8 | 32 | puzzle id: `TH("chainseal/v1/puzzle-id", puzzle)` |
+| 8 | 32 | puzzle id: `TH("leanseal/v1/puzzle-id", puzzle)` |
 | 40 | 4 | `i`, the current chain, 1 ≤ i ≤ n |
 | 44 | 8 | `j`, steps of chain `i` already done, 0 ≤ j ≤ m |
 | 52 | 32 | state `F_i^j(s_i)` |
@@ -175,8 +175,8 @@ To encrypt a message `M` (0 ≤ len(M) ≤ 2^24) under a puzzle with key `K`:
 1. Draw a fresh 16-byte `nonce` from a cryptographically secure random number generator.
 2. Derive subkeys:
 
-       k_enc = TH("chainseal/v1/enc", K ‖ nonce)
-       k_mac = TH("chainseal/v1/mac", K ‖ nonce)
+       k_enc = TH("leanseal/v1/enc", K ‖ nonce)
+       k_mac = TH("leanseal/v1/mac", K ‖ nonce)
 
 3. Keystream block `j`, for `j` = 0, 1, 2, …, is `HMAC(k_enc, be64(j))`. The ciphertext is `M ⊕` the first `len(M)` bytes of the concatenated keystream blocks.
 4. Write the envelope (section 6.2) up to and including the ciphertext. The tag is `HMAC(k_mac, E)`, where `E` is every envelope byte before the tag. It covers the magic, the whole puzzle, the nonce, the length and the ciphertext.
@@ -189,7 +189,7 @@ A key MAY encrypt several messages, each with its own nonce. All of them open to
 
 *Informative.*
 
-- **What the delay rests on.** The delay rests on two assumptions about attackers. In the random-oracle model, the theorem below shows that a classical attacker who makes `Q` queries in total derives the key even one round before the honest solver only with negligible probability; this needs no assumption beyond modelling SHA-256 and its compression function as random oracles. Turning rounds into seconds assumes that nobody computes one chain step faster than `ℓ`, the fastest attainable latency of one SHA-256 compression, and that the attacker's total hash rate is bounded. Mahmoody, Moran and Vadhan prove asymptotically that their construction needs about `n·m` sequential rounds, and that no hash-only puzzle can provably need more rounds than its generator makes queries. chainseal keeps their dependency structure. There is no analysis of chainseal's encoding against quantum attackers.
+- **What the delay rests on.** The delay rests on two assumptions about attackers. In the random-oracle model, the theorem below shows that a classical attacker who makes `Q` queries in total derives the key even one round before the honest solver only with negligible probability; this needs no assumption beyond modelling SHA-256 and its compression function as random oracles. Turning rounds into seconds assumes that nobody computes one chain step faster than `ℓ`, the fastest attainable latency of one SHA-256 compression, and that the attacker's total hash rate is bounded. Mahmoody, Moran and Vadhan prove asymptotically that their construction needs about `n·m` sequential rounds, and that no hash-only puzzle can provably need more rounds than its generator makes queries. leanSeal keeps their dependency structure. There is no analysis of leanSeal's encoding against quantum attackers.
 - **The delay theorem.** The statement below is proved in the random-oracle model, against classical attackers, and covers every saving, however small. Model each step function `F_i` and each labelled hash as an independent random oracle (the input lengths and labels of sections 1 and 3 keep their domains apart). The attacker is a classical randomized algorithm `A = (A_0, A_1)`: `A_0` runs before the puzzle exists and makes `Q_pre` queries; its whole state passes to `A_1`, which receives the puzzle and makes `Q_on` queries; `Q = Q_pre + Q_on`. After publication, time is counted in oracle rounds: all queries in a round are chosen before any answer from that round arrives. The solver of section 5, computing each chain's mask and accumulator hashes in the same round, derives `K` in round `T_key = n·(m + 2) + 1` and returns it, checked against `C`, one round later. A generator needs `m + n + 3` rounds. Call the 32-byte values the solver computes (each chain's start value, its `m` states, its mask and its accumulator value, `K` and `C`) the path values; there are `P = n·(m + 3) + 1` of them.
 
   *Theorem.* Let the puzzle and `K` be generated as in section 4, with randomness independent of the oracles. Then `A_1` outputs `K` within fewer than `T_key` oracle rounds with probability at most `Q_on / 2^(8b) + Q_pre / 2^(128+8b) + (Q·P + P² + 1) / 2^256`. For `n = 1` the first term is absent.
@@ -215,7 +215,7 @@ For a target delay `T` against an attacker with per-step latency `ℓ`, the tota
 
 ## 10. Test vectors (informative)
 
-`tests/vectors.json` holds deterministic vectors. `chainseal vectors` regenerates them byte for byte, and the Python reference checks them. It has two lists.
+`tests/vectors.json` holds deterministic vectors. `leanseal vectors` regenerates them byte for byte, and the Python reference checks them. It has two lists.
 
 `cases`: valid puzzles. Each entry gives the parameters `n`, `m`, `b`, the random inputs `salt`, `x` (the links `x_1..x_n`), `nonce` and `message`, and the values an implementation must reproduce from them: `start` (the `s_i`), `y` (the `y_i`), `acc` (the `a_i` for i = 1..n), `key`, `commit`, `puzzle` (section 6.1), `puzzle_id`, `secret` (section 6.3) and `envelope` (section 6.2, sealed with the given nonce). `checkpoint` gives a position `i`, `j`, the state `F_i^j(s_i)` at that position, the accumulator `a_{i−1}` (`acc`), and its encoding (section 6.4). All byte strings are lowercase hex.
 

@@ -58,7 +58,7 @@ impl Puzzle {
         c
     }
     pub(crate) fn encoded_len_from_header(data: &[u8]) -> Result<usize> {
-        if data.len() < 68 || &data[..4] != b"CSPZ" || data[4] != 1 || data[6] != 0 || data[7] != 0
+        if data.len() < 68 || &data[..4] != b"LSPZ" || data[4] != 1 || data[6] != 0 || data[7] != 0
         {
             return Err(Error::Format);
         }
@@ -88,7 +88,7 @@ impl Puzzle {
     /// Encode a puzzle in the normative v1 format.
     pub fn encode(&self) -> Result<Vec<u8>> {
         let mut v = bytes(68 + self.links.len())?;
-        v[..4].copy_from_slice(b"CSPZ");
+        v[..4].copy_from_slice(b"LSPZ");
         v[4..36].copy_from_slice(&self.context());
         v[36..68].copy_from_slice(&self.commit);
         v[68..].copy_from_slice(&self.links);
@@ -97,15 +97,15 @@ impl Puzzle {
     /// Identifier bound to every byte of this puzzle.
     pub fn id(&self) -> [u8; 32] {
         th(
-            "chainseal/v1/puzzle-id",
-            &[b"CSPZ", &self.context(), &self.commit, &self.links],
+            "leanseal/v1/puzzle-id",
+            &[b"LSPZ", &self.context(), &self.commit, &self.links],
         )
     }
     /// Test a revealed key against the commitment.
     pub fn check_key(&self, key: &[u8; 32]) -> bool {
         ct_equal(
             &self.commit,
-            &th("chainseal/v1/commit", &[&self.context(), key]),
+            &th("leanseal/v1/commit", &[&self.context(), key]),
         )
     }
     /// Compute the start value of a chain from its clear link.
@@ -114,13 +114,13 @@ impl Puzzle {
             return Err(Error::Range);
         }
         Ok(th(
-            "chainseal/v1/start",
+            "leanseal/v1/start",
             &[&self.context(), &i.to_be_bytes(), x],
         ))
     }
     /// Compute the mask derived from a chain end.
     pub fn chain_mask(&self, y: &[u8; 32]) -> [u8; 32] {
-        th("chainseal/v1/mask", &[&self.context(), y])
+        th("leanseal/v1/mask", &[&self.context(), y])
     }
     /// Run an individual chain from a clear link.
     pub fn run_chain(&self, i: u32, x: &[u8], backend: Backend) -> Result<[u8; 32]> {
@@ -135,9 +135,9 @@ impl Puzzle {
         }
         let mut a = Secret(self.context());
         for end in y {
-            *a = th("chainseal/v1/acc", &[&a[..], end]);
+            *a = th("leanseal/v1/acc", &[&a[..], end]);
         }
-        let k = th("chainseal/v1/key", &[&self.context(), &a[..]]);
+        let k = th("leanseal/v1/key", &[&self.context(), &a[..]]);
         if self.check_key(&k) {
             Ok(k)
         } else {
@@ -148,7 +148,7 @@ impl Puzzle {
     pub fn cursor(&self) -> Cursor {
         // The first link exists because construction validates n and b.
         let st = th(
-            "chainseal/v1/start",
+            "leanseal/v1/start",
             &[
                 &self.context(),
                 &1u32.to_be_bytes(),
@@ -193,7 +193,7 @@ impl Puzzle {
                 break;
             }
             let y = Secret(words_to_bytes(cur.state));
-            cur.acc = th("chainseal/v1/acc", &[&cur.acc, &y[..]]);
+            cur.acc = th("leanseal/v1/acc", &[&cur.acc, &y[..]]);
             let mut x = Secret(self.chain_mask(&y));
             let off = cur.i as usize * self.b as usize;
             for (v, z) in x.iter_mut().zip(&self.links[off..off + self.b as usize]) {
@@ -204,8 +204,8 @@ impl Puzzle {
             cur.state = bytes_to_words(self.chain_start(cur.i, &x[..self.b as usize])?);
         }
         let end = Secret(words_to_bytes(cur.state));
-        let a = Secret(th("chainseal/v1/acc", &[&cur.acc, &end[..]]));
-        let k = th("chainseal/v1/key", &[&self.context(), &a[..]]);
+        let a = Secret(th("leanseal/v1/acc", &[&cur.acc, &end[..]]));
+        let k = th("leanseal/v1/key", &[&self.context(), &a[..]]);
         if self.check_key(&k) {
             Ok(k)
         } else {
@@ -247,7 +247,7 @@ impl Cursor {
             return Err(Error::Range);
         }
         let mut v = bytes(116)?;
-        v[..8].copy_from_slice(b"CSCK\x01\0\0\0");
+        v[..8].copy_from_slice(b"LSCK\x01\0\0\0");
         v[8..40].copy_from_slice(&p.id());
         v[40..44].copy_from_slice(&self.i.to_be_bytes());
         v[44..52].copy_from_slice(&self.j.to_be_bytes());
@@ -274,7 +274,7 @@ impl Cursor {
     }
 }
 fn checkpoint_fields(data: &[u8]) -> Result<([u8; 32], u32, u64)> {
-    if data.len() != 116 || &data[..8] != b"CSCK\x01\0\0\0" {
+    if data.len() != 116 || &data[..8] != b"LSCK\x01\0\0\0" {
         return Err(Error::Format);
     }
     Ok((
@@ -426,7 +426,7 @@ pub fn generate_from(
     p.links[..b as usize].copy_from_slice(&x[..b as usize]);
     let mut a = Secret(p.context());
     for (i, end) in y.iter().enumerate() {
-        *a = th("chainseal/v1/acc", &[&a[..], end]);
+        *a = th("leanseal/v1/acc", &[&a[..], end]);
         if i + 1 < n as usize {
             let mask = Secret(p.chain_mask(end));
             let off = (i + 1) * b as usize;
@@ -435,8 +435,8 @@ pub fn generate_from(
             }
         }
     }
-    let key = th("chainseal/v1/key", &[&p.context(), &a[..]]);
-    p.commit = th("chainseal/v1/commit", &[&p.context(), &key]);
+    let key = th("leanseal/v1/key", &[&p.context(), &a[..]]);
+    p.commit = th("leanseal/v1/commit", &[&p.context(), &key]);
     Ok((p, key, y))
 }
 

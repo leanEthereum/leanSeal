@@ -41,11 +41,11 @@ jobs:
         env:
           EXPECTED_BACKEND: ${{ matrix.backend }}
         run: |
-          target/release/chainseal selftest | tee selftest.log
+          target/release/leanseal selftest | tee selftest.log
           grep -Eq "^backend ${EXPECTED_BACKEND}[[:space:]]+ok$" selftest.log
       - name: Portable CLI and cross tests
         env:
-          CHAINSEAL_BACKEND: portable
+          LEANSEAL_BACKEND: portable
         run: |
           sh tests/cli.sh
           sh tests/cross.sh

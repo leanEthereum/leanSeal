@@ -1,5 +1,5 @@
 [package]
-name = "chainseal-fuzz"
+name = "leanseal-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
@@ -8,7 +8,7 @@ edition = "2021"
 cargo-fuzz = true
 
 [dependencies]
-chainseal = { path = ".." }
+leanseal = { path = ".." }
 libfuzzer-sys = "0.4"
 
 # A workspace of its own, so the root manifest stays unchanged.

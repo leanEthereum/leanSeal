@@ -9,14 +9,14 @@ pub fn secret_encode(p: &Puzzle, key: &[u8; 32]) -> Result<Vec<u8>> {
     }
     let enc = p.encode()?;
     let mut v = bytes(40 + enc.len())?;
-    v[..8].copy_from_slice(b"CSSK\x01\0\0\0");
+    v[..8].copy_from_slice(b"LSSK\x01\0\0\0");
     v[8..40].copy_from_slice(key);
     v[40..].copy_from_slice(&enc);
     Ok(v)
 }
 /// Decode a secret, including its key commitment check.
 pub fn secret_decode(data: &[u8]) -> Result<(Puzzle, [u8; 32])> {
-    if data.len() < 40 || &data[..8] != b"CSSK\x01\0\0\0" {
+    if data.len() < 40 || &data[..8] != b"LSSK\x01\0\0\0" {
         return Err(Error::Format);
     }
     let p = Puzzle::decode(&data[40..])?;
@@ -49,11 +49,11 @@ pub fn seal(p: &Puzzle, key: &[u8; 32], nonce: &[u8; 16], message: &[u8]) -> Res
     if !p.check_key(key) {
         return Err(Error::Commit);
     }
-    let kenc = Secret(th("chainseal/v1/enc", &[key, nonce]));
-    let kmac = Secret(th("chainseal/v1/mac", &[key, nonce]));
+    let kenc = Secret(th("leanseal/v1/enc", &[key, nonce]));
+    let kmac = Secret(th("leanseal/v1/mac", &[key, nonce]));
     let enc = p.encode()?;
     let mut v = bytes(8 + enc.len() + 20 + message.len() + 32)?;
-    v[..8].copy_from_slice(b"CSEN\x01\0\0\0");
+    v[..8].copy_from_slice(b"LSEN\x01\0\0\0");
     v[8..8 + enc.len()].copy_from_slice(&enc);
     let at = 8 + enc.len();
     v[at..at + 16].copy_from_slice(nonce);
@@ -78,7 +78,7 @@ pub struct Envelope<'a> {
 impl<'a> Envelope<'a> {
     /// Validate envelope structure and its puzzle.
     pub fn decode(data: &'a [u8]) -> Result<Self> {
-        if data.len() < 8 || &data[..8] != b"CSEN\x01\0\0\0" {
+        if data.len() < 8 || &data[..8] != b"LSEN\x01\0\0\0" {
             return Err(Error::Format);
         }
         let plen = Puzzle::encoded_len_from_header(&data[8..])?;
@@ -110,8 +110,8 @@ impl<'a> Envelope<'a> {
         if !self.puzzle.check_key(key) {
             return Err(Error::Commit);
         }
-        let kenc = Secret(th("chainseal/v1/enc", &[key, &self.nonce]));
-        let kmac = Secret(th("chainseal/v1/mac", &[key, &self.nonce]));
+        let kenc = Secret(th("leanseal/v1/enc", &[key, &self.nonce]));
+        let kmac = Secret(th("leanseal/v1/mac", &[key, &self.nonce]));
         if !ct_equal(
             &hmac(&kmac[..], &self.data[..self.data.len() - 32]),
             self.tag,

@@ -3,4 +3,5 @@
 __pycache__/
 /tests/vectors.tmp
 /target
-/bench/metal/chainseal-metal
+/bench/metal/leanseal-metal
+/.claude/

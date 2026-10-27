@@ -1,4 +1,4 @@
-// chainseal-metal: Metal (Apple GPU) benchmark of chained SHA-256, the chainseal chain step.
+// leanseal-metal: Metal (Apple GPU) benchmark of chained SHA-256, the leanseal chain step.
 //
 // Chain i iterates F_i(s) = SHA256(s || salt || be32(i)): one compression of one 64-byte block,
 // W0..W7 = s, W8..W11 = salt, W12 = i, W13 = 0x80000000, W14 = 0, W15 = 416 (SPEC.md section 3).
@@ -544,7 +544,7 @@ case "sustain":
 default:
     print(
         """
-        usage: chainseal-metal <mode> [--option value ...]
+        usage: leanseal-metal <mode> [--option value ...]
           verify                 check all variants against Python hashlib (m = 1000)
           sweep                  throughput vs chains in flight  [--variant --tg --secs --chains --target-ms]
           tune                   variants x threadgroup sizes    [--variants --tgs --chains --secs]

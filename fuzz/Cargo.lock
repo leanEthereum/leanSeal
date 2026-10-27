@@ -27,22 +27,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
-name = "chainseal"
-version = "0.1.0"
-dependencies = [
- "getrandom 0.2.17",
- "signal-hook",
-]
-
-[[package]]
-name = "chainseal-fuzz"
-version = "0.0.0"
-dependencies = [
- "chainseal",
- "libfuzzer-sys",
-]
-
-[[package]]
 name = "errno"
 version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -88,6 +72,22 @@ checksum = "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3"
 dependencies = [
  "getrandom 0.4.3",
  "libc",
+]
+
+[[package]]
+name = "leanseal"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.2.17",
+ "signal-hook",
+]
+
+[[package]]
+name = "leanseal-fuzz"
+version = "0.0.0"
+dependencies = [
+ "leanseal",
+ "libfuzzer-sys",
 ]
 
 [[package]]
