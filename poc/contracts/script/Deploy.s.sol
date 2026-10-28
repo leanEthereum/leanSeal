@@ -21,6 +21,9 @@ contract Deploy is Script {
         Token a = new Token("A");
         Token b = new Token("B");
         Pool pool = new Pool(a, b, address(inbox));
+        address[] memory targets = new address[](1);
+        targets[0] = address(pool);
+        inbox.restrictTo(targets);
         a.mint(vm.addr(deployer), 1000 ether);
         b.mint(vm.addr(deployer), 1000 ether);
         a.approve(address(pool), type(uint256).max);

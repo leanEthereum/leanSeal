@@ -332,6 +332,51 @@ contract SealedInboxTest is Test {
         assertFalse(inbox.locked());
     }
 
+    function testForceOpenWaitsWhileLocked() public {
+        bytes memory e = sealSwap(10 ether, 1000);
+        uint256 id = submit(alice, e);
+        vm.roll(block.number + 3);
+        inbox.execute(new bytes[](1));
+        // A later ticket is revealed; the missed one must not jump ahead of it.
+        (, bytes[] memory envs) = ready(sealSwap(10 ether, 1000));
+        vm.prank(alice);
+        vm.expectRevert(SealedInbox.Locked.selector);
+        inbox.forceOpen(id, key, e);
+        inbox.execute(envs);
+        vm.prank(alice);
+        inbox.forceOpen(id, key, e);
+        (,,, SealedInbox.State st,,,,) = inbox.tickets(id);
+        assertEq(uint8(st), uint8(SealedInbox.State.Forced));
+    }
+
+    function testRestrictedTargets() public {
+        address[] memory targets = new address[](1);
+        targets[0] = address(pool);
+        inbox.restrictTo(targets);
+        vm.expectRevert("admin, once");
+        inbox.restrictTo(targets);
+        bytes memory toPool = sealSwap(10 ether, 100);
+        bytes memory toToken = Seal.seal(
+            puzzle,
+            key,
+            bytes16(++nonces),
+            abi.encode(address(a), abi.encodeCall(Token.mint, (alice, 1 ether)), uint64(100))
+        );
+        uint256 id0 = submit(alice, toPool);
+        uint256 id1 = submit(bob, toToken);
+        vm.roll(block.number + 1);
+        inbox.reveal(id0, key);
+        inbox.reveal(id1, key);
+        vm.roll(block.number + WINDOW);
+        bytes[] memory envs = new bytes[](2);
+        (envs[0], envs[1]) = (toPool, toToken);
+        vm.expectEmit(true, false, false, true);
+        emit SealedInbox.Executed(id0, true, false);
+        vm.expectEmit(true, false, false, true);
+        emit SealedInbox.Executed(id1, false, false);
+        inbox.execute(envs);
+    }
+
     function testForceOpenPaysOnlyBounty() public {
         bytes memory e = sealSwap(10 ether, 100);
         uint256 id = submit(alice, e);

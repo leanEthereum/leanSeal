@@ -260,6 +260,12 @@ async fn solve_ticket(p: &DynProvider, addr: Address, id: U256, max_steps: u64) 
         log("solver", format!("#{id}: lost race before claiming"));
         return Ok(());
     }
+    // A late call may not run while a revealed ticket waits; the keeper clears that within a few blocks.
+    let mut waited = false;
+    while inbox.pendingReveals().call().await? > U256::ZERO {
+        if !waited { log("solver", format!("#{id}: waiting for pending reveals to execute before claiming")); waited = true; }
+        tokio::time::sleep(POLL).await;
+    }
     let claim = async {
         let r = inbox.forceOpen(id, key.into(), ev.envelope).gas(5_000_000).send().await?.get_receipt().await?;
         if !r.status() { bail!("claim reverted"); }

@@ -9,6 +9,14 @@ import {SealedAccount} from "./SealedAccount.sol";
 /// even when the withholding sender claims its own bounty.
 /// Plaintext is abi.encode(address target, bytes data, uint64 expiry).
 /// gasLimit is the gas given to the delegated account call, including its wrapper.
+///
+/// Guarded pools refuse direct calls while a revealed ticket waits, so nobody
+/// can trade between a reveal and its execution. A sealed call ordered ahead
+/// of a victim could still adapt to the victim's revealed plaintext if it read
+/// state that someone wrote after the reveal; `restrictTo` limits sealed calls
+/// to non-adaptive targets such as the pool, which closes this for the demo
+/// market. General programs need execution right after key release, as LUCID
+/// provides at the protocol level.
 contract SealedInbox {
     enum State {
         None,
@@ -43,6 +51,9 @@ contract SealedInbox {
     uint256 public cursor;
     mapping(uint64 => uint256) public slotGas;
     bool private busy;
+    address public immutable admin;
+    bool public restricted;
+    mapping(address => bool) public allowedTarget;
 
     modifier serial() {
         require(!busy, "busy");
@@ -90,6 +101,7 @@ contract SealedInbox {
     error OutsideWindow();
     error WrongKey();
     error WrongEnvelope();
+    error Locked();
 
     constructor(
         uint256 deposit_,
@@ -100,12 +112,22 @@ contract SealedInbox {
         uint32 maxEnvelope_
     ) {
         require(bounty_ <= deposit_, "bounty exceeds deposit");
+        admin = msg.sender;
         bounty = bounty_;
         maxTicketGas = maxTicketGas_;
         slotGasBudget = slotGasBudget_;
         maxEnvelope = maxEnvelope_;
         deposit = deposit_;
         revealWindow = revealWindow_;
+    }
+
+    /// Limit sealed calls to `targets`, once. A call to any other target fails.
+    function restrictTo(address[] calldata targets) external {
+        require(msg.sender == admin && !restricted, "admin, once");
+        restricted = true;
+        for (uint256 i = 0; i < targets.length; i++) {
+            allowedTarget[targets[i]] = true;
+        }
     }
 
     function submit(bytes calldata envelope, uint32 gasLimit) external payable returns (uint256 id) {
@@ -174,10 +196,12 @@ contract SealedInbox {
 
     /// A late opening receives only bounty. deposit - bounty remains locked
     /// forever, including when the sender claims. Late calls have no reserved
-    /// pool position: use slippage limits and expiry.
+    /// pool position: use slippage limits and expiry. A late call cannot run
+    /// while a revealed ticket waits, or it could trade ahead of that ticket.
     function forceOpen(uint256 id, bytes32 key, bytes calldata envelope) external serial {
         Ticket storage t = tickets[id];
         if (t.state != State.Missed) revert WrongState();
+        if (pendingReveals > 0) revert Locked();
         if (LeanSeal.commitment(t.context, key) != t.commitment) revert WrongKey();
         if (!_enoughGas(t.gasLimit, envelope.length)) revert InsufficientGas();
         t.key = key;
@@ -217,6 +241,7 @@ contract SealedInbox {
             return false;
         }
         if (block.number > expiry) return false;
+        if (restricted && !allowedTarget[target]) return false;
         bytes memory input = abi.encodeCall(SealedAccount.run, (target, data));
         address sender = t.sender;
         uint256 allowance = t.gasLimit;
