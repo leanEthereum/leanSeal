@@ -1,6 +1,6 @@
 # sealnet: an encrypted mempool on leanSeal
 
-This research prototype orders encrypted calls through an on-chain queue. Senders publish leanSeal envelopes, reveal their keys after inclusion, and execute in committed slot order through EIP-7702 accounts. A guarded demo pool reserves access for those calls after a reveal, preventing the demonstrated post-reveal sandwich. Withheld transactions can be opened later for a bounty, outside their original position.
+This research prototype orders encrypted calls through an on-chain queue. Senders publish leanSeal envelopes, reveal their keys after inclusion, and execute in committed slot order through EIP-7702 accounts delegated to the inbox's own `SealedAccount`. A guarded demo pool refuses direct trades while any sealed call is queued, so a key read from a pending reveal cannot buy a position ahead of its call. Withheld transactions can be opened later for a bounty; they join the queue behind every earlier call, outside their original position.
 
 The prototype requires an EVM with EIP-7702 and Cancun transient storage (the demo uses Prague). It is not ready for real funds.
 
@@ -13,7 +13,7 @@ git submodule update --init poc/contracts/lib/forge-std
 PORT=18571 bash poc/demo.sh
 ```
 
-The script builds the contracts and Rust binary, starts a local chain with two-second blocks, deploys a guarded pool, and starts the keeper, solver, and searcher. Its exit trap kills and waits for all four processes.
+The script builds the contracts and Rust binary, starts a local chain with two-second blocks, deploys a guarded pool, and starts the keeper, solver, and searcher. The last section waits up to `FORCE_WAIT` seconds (default 300) for the solver and keeper to execute the withheld swap. Its exit trap kills and waits for all four processes.
 
 Representative output (transaction hashes, block numbers, and timings vary):
 
@@ -23,15 +23,17 @@ Representative output (transaction hashes, block numbers, and timings vary):
 [searcher] sandwich landed
    alice got 8.9847 B for 10 A; fair price 9.9010 B; lost 9.25%
 == 2. the same swap sealed with leanSeal
-[  sender] sealed tx #0 ordered in block 24: 576 bytes (256 of plaintext)
-[searcher] revealed swap #0: 10.000 in, front-running it
-[searcher] front-run of revealed #0 reverted: pool locked until the batch executes
-[  keeper] slot 24: executed #0 in order (ok: true)
+[  sender] sealed tx #0 ordered in block 29: 576 bytes (256 of plaintext)
+[searcher] pending reveal of #0: decrypted a swap of 10.000 in, front-running it
+[  sender] revealed the key of #0 in block 31
+[searcher] front-run of #0 reverted in block 31, ahead of the reveal: pool locked while #0 is queued
+[  keeper] slot 29: executed #0 in order (ok: true)
    alice got 9.7247 B for 10 A; fair price 9.7247 B; lost 0.00%
 == 3. a sealed swap whose sender withholds the key
-[  keeper] slot 33: #1 missed its reveal, penalty burned
+[  keeper] slot 45: #1 missed its reveal, penalty burned
 [  solver] solving #1: 8x67108864 sequential steps
-[  solver] forced #1 open in block ...; executed late: true
+[  solver] published the key of #1 in block 75; queued in slot 75 for the keeper
+[  keeper] slot 75: executed #1 late, after its forced opening (ok: true)
 ```
 
 The demo uses eight chains with `2^26` steps each and 24-byte links. Its delay is hardware-dependent; this is an illustrative workload, not a production security parameter.
@@ -41,35 +43,36 @@ The demo uses eight chains with `2^26` steps each and 24-byte links. Its delay i
 | Path | Role |
 |---|---|
 | `contracts/src/LeanSeal.sol` | Structural validation, key commitments, authenticated envelope opening using SHA-256. |
-| `contracts/src/SealedInbox.sol` | Deposits, global queue, reveal accounting, gas caps, execution and late opening. |
-| `contracts/src/SealedAccount.sol` | EIP-7702 delegate that calls targets with the sender's address and approvals. |
+| `contracts/src/SealedInbox.sol` | Deposits, delegation checks, global queue and pool lock, gas caps, execution and late opening. |
+| `contracts/src/SealedAccount.sol` | EIP-7702 delegate, deployed by the inbox, that calls targets with the sender's address and approvals. |
 | `contracts/src/demo/` | Tokens and a constant-product pool with an optional inbox guard. |
 | `node/` | Rust `sealnet` sender, keeper, solver, delegate setup, and sandwich searcher. |
 | `contracts/test/` | Cryptographic vectors and adversarial protocol regressions. |
 
 ## Protocol
 
-1. **Submit.** Encrypt `abi.encode(address target, bytes data, uint64 expiry)` and call `submit(envelope, gasLimit)` with the exact deposit. The inbox validates all envelope and puzzle structure rules from [SPEC.md](../SPEC.md): magic, version, reserved bytes, `1 <= b <= 32`, `1 <= n <= 2^20`, `1 <= m <= 2^48`, `n*m <= 2^60`, `L <= 2^24`, and exact total length. It does not verify puzzle solvability. The whole envelope is bound by its hash.
+1. **Submit.** Encrypt `abi.encode(address target, bytes data, uint64 expiry)` and call `submit(envelope, gasLimit)` with the exact deposit. The sender's code must be the EIP-7702 delegation designator `0xef0100 || account()`, where `account()` is the `SealedAccount` that the inbox deploys in its constructor; any other sender, including a contract or an account delegated elsewhere, reverts with `NotDelegated`. The inbox validates all envelope and puzzle structure rules from [SPEC.md](../SPEC.md): magic, version, reserved bytes, `1 <= b <= 32`, `1 <= n <= 2^20`, `1 <= m <= 2^48`, `n*m <= 2^60`, `L <= 2^24`, and exact total length. It does not verify puzzle solvability. The whole envelope is bound by its hash.
 2. **Cap and order.** Each non-empty block becomes one slot in an append-only queue. Tickets retain submission order within that slot. The deployment accepts at most 4,096 envelope bytes and 1,000,000 requested account gas per ticket, and at most 10,000,000 summed account gas per slot. A ticket exceeding the latter reverts with `SlotFull`.
-3. **Reveal.** Anyone knowing the key may reveal in the next two blocks. The sender receives its 0.01 ETH deposit back. Each reveal increments `pendingReveals`. While this count is nonzero, direct `swap` and `addLiquidity` calls on the guarded pool revert with `"locked"`.
-4. **Execute.** After the head slot's window, call `execute(bytes[] envelopes)`. Entries correspond to tickets starting at `cursor`; an unrevealed ticket can use empty bytes. Only the head slot can run. Revealed tickets decrement `pendingReveals` and execute in order. Unrevealed tickets become `Missed`, and `deposit - bounty` is added to `burned`. Completing a slot advances `head` and resets `cursor`. The call returns the processed count and emits `Progress(head, cursor)`.
+3. **Reveal.** Anyone knowing the key may reveal in the next two blocks. The sender receives its 0.01 ETH deposit back.
+4. **Execute.** After the head slot's window, call `execute(bytes[] envelopes)`. Entries correspond to tickets starting at `cursor`; an unrevealed ticket can use empty bytes. Only the head slot can run. Revealed and forced tickets execute in queue order. Unrevealed tickets become `Missed`, and `deposit - bounty` is added to `burned`. Completing a slot advances `head` and resets `cursor`. The call returns the processed count and emits `Progress(head, cursor)`.
 5. **Preserve progress.** Before consuming a ticket, the inbox reserves account gas with the EIP-150 adjustment, decryption work proportional to envelope size, and bookkeeping gas. An underfunded executor stops before that ticket; earlier progress remains. If no ticket was processed, `InsufficientGas` reverts. Callers can also supply shorter prefixes. `gasLimit` means gas delivered to the account call, including the delegate wrapper, not gas delivered to the final target.
-6. **Isolate calls.** Expiry, malformed plaintext, authentication failure, and target failure consume a properly funded ticket without blocking later tickets. Account calls copy no return data. `ok` records low-level call success; an undelegated EOA can return success without doing anything. Revoked delegation cannot block a batch. Execution is serialized against reentrancy, with ticket state updated before external calls.
-7. **Force open.** Anyone with a missed ticket's matching key may call `forceOpen(id, key, envelope)`. It executes late unless expired or otherwise failing, and pays only the 0.002 ETH bounty. The remaining 0.008 ETH stays locked forever, counted in `burned`; no withdrawal exists. Since a withholding sender can claim its own bounty, the **net penalty is deposit − bounty**. Insufficient execution gas reverts and leaves the ticket `Missed`. So does a call while `pendingReveals > 0` (`Locked`): otherwise a withheld ticket could be opened during a lock and trade ahead of a revealed one. The solver waits for the lock to clear before claiming.
+6. **Isolate calls.** Expiry, malformed plaintext, authentication failure, and target failure consume a properly funded ticket without blocking later tickets. Account calls copy no return data. `ok` records low-level call success. Before each account call the inbox checks the sender's delegation again; a sender that revoked or changed it gets `ok: false`, and the batch continues. Execution is serialized against reentrancy, with ticket state updated before external calls.
+7. **Force open.** Anyone with a missed ticket's matching key may call `forceOpen(id, key)`. The inbox checks the key against the commitment, records it, marks the ticket `Forced`, pays the 0.002 ETH bounty, and appends the ticket to the current block's slot. The ticket's gas counts toward that slot's budget, but the budget never refuses a forced opening. `execute` runs the ticket in that queue position after the slot's window and emits `Executed(id, ok, true)`; an expired or failing call gives `ok: false`. A forced ticket runs behind every earlier ticket, so it never trades ahead of a revealed one, and nothing makes `forceOpen` wait. The remaining 0.008 ETH stays locked forever, counted in `burned`; no withdrawal exists. Since a withholding sender can claim its own bounty, the **net penalty is deposit − bounty**.
 8. **Restrict targets.** The deployer may call `restrictTo(targets)` once; afterwards a sealed call to any other target fails (`ok: false`). The demo allows only the pool.
 
-During each account call the inbox sets a transient `executing()` flag. The guard is `locked() = pendingReveals > 0 && !executing()`, so sealed calls and their nested calls can access the pool while ordinary external trades wait. Passing a zero guard address deploys an unguarded pool.
+During each account call the inbox sets a transient `executing()` flag. The guard is `locked() = head < queueLength() && !executing()`: from the moment a ticket is submitted until `execute` processes its slot and every earlier one, direct `swap` and `addLiquidity` calls on the guarded pool revert with `"locked"`, while sealed calls and their nested calls access the pool. A pending reveal therefore exposes a key only while its ticket's position is already reserved. A withheld ticket stops locking once `execute` marks it `Missed`; a forced ticket locks again from `forceOpen` until it executes. Direct trades and `addLiquidity` succeed only when no ticket is queued. During sealed traffic, trades go through the sealed path, where a new ticket lands in a later slot than every ticket whose key could already be known. Passing a zero guard address deploys an unguarded pool.
 
-This reserves an execution position relative to every transaction that touches this guarded pool, at the application level. It is not enough on its own. All keys of a batch are public before the batch runs, so a sealed call ordered ahead of a victim could adapt to the victim's plaintext if it read state that someone wrote after the reveals, for example a contract that the attacker updates with the victim's trade. The target allowlist closes this for the demo market: a sealed swap on the pool has fixed parameters, chosen before any reveal. It serves the ordering purpose of LUCID's protocol-level execution of decrypted transactions at the top of the next block; this PoC does not implement LUCID or protect arbitrary unguarded applications.
+This reserves an execution position relative to every transaction that touches this guarded pool, at the application level. Because every sender runs the canonical `SealedAccount`, which calls exactly the committed target and data, the target allowlist constrains the code that runs under the `executing()` flag. It is not enough on its own. All keys of a batch are public before the batch runs, so a sealed call ordered ahead of a victim could adapt to the victim's plaintext if it read state that someone wrote after the reveals, for example a contract that the attacker updates with the victim's trade. The target allowlist closes this for the demo market: a sealed swap on the pool has fixed parameters, chosen before any reveal. It serves the ordering purpose of LUCID's protocol-level execution of decrypted transactions at the top of the next block; this PoC does not implement LUCID or protect arbitrary unguarded applications.
 
 ## Daemons and recovery
 
 All roles take `--rpc` and `--key`; inbox roles also take `--inbox`.
 
-- `keeper` reads `head`, `cursor`, `queueLength`, and `slotAt` from the contract on startup and after each transaction. It fetches the head slot's `Sealed` logs, takes up to 32 envelopes starting at the cursor, and executes with an explicit 25-million gas limit. It drains mature slots and retries after RPC or transaction errors. Restarting requires no backfill flag. `slotLength` and `slotTicket` also expose the queue contents.
-- `solver` scans `Missed` logs from `--from` (default 0), reconciles current ticket state, and solves sequentially. It skips puzzles exceeding `--max-steps` (default `2^34` total chain steps). Per-ticket errors are logged without stopping other work. It rechecks state before solving and claiming; losing a claim race is logged. Restart from the default or an earlier `--from` to retry failed historical tickets.
-- `sandwich` takes `--pool` and `--size` (default 50 whole tokens). It attacks pending plaintext swaps and decrypts `Revealed` events to attempt a direct front-run. The revealed attack uses fixed transaction gas so a pool-lock revert is mined and visible.
-- `send` takes `--to` and `--data`. It reads the deposit from the inbox. `--plain` submits directly; `--withhold` omits the reveal. Defaults are `--chains 8 --steps 2^26 --gas 300000 --expiry 100`. Numeric overflow and out-of-format puzzle parameters are rejected instead of wrapped. Expiry is a block offset.
+- `delegate` takes `--to` and points the sender's account at that address with an EIP-7702 authorization. The demo passes the inbox's `account()`.
+- `keeper` reads `head`, `cursor`, `queueLength`, and `slotAt` from the contract on startup and after each transaction. It reads up to `--batch` (default 32) ticket ids of the head slot from the cursor with `slotLength` and `slotTicket`, fetches their envelopes from `Sealed` logs by ticket id (a slot can hold forced tickets submitted in earlier blocks), and executes with an explicit gas limit, `--gas` (default 16,000,000). Values above EIP-7825's transaction cap of 2^24 = 16,777,216 are rejected. When `execute` processes only a prefix, the keeper continues from the new cursor. It drains mature slots and retries after RPC or transaction errors. Restarting requires no backfill flag.
+- `solver` scans `Missed` logs from `--from` (default 0), reconciles current ticket state, and solves sequentially. It skips puzzles exceeding `--max-steps` (default `2^34` total chain steps). Per-ticket errors are logged without stopping other work. It rechecks state before solving and claiming; losing a claim race is logged. A claim publishes the key with `forceOpen` and moves on; the keeper executes the ticket. Restart from the default or an earlier `--from` to retry failed historical tickets.
+- `sandwich` takes `--pool` and `--size` (default 50 whole tokens). It attacks pending plaintext swaps. It also reads keys from pending `reveal` transactions, decrypts their envelopes, and bids a higher tip to trade ahead of the reveal; keys from mined `Revealed` events get the same attack. Each ticket is attacked once. Key attacks use fixed transaction gas so a pool-lock revert is mined and visible.
+- `send` takes `--to` and `--data`. It reads the deposit from the inbox and checks that the account delegates to the inbox's `account()`. `--plain` submits directly; `--withhold` omits the reveal. Defaults are `--chains 8 --steps 2^26 --gas 300000 --expiry 100`. Numeric overflow and out-of-format puzzle parameters are rejected instead of wrapped. Expiry is a block offset.
 
 ## Checks and gas
 
@@ -85,18 +88,20 @@ Measured with Solidity 0.8.28, the last command reports these **unit-test call c
 
 | Call | Gas |
 |---|---:|
-| Successful `submit` | 191,988–267,849 |
-| Successful `reveal` | 79,707–96,819 |
-| `execute`, two revealed swaps | 355,494 |
-| `forceOpen`, one late swap | 211,436 |
+| Successful `submit` | 192,116–267,989 |
+| Successful `reveal` | 74,487–74,499 |
+| `execute`, two revealed swaps | 356,272 |
+| Successful `forceOpen`, which queues the ticket | 126,600 |
+| `execute`, one forced swap | 216,937 |
 
 Storage warmth, queue position, calldata, target behavior, and envelope size change costs. The conservative gas reserve means callers must supply more gas than the call ultimately consumes.
 
 ## Limits
 
-- **Guard availability.** Any pending reveal locks the pool for plaintext traders until execution drains all pending reveals. Unpaid keepers and a backlog can prolong this lock.
-- **Late execution is unprotected.** The key is public in the `forceOpen` transaction, so a searcher can front-run it. The transient flag permits late execution but does not reserve its original position. Senders should set `minOut` and an expiry; the demonstration deliberately uses `minOut = 0`.
+- **Guard availability.** Any queued ticket locks the pool for direct traders and liquidity providers until the keeper executes its slot, at least `revealWindow + 1` blocks after submission. Steady sealed traffic, unpaid keepers, and a backlog prolong this lock. Anyone can hold it by submitting one ticket per block, paying submit and reveal gas, or deposit − bounty per withheld ticket.
+- **Late execution is unprotected.** A forced ticket's queue position is fixed only when `forceOpen` is included, after its key is visible in the mempool. A searcher can trade ahead of it directly while no other ticket is queued, or through its own ticket in the same block. Senders should set `minOut` and an expiry; the demonstration deliberately uses `minOut = 0`.
 - **Penalty size.** The net withholding penalty is deposit − bounty, not the whole deposit. Successful reveal refunds do not depend on successful target execution.
+- **Cancellation after reveal.** The deposit prices only missed reveals, not cancellation through the sender's own state. A sender can reveal on time, recover its deposit, and then revoke its approval, move its funds, or change its delegation so that its committed call fails, without penalty. Removing that option needs execution right after key release, which LUCID provides.
 - **Structure is not solvability.** A sender knowing a matching key can reveal a puzzle whose links do not solve to it, recover the deposit, and avoid a penalty. A missed inconsistent puzzle can waste solver work before its commitment fails. The solver bounds total steps but remains sequential and has no persistent checkpoints.
 - **Reorgs.** Queue order follows the canonical chain. A reveal on a replaced branch can expose plaintext before reordered inclusion. Daemon cursors are not reorg-aware; restart/backfill and state reconciliation do not provide finality.
 - **Public metadata.** Sender, gas limit, deposit, envelope length, and timing remain visible. The demo searcher does not solve puzzles before reveal; real confidentiality depends on delay relative to ordering and on attacker hardware.

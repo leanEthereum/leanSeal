@@ -2,7 +2,8 @@
 # End-to-end demo on a local anvil chain:
 #   1. a plaintext swap is sandwiched by a searcher watching the mempool;
 #   2. the same swap sealed with leanSeal is ordered blind, revealed, executed;
-#   3. a sender that withholds its key loses its deposit, and a solver opens it.
+#   3. a sender that withholds its key loses its deposit; a solver publishes the
+#      key and the keeper executes the ticket late, in its new queue position.
 set -euo pipefail
 cd "$(dirname "$0")"
 PORT=${PORT:-8545}
@@ -50,6 +51,12 @@ report() {
 }
 # Wait until the keeper has executed everything up to the current block.
 settle() { sleep ${1:-10}; }
+# Wait up to $2 seconds for alice's B balance to move from $1.
+await_bal() {
+  local t0=$SECONDS
+  while [ "$(bal)" = "$1" ] && [ $((SECONDS - t0)) -lt $2 ]; do sleep 2; done
+  echo "   (waited $((SECONDS - t0))s for the late execution)"
+}
 
 echo; echo "== 1. plaintext swap in the public mempool"
 q=$(quote); b0=$(bal)
@@ -64,4 +71,4 @@ settle 8; report $q $b0 $(bal)
 echo; echo "== 3. a sealed swap whose sender withholds the key"
 q=$(quote); b0=$(bal)
 $BIN send --rpc $RPC --key $ALICE --inbox $INBOX --to $POOL --data $swap --chains 8 --steps 2^26 --withhold
-settle 30; report $q $b0 $(bal)
+await_bal $b0 ${FORCE_WAIT:-300}; report $q $b0 $(bal)

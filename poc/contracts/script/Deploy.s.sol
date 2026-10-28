@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {SealedInbox} from "../src/SealedInbox.sol";
-import {SealedAccount} from "../src/SealedAccount.sol";
 import {Token} from "../src/demo/Token.sol";
 import {Pool} from "../src/demo/Pool.sol";
 
@@ -16,8 +15,8 @@ contract Deploy is Script {
         uint256 searcher = vm.envUint("SEARCHER");
 
         vm.startBroadcast(deployer);
+        // The inbox deploys its own SealedAccount; senders delegate to inbox.account().
         SealedInbox inbox = new SealedInbox(0.01 ether, 0.002 ether, 2, 1_000_000, 10_000_000, 4096);
-        SealedAccount account = new SealedAccount(address(inbox));
         Token a = new Token("A");
         Token b = new Token("B");
         Pool pool = new Pool(a, b, address(inbox));
@@ -42,7 +41,7 @@ contract Deploy is Script {
         }
 
         console2.log("INBOX", address(inbox));
-        console2.log("ACCOUNT", address(account));
+        console2.log("ACCOUNT", inbox.account());
         console2.log("POOL", address(pool));
         console2.log("TOKEN_B", address(b));
     }

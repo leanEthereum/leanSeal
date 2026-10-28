@@ -34,6 +34,26 @@ contract ReentryProbe {
     }
 }
 
+/// Implements SealedAccount's interface but ignores the committed call and
+/// trades for itself instead, as a non-canonical sender would.
+contract FakeAccount {
+    Pool public immutable pool;
+
+    constructor(Pool p) {
+        pool = p;
+    }
+
+    receive() external payable {}
+
+    function run(address, bytes calldata) external {
+        pool.swap(true, 50 ether, 0);
+    }
+
+    function submit(SealedInbox inbox, bytes calldata envelope) external payable {
+        inbox.submit{value: msg.value}(envelope, 200_000);
+    }
+}
+
 contract SealedInboxTest is Test {
     uint256 constant DEPOSIT = 0.01 ether;
     uint64 constant WINDOW = 2;
@@ -43,14 +63,19 @@ contract SealedInboxTest is Test {
     Token a;
     Token b;
     Pool pool;
-    address alice = makeAddr("alice");
-    address bob = makeAddr("bob");
+    address alice;
+    address bob;
+    address carol;
+    uint256 alicePk;
+    uint256 bobPk;
+    uint256 carolPk;
     address solver = makeAddr("solver");
     address keeper = makeAddr("keeper");
 
     bytes puzzle;
     bytes32 key;
     uint128 nonces;
+    mapping(uint256 => bytes) envOf;
 
     function setUp() public {
         string memory json = vm.readFile("test/vectors.json");
@@ -58,7 +83,7 @@ contract SealedInboxTest is Test {
         key = vm.parseJsonBytes32(json, ".cases[4].key");
 
         inbox = new SealedInbox(DEPOSIT, 0.002 ether, WINDOW, 1_000_000, 10_000_000, 4096);
-        account = new SealedAccount(address(inbox));
+        account = SealedAccount(payable(inbox.account()));
         a = new Token("A");
         b = new Token("B");
         pool = new Pool(a, b, address(inbox));
@@ -68,14 +93,23 @@ contract SealedInboxTest is Test {
         b.approve(address(pool), type(uint256).max);
         pool.addLiquidity(1000 ether, 1000 ether);
 
-        for (uint256 i = 0; i < 2; i++) {
-            address u = i == 0 ? alice : bob;
-            vm.etch(u, abi.encodePacked(hex"ef0100", address(account)));
-            vm.deal(u, 1 ether);
-            a.mint(u, 100 ether);
-            vm.prank(u);
-            a.approve(address(pool), type(uint256).max);
+        (alice, alicePk) = makeAddrAndKey("alice");
+        (bob, bobPk) = makeAddrAndKey("bob");
+        (carol, carolPk) = makeAddrAndKey("carol");
+        address[3] memory users = [alice, bob, carol];
+        uint256[3] memory keys = [alicePk, bobPk, carolPk];
+        for (uint256 i = 0; i < 3; i++) {
+            vm.deal(users[i], 1 ether);
+            a.mint(users[i], 100 ether);
+            delegateTo(users[i], keys[i], address(account));
         }
+    }
+
+    /// Sign an EIP-7702 delegation and apply it with the account's next call.
+    function delegateTo(address u, uint256 pk, address impl) internal {
+        vm.signAndAttachDelegation(impl, pk);
+        vm.prank(u);
+        a.approve(address(pool), type(uint256).max);
     }
 
     function sealSwap(uint256 amountIn, uint64 expiry) internal returns (bytes memory) {
@@ -86,6 +120,21 @@ contract SealedInboxTest is Test {
     function submit(address from, bytes memory env) internal returns (uint256 id) {
         vm.prank(from);
         id = inbox.submit{value: DEPOSIT}(env, 200_000);
+        envOf[id] = env;
+    }
+
+    /// An honest keeper: execute every mature slot, supplying each envelope.
+    function keep() internal {
+        while (inbox.head() < inbox.queueLength()) {
+            uint64 slot = inbox.slotAt(inbox.head());
+            if (block.number <= slot + WINDOW) return;
+            uint256 c = inbox.cursor();
+            bytes[] memory envs = new bytes[](inbox.slotLength(slot) - c);
+            for (uint256 i = 0; i < envs.length; i++) {
+                envs[i] = envOf[inbox.slotTicket(slot, c + i)];
+            }
+            inbox.execute(envs);
+        }
     }
 
     function testRevealAndExecuteInOrder() public {
@@ -124,18 +173,36 @@ contract SealedInboxTest is Test {
         vm.roll(slot + WINDOW + 1);
         bytes[] memory envs = new bytes[](1);
         inbox.execute(envs);
-        (,,, SealedInbox.State st,,,,) = inbox.tickets(id);
-        assertEq(uint8(st), uint8(SealedInbox.State.Missed));
+        assertEq(uint8(ticketState(id)), uint8(SealedInbox.State.Missed));
         assertEq(alice.balance, 1 ether - DEPOSIT, "deposit forfeited");
+        assertFalse(inbox.locked(), "a missed ticket does not hold the lock");
 
         // Minutes later a solver has the key from the puzzle.
-        vm.roll(slot + 50);
+        uint64 late = slot + 50;
+        vm.roll(late);
+        vm.prank(solver);
+        vm.expectRevert(SealedInbox.WrongKey.selector);
+        inbox.forceOpen(id, key ^ bytes32(uint256(1)));
         vm.prank(solver);
         vm.expectEmit(true, false, false, true);
-        emit SealedInbox.Executed(id, true, true);
-        inbox.forceOpen(id, key, e);
+        emit SealedInbox.Forced(id, solver, key);
+        inbox.forceOpen(id, key);
         assertEq(solver.balance, 0.002 ether, "solver paid");
+        assertEq(uint8(ticketState(id)), uint8(SealedInbox.State.Forced));
+        assertEq(inbox.slotAt(inbox.head()), late, "queued at the opening's block");
+        assertTrue(inbox.locked());
+        vm.expectRevert(SealedInbox.WrongState.selector);
+        inbox.forceOpen(id, key);
+
+        // The keeper runs it after its new slot's window, like any other ticket.
+        vm.roll(late + WINDOW + 1);
+        envs[0] = e;
+        vm.expectEmit(true, false, false, true);
+        emit SealedInbox.Executed(id, true, true);
+        inbox.execute(envs);
         assertGt(b.balanceOf(alice), 0, "executed late");
+        assertEq(uint8(ticketState(id)), uint8(SealedInbox.State.Executed));
+        assertFalse(inbox.locked());
     }
 
     function testExpiredForcedOpeningDoesNotExecute() public {
@@ -146,11 +213,15 @@ contract SealedInboxTest is Test {
         inbox.execute(new bytes[](1));
         vm.roll(slot + 50);
         vm.prank(solver);
+        inbox.forceOpen(id, key);
+        assertEq(solver.balance, 0.002 ether, "solver paid even when expired");
+        vm.roll(slot + 50 + WINDOW + 1);
+        bytes[] memory envs = new bytes[](1);
+        envs[0] = e;
         vm.expectEmit(true, false, false, true);
         emit SealedInbox.Executed(id, false, true);
-        inbox.forceOpen(id, key, e);
+        inbox.execute(envs);
         assertEq(b.balanceOf(alice), 0);
-        assertEq(solver.balance, 0.002 ether, "solver paid even when expired");
     }
 
     function testRejectsWrongKeyAndLateReveal() public {
@@ -221,9 +292,56 @@ contract SealedInboxTest is Test {
         bytes[] memory envs = new bytes[](2);
         envs[0] = e;
         envs[1] = e;
+        vm.expectEmit(true, false, false, true);
+        emit SealedInbox.Executed(bad, false, false);
         assertEq(inbox.execute(envs), 2);
         assertGt(b.balanceOf(alice), 0);
-        assertEq(inbox.pendingReveals(), 0);
+        assertFalse(inbox.locked());
+    }
+
+    function testOnlyCanonicalDelegationMaySubmit() public {
+        FakeAccount fake = new FakeAccount(pool);
+        bytes memory e = sealSwap(10 ether, 100);
+        // A contract sender could implement `run` itself and ignore the committed call.
+        vm.expectRevert(SealedInbox.NotDelegated.selector);
+        fake.submit{value: DEPOSIT}(inbox, e);
+        // So could an account delegated to some other code, or a plain account.
+        (address mallory, uint256 malloryPk) = makeAddrAndKey("mallory");
+        vm.deal(mallory, 1 ether);
+        vm.prank(mallory);
+        vm.expectRevert(SealedInbox.NotDelegated.selector);
+        inbox.submit{value: DEPOSIT}(e, 200_000);
+        delegateTo(mallory, malloryPk, address(fake));
+        vm.prank(mallory);
+        vm.expectRevert(SealedInbox.NotDelegated.selector);
+        inbox.submit{value: DEPOSIT}(e, 200_000);
+        assertEq(inbox.ticketCount(), 0);
+    }
+
+    function testRedelegatedSenderFailsWithoutBlockingBatch() public {
+        FakeAccount fake = new FakeAccount(pool);
+        b.mint(alice, 100 ether);
+        bytes memory e0 = sealSwap(10 ether, 100);
+        bytes memory e1 = sealSwap(10 ether, 100);
+        uint256 id0 = submit(alice, e0);
+        uint256 id1 = submit(bob, e1);
+        // After ordering, Alice points her account at code that ignores the committed call.
+        delegateTo(alice, alicePk, address(fake));
+        vm.roll(block.number + 1);
+        inbox.reveal(id0, key);
+        inbox.reveal(id1, key);
+        vm.roll(block.number + WINDOW);
+        uint256 reserveA = pool.reserveA();
+        bytes[] memory envs = new bytes[](2);
+        (envs[0], envs[1]) = (e0, e1);
+        vm.expectEmit(true, false, false, true);
+        emit SealedInbox.Executed(id0, false, false);
+        vm.expectEmit(true, false, false, true);
+        emit SealedInbox.Executed(id1, true, false);
+        assertEq(inbox.execute(envs), 2);
+        assertEq(pool.reserveA(), reserveA + 10 ether, "only Bob's committed swap ran");
+        assertEq(b.balanceOf(bob), uint256(10 ether) * 1000 ether / 1010 ether);
+        assertEq(b.balanceOf(alice), 100 ether);
     }
 
     function testUnderfundedExecuteKeepsTicket() public {
@@ -245,11 +363,31 @@ contract SealedInboxTest is Test {
 
     function testSlotGasBudget() public {
         bytes memory e = sealSwap(1 ether, 100);
+        vm.startPrank(alice);
         for (uint256 i; i < 10; i++) {
             inbox.submit{value: DEPOSIT}(e, 1_000_000);
         }
         vm.expectRevert(SealedInbox.SlotFull.selector);
         inbox.submit{value: DEPOSIT}(e, 1);
+        vm.stopPrank();
+    }
+
+    function testForcedOpeningIgnoresSlotBudget() public {
+        bytes memory e = sealSwap(1 ether, 100);
+        uint256 id = submit(bob, e);
+        vm.roll(block.number + WINDOW + 1);
+        inbox.execute(new bytes[](1));
+        vm.startPrank(alice);
+        for (uint256 i; i < 10; i++) {
+            inbox.submit{value: DEPOSIT}(e, 1_000_000);
+        }
+        vm.stopPrank();
+        uint64 slot = uint64(block.number);
+        vm.prank(solver);
+        inbox.forceOpen(id, key);
+        assertEq(inbox.slotLength(slot), 11);
+        assertEq(inbox.slotTicket(slot, 10), id);
+        assertEq(inbox.slotGas(slot), 10_200_000);
     }
 
     function testBatchProgressAcrossCalls() public {
@@ -277,6 +415,7 @@ contract SealedInboxTest is Test {
     }
 
     function testMalformedEnvelopeRejectedAtSubmit() public {
+        vm.startPrank(alice);
         bytes memory e = abi.encodePacked(bytes8(0), puzzle);
         vm.expectRevert(LeanSeal.Format.selector);
         inbox.submit{value: DEPOSIT}(e, 200_000);
@@ -286,6 +425,7 @@ contract SealedInboxTest is Test {
         inbox.submit{value: DEPOSIT}(e, 200_000);
         vm.expectRevert(SealedInbox.EnvelopeTooLarge.selector);
         inbox.submit{value: DEPOSIT}(new bytes(4097), 200_000);
+        vm.stopPrank();
     }
 
     function testOutOfSpecParametersRejected() public {
@@ -293,6 +433,7 @@ contract SealedInboxTest is Test {
             bytes32(abi.encodePacked(uint8(1), uint8(1), uint16(0), uint32(1), uint64((1 << 48) + 1), bytes16(0)));
         bytes memory p = abi.encodePacked(bytes4("LSPZ"), ctx, LeanSeal.commitment(ctx, key), bytes1(0));
         bytes memory e = Seal.seal(p, key, bytes16(0), hex"abcdef");
+        vm.prank(alice);
         vm.expectRevert(LeanSeal.Format.selector);
         inbox.submit{value: DEPOSIT}(e, 200_000);
     }
@@ -319,34 +460,136 @@ contract SealedInboxTest is Test {
         assertEq(inbox.head(), inbox.queueLength());
     }
 
-    function testRevealedSwapCannotBeFrontRun() public {
-        (, bytes[] memory envs) = ready(sealSwap(10 ether, 100));
+    function testQueuedTicketLocksPool() public {
+        bytes memory e = sealSwap(10 ether, 100);
+        uint64 slot = uint64(block.number);
+        uint256 id = submit(alice, e);
+        // Locked from submission, before any key exists on chain.
+        assertTrue(inbox.locked());
         vm.prank(bob);
         vm.expectRevert("locked");
         pool.swap(true, 50 ether, 0);
         vm.expectRevert("locked");
         pool.addLiquidity(1, 1);
+        vm.roll(slot + 1);
+        inbox.reveal(id, key);
+        vm.prank(bob);
+        vm.expectRevert("locked");
+        pool.swap(true, 50 ether, 0);
+        vm.roll(slot + WINDOW + 1);
+        bytes[] memory envs = new bytes[](1);
+        envs[0] = e;
         inbox.execute(envs);
+        assertFalse(inbox.locked());
         vm.prank(bob);
         pool.swap(true, 50 ether, 0);
+    }
+
+    function testPendingRevealCannotBeSandwiched() public {
+        (address mallory, uint256 malloryPk) = makeAddrAndKey("mallory");
+        vm.deal(mallory, 1 ether);
+        a.mint(mallory, 500 ether);
+        delegateTo(mallory, malloryPk, address(account));
+        bytes memory e = sealSwap(10 ether, 100);
+        uint64 slot = uint64(block.number);
+        uint256 fair = pool.quote(true, 10 ether);
+        uint256 id = submit(alice, e);
+
+        // Next block: Alice's reveal is pending. A builder copies the key from
+        // its calldata, opens the envelope, and orders a trade ahead of it.
+        vm.roll(slot + 1);
+        (address target, bytes memory data,) = inbox.openEnvelope(e, key);
+        assertEq(target, address(pool));
+        assertEq(data, abi.encodeCall(Pool.swap, (true, 10 ether, 0)));
+        vm.prank(mallory);
+        vm.expectRevert("locked");
+        pool.swap(true, 50 ether, 0);
+        // Sealing the front-run instead queues it behind Alice's earlier slot.
+        bytes memory front = sealSwap(50 ether, 100);
+        uint256 frontId = submit(mallory, front);
+        inbox.reveal(id, key);
+        vm.roll(slot + 2);
+        inbox.reveal(frontId, key);
+
+        vm.roll(slot + 2 + WINDOW);
+        keep();
+        assertEq(b.balanceOf(alice), fair, "Alice traded at the price before her slot");
+        assertGt(b.balanceOf(mallory), 0, "the attempted front-run ran after her");
         assertFalse(inbox.locked());
     }
 
-    function testForceOpenWaitsWhileLocked() public {
+    function testForcedOpeningQueuesBehindRevealedTicket() public {
         bytes memory e = sealSwap(10 ether, 1000);
         uint256 id = submit(alice, e);
         vm.roll(block.number + 3);
         inbox.execute(new bytes[](1));
-        // A later ticket is revealed; the missed one must not jump ahead of it.
-        (, bytes[] memory envs) = ready(sealSwap(10 ether, 1000));
-        vm.prank(alice);
-        vm.expectRevert(SealedInbox.Locked.selector);
-        inbox.forceOpen(id, key, e);
+        // A later ticket is revealed but waits; the missed one opens in the
+        // same block without waiting for it, and queues behind it.
+        bytes memory r = sealSwap(10 ether, 1000);
+        uint256 rid = submit(bob, r);
+        vm.roll(block.number + 1);
+        inbox.reveal(rid, key);
+        vm.prank(solver);
+        inbox.forceOpen(id, key);
+        vm.roll(block.number + WINDOW + 1);
+        bytes[] memory envs = new bytes[](1);
+        envs[0] = e;
+        vm.expectRevert(SealedInbox.WrongEnvelope.selector);
         inbox.execute(envs);
+        envs[0] = r;
+        vm.expectEmit(true, false, false, true);
+        emit SealedInbox.Executed(rid, true, false);
+        inbox.execute(envs);
+        envs[0] = e;
+        vm.expectEmit(true, false, false, true);
+        emit SealedInbox.Executed(id, true, true);
+        inbox.execute(envs);
+        assertEq(b.balanceOf(bob), uint256(10 ether) * 1000 ether / 1010 ether, "revealed ticket ran first");
+        assertGt(b.balanceOf(bob), b.balanceOf(alice));
+    }
+
+    /// One new revealed ticket per block keeps revealed work pending at every
+    /// moment, yet a forced opening executes WINDOW + 1 blocks after it.
+    function testForcedOpeningUnderSteadyReveals() public {
+        bytes memory w = sealSwap(1 ether, 1000);
+        uint256 missed = submit(carol, w);
+        uint64 start = uint64(block.number);
+        uint64 forcedAt;
+        uint64 executedAt;
+        uint256 prev = type(uint256).max;
+        for (uint64 n = start + 1; n <= start + 20; n++) {
+            vm.roll(n);
+            keep();
+            if (prev != type(uint256).max) inbox.reveal(prev, key);
+            if (n == start + WINDOW + 4) {
+                assertEq(uint8(ticketState(missed)), uint8(SealedInbox.State.Missed));
+                assertEq(uint8(ticketState(prev)), uint8(SealedInbox.State.Revealed), "revealed work pending");
+                vm.prank(solver);
+                inbox.forceOpen(missed, key);
+                envOf[missed] = w;
+                forcedAt = n;
+            }
+            if (executedAt == 0 && ticketState(missed) == SealedInbox.State.Executed) executedAt = n;
+            prev = submit(n % 2 == 0 ? alice : bob, sealSwap(0.1 ether, 1000));
+            assertTrue(inbox.locked(), "steady sealed traffic keeps the pool locked");
+        }
+        assertGt(forcedAt, 0);
+        assertEq(executedAt, forcedAt + WINDOW + 1, "forced opening executed within the window");
+        assertGt(b.balanceOf(carol), 0);
+    }
+
+    function testRevealThenRevokeEscapesPenalty() public {
+        // Not prevented: the deposit prices only missed reveals. A sender that
+        // reveals and then revokes its approval cancels its call for free.
+        (uint256 id, bytes[] memory envs) = ready(sealSwap(10 ether, 100));
+        assertEq(alice.balance, 1 ether, "deposit refunded at reveal");
         vm.prank(alice);
-        inbox.forceOpen(id, key, e);
-        (,,, SealedInbox.State st,,,,) = inbox.tickets(id);
-        assertEq(uint8(st), uint8(SealedInbox.State.Forced));
+        a.approve(address(pool), 0);
+        vm.expectEmit(true, false, false, true);
+        emit SealedInbox.Executed(id, false, false);
+        inbox.execute(envs);
+        assertEq(b.balanceOf(alice), 0);
+        assertEq(inbox.burned(), 0);
     }
 
     function testRestrictedTargets() public {
@@ -383,22 +626,10 @@ contract SealedInboxTest is Test {
         vm.roll(block.number + 3);
         inbox.execute(new bytes[](1));
         vm.prank(alice);
-        inbox.forceOpen(id, key, e);
+        inbox.forceOpen(id, key);
         assertEq(alice.balance, 1 ether - DEPOSIT + inbox.bounty());
         assertEq(inbox.burned(), DEPOSIT - inbox.bounty());
         assertEq(address(inbox).balance, inbox.burned());
-    }
-
-    function testUnderfundedForceOpenKeepsTicket() public {
-        bytes memory e = sealSwap(10 ether, 100);
-        uint256 id = submit(alice, e);
-        vm.roll(block.number + 3);
-        inbox.execute(new bytes[](1));
-        (bool ok,) = address(inbox).call{gas: 300_000}(abi.encodeCall(SealedInbox.forceOpen, (id, key, e)));
-        assertFalse(ok);
-        assertEq(uint8(ticketState(id)), uint8(SealedInbox.State.Missed));
-        vm.prank(solver);
-        inbox.forceOpen(id, key, e);
     }
 
     function testGasBurnerDoesNotBlockFollowingTicket() public {

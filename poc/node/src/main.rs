@@ -2,10 +2,10 @@
 //! timed commitments and the SealedInbox contract.
 //!
 //!   send      seal a call, submit it, and reveal the key once it is ordered
-//!   keeper    execute each slot's revealed transactions after its window
-//!   solver    solve the puzzles of withheld keys and force their opening
-//!   delegate  point the sender's account at SealedAccount (EIP-7702)
-//!   sandwich  a searcher that front-runs plaintext swaps it sees pending
+//!   keeper    execute each slot's revealed and forced transactions after its window
+//!   solver    solve the puzzles of withheld keys and publish them for late execution
+//!   delegate  point the sender's account at the inbox's SealedAccount (EIP-7702)
+//!   sandwich  a searcher that front-runs plaintext swaps and keys it sees pending
 
 use alloy::eips::BlockNumberOrTag;
 use alloy::network::{EthereumWallet, TransactionBuilder, TransactionBuilder7702};
@@ -31,6 +31,8 @@ sol!(
 );
 
 const POLL: Duration = Duration::from_millis(250);
+/// EIP-7825 caps a transaction's gas at 2^24.
+const TX_GAS_CAP: u64 = 1 << 24;
 
 struct Args(HashMap<String, String>);
 
@@ -109,7 +111,7 @@ async fn send(a: &Args) -> Result<()> {
     if n == 0 || n > 1 << 20 || m == 0 || m > 1 << 48 || u64::from(n).checked_mul(m).is_none_or(|v| v > 1 << 60) {
         bail!("--chains/--steps out of range: require 1 <= chains <= 2^20, 1 <= steps <= 2^48, chains*steps <= 2^60");
     }
-    let (p, _) = connect(a).await?;
+    let (p, me) = connect(a).await?;
     let to = a.addr("to")?;
     let data: Bytes = a.get("data")?.parse()?;
     if a.flag("plain") {
@@ -126,6 +128,11 @@ async fn send(a: &Args) -> Result<()> {
         return Ok(());
     }
     let inbox = SealedInbox::new(a.addr("inbox")?, p.clone());
+    // The inbox accepts only accounts delegated to its own SealedAccount.
+    let account = inbox.account().call().await?;
+    if p.get_code_at(me).await?.as_ref() != [&[0xef, 0x01, 0x00][..], account.as_slice()].concat() {
+        bail!("{me} must delegate to {account} first: sealnet delegate --to {account}");
+    }
     let t = Instant::now();
     let (puzzle, key) = leanseal::generate(n, m, 24, &leanseal::GenOptions::default())?;
     log("sender", format!("built a puzzle of {n}x{m} steps in {:.1?}", t.elapsed()));
@@ -196,12 +203,29 @@ async fn sealed_events(p: &DynProvider, inbox: Address, topic: (usize, U256)) ->
     Ok(out)
 }
 
+/// Envelopes of the given tickets, in the given order, from their Sealed logs.
+async fn envelopes_of(p: &DynProvider, inbox: Address, ids: &[U256]) -> Result<Vec<Bytes>> {
+    let topics: Vec<FixedBytes<32>> = ids.iter().map(|id| FixedBytes::from(*id)).collect();
+    let f = Filter::new().address(inbox).event_signature(SealedInbox::Sealed::SIGNATURE_HASH).from_block(0).topic1(topics);
+    let mut by_id = HashMap::new();
+    for l in p.get_logs(&f).await? {
+        let e = SealedInbox::Sealed::decode_log(&l.inner)?.data;
+        by_id.insert(e.id, e.envelope);
+    }
+    ids.iter().map(|id| by_id.remove(id).ok_or_else(|| eyre!("missing envelope of #{id}"))).collect()
+}
+
 async fn keeper(a: &Args) -> Result<()> {
     let (p, _) = connect(a).await?;
     let addr = a.addr("inbox")?;
+    let gas = a.num("gas", 16_000_000)?;
+    if gas > TX_GAS_CAP {
+        bail!("--gas {gas} exceeds the EIP-7825 transaction cap of {TX_GAS_CAP}");
+    }
+    let batch = a.num("batch", 32)?;
     let inbox = SealedInbox::new(addr, p.clone());
     let window = inbox.revealWindow().call().await?;
-    log("keeper", format!("reconciling on-chain queue, window {window} blocks"));
+    log("keeper", format!("reconciling on-chain queue, window {window} blocks, {gas} gas per call"));
     loop {
         let result: Result<()> = async {
             loop {
@@ -209,16 +233,25 @@ async fn keeper(a: &Args) -> Result<()> {
                 if head == inbox.queueLength().call().await? { break; }
                 let slot = inbox.slotAt(head).call().await?;
                 if slot + window >= p.get_block_number().await? { break; }
-                let cursor = usize::try_from(inbox.cursor().call().await?)?;
-                let envs: Vec<Bytes> = sealed_events(&p, addr, (2, U256::from(slot)))
-                    .await?.into_iter().skip(cursor).take(32).map(|e| e.envelope).collect();
-                if envs.is_empty() { bail!("missing envelopes for slot {slot}"); }
-                // Partial progress is supported even when overhead exceeds one block.
-                let r = inbox.execute(envs).gas(25_000_000).send().await?.get_receipt().await?;
+                // A slot holds its own submissions and any tickets forced open in that block.
+                let cursor = inbox.cursor().call().await?;
+                let len = inbox.slotLength(slot).call().await?;
+                let end = len.min(cursor + U256::from(batch));
+                let mut ids = Vec::new();
+                let mut i = cursor;
+                while i < end {
+                    ids.push(inbox.slotTicket(slot, i).call().await?);
+                    i += U256::from(1);
+                }
+                if ids.is_empty() { bail!("empty slot {slot}"); }
+                let envs = envelopes_of(&p, addr, &ids).await?;
+                // execute may process only a prefix; the loop then resumes from the new cursor.
+                let r = inbox.execute(envs).gas(gas).send().await?.get_receipt().await?;
                 if !r.status() { bail!("execute reverted; will reconcile again"); }
                 for l in r.inner.logs() {
                     if let Ok(e) = SealedInbox::Executed::decode_log(&l.inner) {
-                        log("keeper", format!("slot {slot}: executed #{} in order (ok: {})", e.id, e.ok));
+                        let how = if e.late { "late, after its forced opening" } else { "in order" };
+                        log("keeper", format!("slot {slot}: executed #{} {how} (ok: {})", e.id, e.ok));
                     } else if let Ok(e) = SealedInbox::Missed::decode_log(&l.inner) {
                         log("keeper", format!("slot {slot}: #{} missed its reveal, penalty burned", e.id));
                     }
@@ -260,20 +293,12 @@ async fn solve_ticket(p: &DynProvider, addr: Address, id: U256, max_steps: u64) 
         log("solver", format!("#{id}: lost race before claiming"));
         return Ok(());
     }
-    // A late call may not run while a revealed ticket waits; the keeper clears that within a few blocks.
-    let mut waited = false;
-    while inbox.pendingReveals().call().await? > U256::ZERO {
-        if !waited { log("solver", format!("#{id}: waiting for pending reveals to execute before claiming")); waited = true; }
-        tokio::time::sleep(POLL).await;
-    }
+    // Publishing the key queues the ticket behind every earlier one; the keeper executes it.
     let claim = async {
-        let r = inbox.forceOpen(id, key.into(), ev.envelope).gas(5_000_000).send().await?.get_receipt().await?;
+        let r = inbox.forceOpen(id, key.into()).send().await?.get_receipt().await?;
         if !r.status() { bail!("claim reverted"); }
-        for l in r.inner.logs() {
-            if let Ok(e) = SealedInbox::Executed::decode_log(&l.inner) {
-                log("solver", format!("forced #{} open in block {}; executed late: {}", e.id, r.block_number.unwrap_or_default(), e.ok));
-            }
-        }
+        let block = r.block_number.unwrap_or_default();
+        log("solver", format!("published the key of #{id} in block {block}; queued in slot {block} for the keeper"));
         Ok(())
     }.await;
     if let Err(e) = claim {
@@ -315,6 +340,48 @@ async fn solver(a: &Args) -> Result<()> {
     }
 }
 
+/// Open ticket `id` with a key learned from a reveal and trade ahead of its swap.
+/// `pending` is the reveal's tip and hash while it waits in the mempool; the
+/// front-run outbids it. Fixed gas makes a guard revert mined and visible.
+async fn front_run_key(
+    p: &DynProvider,
+    pool: &Pool::PoolInstance<DynProvider>,
+    inbox: Address,
+    id: U256,
+    key: FixedBytes<32>,
+    size: U256,
+    pending: Option<(u128, alloy::primitives::TxHash)>,
+) -> Result<()> {
+    let sealed = sealed_events(p, inbox, (1, id)).await?.pop().ok_or_else(|| eyre!("missing envelope"))?;
+    let plain = leanseal::Envelope::decode(&sealed.envelope)?.open(&key.0)?;
+    let (target, data, _) = <(Address, Bytes, u64)>::abi_decode_params(&plain)?;
+    if target != *pool.address() { return Ok(()); }
+    let Ok(call) = Pool::swapCall::abi_decode(&data) else { return Ok(()) };
+    let mut tx = pool.swap(call.aToB, size, U256::ZERO).gas(300_000);
+    if let Some((tip, _)) = pending {
+        log("searcher", format!("pending reveal of #{id}: decrypted a swap of {} in, front-running it", fmt_eth(call.amountIn)));
+        let front_tip = tip + 1_000_000_000;
+        tx = tx.max_priority_fee_per_gas(front_tip).max_fee_per_gas(max_fee(p, front_tip).await?);
+    } else {
+        log("searcher", format!("revealed swap #{id}: {} in, front-running it", fmt_eth(call.amountIn)));
+    }
+    let receipt = tx.send().await?.get_receipt().await?;
+    let mut place = String::new();
+    if let Some((_, hash)) = pending {
+        if let Some(r) = p.get_transaction_receipt(hash).await? {
+            let at = |b: Option<u64>, i: Option<u64>| (b.unwrap_or_default(), i.unwrap_or_default());
+            let ahead = at(receipt.block_number, receipt.transaction_index) < at(r.block_number, r.transaction_index);
+            place = format!(" in block {}, {} the reveal", receipt.block_number.unwrap_or_default(), if ahead { "ahead of" } else { "behind" });
+        }
+    }
+    if receipt.status() {
+        log("searcher", format!("front-run of #{id} landed{place}"));
+    } else {
+        log("searcher", format!("front-run of #{id} reverted{place}: pool locked while #{id} is queued"));
+    }
+    Ok(())
+}
+
 async fn sandwich(a: &Args) -> Result<()> {
     let (p, _) = connect(a).await?;
     let pool_addr = a.addr("pool")?;
@@ -323,6 +390,8 @@ async fn sandwich(a: &Args) -> Result<()> {
     let size = U256::from(a.num("size", 50)?) * U256::from(10u64).pow(U256::from(18));
     log("searcher", "watching the public mempool");
     let mut seen = std::collections::HashSet::new();
+    // Each ticket is attacked once, as early as its key is visible.
+    let mut attacked = std::collections::HashSet::new();
     let mut from = p.get_block_number().await?;
     loop {
         let head = p.get_block_number().await?;
@@ -330,25 +399,11 @@ async fn sandwich(a: &Args) -> Result<()> {
             let f = Filter::new().address(inbox_addr)
                 .event_signature(SealedInbox::Revealed::SIGNATURE_HASH).from_block(from).to_block(head);
             for l in p.get_logs(&f).await? {
-                let attack: Result<()> = async {
-                    let ev = SealedInbox::Revealed::decode_log(&l.inner)?;
-                    let sealed = sealed_events(&p, inbox_addr, (1, ev.id)).await?.pop().ok_or_else(|| eyre!("missing envelope"))?;
-                    let env = leanseal::Envelope::decode(&sealed.envelope)?;
-                    let plain = env.open(&ev.key.0)?;
-                    let (target, data, _) = <(Address, Bytes, u64)>::abi_decode_params(&plain)?;
-                    if target != pool_addr { return Ok(()); }
-                    let Ok(call) = Pool::swapCall::abi_decode(&data) else { return Ok(()) };
-                    println!("[searcher] revealed swap #{}: {} in, front-running it", ev.id, fmt_eth(call.amountIn));
-                    let receipt = pool.swap(call.aToB, size, U256::ZERO).gas(300_000)
-                        .send().await?.get_receipt().await?;
-                    if !receipt.status() {
-                        println!("[searcher] front-run of revealed #{} reverted: pool locked until the batch executes", ev.id);
-                    } else {
-                        println!("[searcher] sandwich landed");
-                    }
-                    Ok(())
-                }.await;
-                if let Err(e) = attack { log("searcher", format!("revealed attack error: {e}")); }
+                let Ok(ev) = SealedInbox::Revealed::decode_log(&l.inner) else { continue };
+                if !attacked.insert(ev.id) { continue; }
+                if let Err(e) = front_run_key(&p, &pool, inbox_addr, ev.id, ev.key, size, None).await {
+                    log("searcher", format!("revealed attack error: {e}"));
+                }
             }
             from = head + 1;
         }
@@ -361,8 +416,20 @@ async fn sandwich(a: &Args) -> Result<()> {
             }
             let to = alloy::consensus::Transaction::to(&tx);
             let input = alloy::consensus::Transaction::input(&tx);
+            let tip = alloy::consensus::Transaction::max_priority_fee_per_gas(&tx).unwrap_or(0);
             if to == Some(inbox_addr) && input.starts_with(&SealedInbox::submitCall::SELECTOR) {
                 log("searcher", format!("sealed submission {hash}: {} bytes I cannot read", input.len()));
+                continue;
+            }
+            // A pending reveal carries the key in its calldata before it executes.
+            if to == Some(inbox_addr) {
+                if let Ok(call) = SealedInbox::revealCall::abi_decode(input) {
+                    if attacked.insert(call.id) {
+                        if let Err(e) = front_run_key(&p, &pool, inbox_addr, call.id, call.key, size, Some((tip, hash))).await {
+                            log("searcher", format!("pending-reveal attack error: {e}"));
+                        }
+                    }
+                }
                 continue;
             }
             // Plaintext swaps arrive directly or wrapped in a delegated account call.
@@ -370,7 +437,6 @@ async fn sandwich(a: &Args) -> Result<()> {
             if to != Some(pool_addr) {
                 continue;
             }
-            let tip = alloy::consensus::Transaction::max_priority_fee_per_gas(&tx).unwrap_or(0);
             log("searcher", format!("plaintext swap {hash}: {} in, front-running it", fmt_eth(call.amountIn)));
             let out = pool.quote(call.aToB, size).call().await?;
             let (front_tip, back_tip) = (tip + 1_000_000_000, tip.saturating_sub(1_000_000_000).max(1));
