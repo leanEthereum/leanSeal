@@ -1,13 +1,18 @@
 \section*{Acknowledgments}
 \addcontentsline{toc}{section}{Acknowledgments}
 
-% TODO: acknowledgments (reviewers, funding, people who commented on drafts).
+We thank Benedikt Wagner and Justin Thaler for helpful discussion and feedback.
 
 \section*{AI Assistance}
 \addcontentsline{toc}{section}{AI Assistance}
 
-% TODO: authors to confirm. Adapted from the AI-use statement of another paper;
-% the source write-up names only GPT-6 Astra (review of the C implementation and
-% the specification; proof attempt of Appendix A) and Claude Opus (check of that
-% proof). Confirm the model list and the uses before release.
-AI models from OpenAI (GPT-6 Astra) and Anthropic (Claude Opus) were used extensively in this work. GPT-6 Astra reviewed the specification and the earlier C implementation over several rounds (\cref{sec:impl}). We also used these models in the implementation, benchmarking and analysis, and to help prepare and edit the manuscript. The authors take full responsibility for the accuracy and correctness of the paper and for any issues in the implementation.
+% TODO: authors to confirm before release. Established from the repository:
+% GPT-6 Astra (high effort) ran the nine audit rounds in audit/ (C implementation,
+% specification, security argument), and the review guide says the Rust and
+% Python implementations were written by AI from the specification. Not
+% established from the repository: which model reviewed the Rust port (audit/
+% says only "a review"), which models wrote the implementations and the proof of
+% concept, and whether earlier Opus versions did some of the Opus work. The
+% Astra audits of the proof of concept and of the paper are from the session
+% record.
+AI models were used extensively in this work, chiefly OpenAI's GPT-6 Astra and Anthropic's Claude Opus~5.5, under the authors' direction. The Rust and Python implementations, the benchmarks and the proof-of-concept contracts were written largely by these models from the specification. GPT-6 Astra audited the specification, the security argument and the earlier C implementation over nine rounds; the reports, and the changes made in response, are in the repository~\cite{leanSealRepo}. It also reviewed the proof of concept and this paper. GPT-6 Astra drafted the proof of \cref{thm:delay}, and Claude Opus~5.5 checked and revised it. Claude Opus~5.5 also helped prepare and edit the manuscript. The authors take full responsibility for the accuracy and correctness of the paper and for any issues in the implementation.
