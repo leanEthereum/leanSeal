@@ -75,6 +75,8 @@
 \crefname{algorithm}{Algorithm}{Algorithms}
 \crefname{ALG@line}{line}{lines}
 \Crefname{ALG@line}{Line}{Lines}
+% Unique hyperlink anchors for algorithm lines, which restart in each algorithm.
+\makeatletter\renewcommand{\theHALG@line}{\thealgorithm.\arabic{ALG@line}}\makeatother
 
 % ---------------------------------------------------------------------------
 % Typographic settings

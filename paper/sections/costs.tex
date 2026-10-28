@@ -11,7 +11,7 @@ Encryption uses only SHA-256. For a fresh 16-byte nonce, subkeys $k_{\mathrm{enc
 
 \begin{table}[t]
   \centering\small
-  \caption{Measurements. The measured puzzle is a one-minute lock with $n = 16$, $m = 2^{30}$ and 24-byte links; the 30-second reference puzzle ($m = 2^{29}$) takes half these times to build and to open without the key.}
+  \caption{Measurements. The measured puzzle is a one-minute lock with $n = 16$, $m = 2^{30}$ and 24-byte links; the 30-second reference puzzle ($m = 2^{29}$) takes half these times to build and to open without the key. The M4 Air building and opening runs used 32-byte links, with the same chain work. Opening with the key is the command-line tool's end-to-end time, including process start and file input and output.}
   \label{tab:measurements}
   \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}Xrr@{}}
     \toprule
@@ -35,7 +35,7 @@ So the sender's cost is a ratio: about 0.70 seconds of laptop CPU time per secon
 
 \subsection{The number of chains}\label{sec:chains}
 
-The delay depends only on $N$; the number of chains $n$ sets how many cores can work on one puzzle at once, and the size. A sender that builds a puzzle when its transaction is ready needs one chain per core it wants to use: $n = 16$ builds a 30-second puzzle in about 21\,s on the M4 Air and 15\,s on the M4 Max, half the measured times for a one-minute puzzle. A sender that builds a stock gets its parallelism from building many puzzles at once instead (five one-minute 16-chain puzzles built together on the M4 Air took 37.5\,s each), so it can use a single chain per puzzle. \Cref{tab:chains} compares the options.
+The delay depends only on $N$; the number of chains $n$ sets how many cores can work on one puzzle at once, and the size. A sender that builds a puzzle when its transaction is ready needs one chain per core it wants to use: $n = 16$ builds a 30-second puzzle in about 21\,s on the M4 Air and 15\,s on the M4 Max, half the measured times for a one-minute puzzle. A sender that builds a stock gets its parallelism from building many puzzles at once instead (five one-minute 16-chain puzzles built together on the M4 Air finished in 187.6\,s, or 37.5\,s amortized per puzzle), so it can use a single chain per puzzle. \Cref{tab:chains} compares the options.
 
 \begin{table}[t]
   \centering\small
@@ -52,4 +52,4 @@ The delay depends only on $N$; the number of chains $n$ sets how many cores can 
   \end{tabular}
 \end{table}
 
-With $n = 1$, sealing a 110-byte transfer gives 262 bytes rather than 622, and the guessing term of \cref{thm:delay} vanishes. Ten single-chain puzzles built at once on the M4 Air, one per core, took 75\,s for $2^{31}$ steps each, on a machine that was not idle. A stock builder could interleave two single-chain puzzles per core, as the builder already does with chains, to keep the 1.5-fold gain of two SHA-256 pipelines per core.
+With $n = 1$, sealing a 110-byte transfer gives 262 bytes rather than 622, and the guessing term of \cref{thm:delay} vanishes. In one run that we did not archive, ten single-chain puzzles built at once on the M4 Air, one per core, took 75\,s for $2^{31}$ steps each, on a machine that was not idle; the daily figure above is projected from it. A stock builder could interleave two single-chain puzzles per core, as the builder already does with chains, to keep the 1.5-fold gain of two SHA-256 pipelines per core.
