@@ -11,7 +11,7 @@ cd "$T"
 fail() { echo "cross test failed: $*" >&2; exit 1; }
 head -c 1000 /dev/urandom > msg
 
-for b in 1 12 32; do
+for b in 1 12 24 32; do
   # Python builds, leanseal solves and opens.
   $PY encrypt --chains 5 --steps 400 --link-bytes $b --in msg --out py.env --secret-out py.sec
   [ "$("$CS" solve -q --no-checkpoint py.env | cut -d' ' -f1)" = "$($PY key py.sec)" ] || fail "leanseal solve of a Python envelope, b=$b"

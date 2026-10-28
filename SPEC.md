@@ -60,7 +60,7 @@ The input is exactly 52 bytes, so it is one SHA-256 compression of one padded bl
 
 *Informative.* W8–W15 are constant for a whole chain, exactly as the padding words of `SHA256(s)` would be, so adding the salt and index costs nothing. It makes every step specific to one chain index under one salt. Since every puzzle draws a fresh random salt, chain segments computed for one puzzle are of no use for another, except with negligible probability. Nothing stops an attacker from precomputing on a puzzle after it is published; that is just solving it.
 
-*Informative.* The chain step hashes exactly 52 bytes. Every other SHA-256 input in this format is longer: the labelled hashes hash at least 56 bytes (the start hash with `b = 1`), and the hashes inside HMAC hash at least 72. So the input of a chain step is never also the input of another hash in this format.
+*Informative.* The chain step hashes exactly 52 bytes. Every other SHA-256 input in this format is longer: the labelled hashes hash at least 55 bytes (the start hash with `b = 1`: 1 + 17 + 32 + 4 + 1), and the hashes inside HMAC hash at least 72. So the input of a chain step is never also the input of another hash in this format.
 
 ## 4. Puzzle generation
 

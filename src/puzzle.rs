@@ -324,6 +324,11 @@ pub fn generate(n: u32, m: u64, b: u8, opts: &GenOptions<'_>) -> Result<(Puzzle,
     Ok((p, k))
 }
 /// Generate deterministically from a salt and clear links, also returning all chain ends.
+///
+/// For test vectors and tests only. The salt and links must be uniformly random and
+/// secret, or anyone can derive the key at once; use [`generate`], which draws them
+/// from the operating system.
+#[doc(hidden)]
 pub fn generate_from(
     n: u32,
     m: u64,

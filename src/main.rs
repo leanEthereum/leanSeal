@@ -7,7 +7,7 @@ use std::{
     path::Path,
     time::Instant,
 };
-const USAGE:&str="usage: leanseal <command> [options]\n\nSender:\n  gen -o SECRET (-m STEPS | -d DELAY) [-n CHAINS] [-b BYTES]\n        build a puzzle in advance and keep it, with its key, in SECRET\n  encrypt -o ENVELOPE (-s SECRET | -m STEPS | -d DELAY) [-i MESSAGE] [--secret-out FILE]\n        encrypt MESSAGE (default stdin) under a stored or freshly built puzzle\n  key SECRET            print the key, to open an envelope early\n\nReceiver:\n  solve FILE...         solve puzzles (envelopes or bare puzzles), one thread each,\n                        saving progress to FILE.ckpt; print each key\n  open ENVELOPE (-k KEY | -s SECRET | --solve) [-o MESSAGE]\n        check the key and the tag, then write the message (default stdout)\n  info FILE             describe a puzzle, envelope, secret or checkpoint\n\nMeasurement:\n  bench [latency | throughput | build | attack | all]\n  selftest              check every backend against plain SHA-256, then a round trip\n  vectors               print the test vectors as JSON\n\nPuzzle options:\n  -n, --chains N        chains (default 16)\n  -m, --steps M         hash steps per chain, e.g. 2^28\n  -d, --delay T         or: choose m for a delay of T (90, 10m, 2h) ...\n      --step-ns L       ... against a solver taking L ns per step (default: this machine)\n  -b, --link-bytes B    link width (default 24; see SPEC.md section 8)\n  -j, --threads J       build threads (default: all cores)\n  -q, --quiet\n\nBackends: set LEANSEAL_BACKEND=portable|armv8-sha2|x86-sha-ni to override.\n";
+const USAGE:&str="usage: leanseal <command> [options]\n\nSender:\n  gen -o SECRET (-m STEPS | -d DELAY) [-n CHAINS] [-b BYTES]\n        build a puzzle in advance and keep it, with its key, in SECRET\n  encrypt -o ENVELOPE (-s SECRET | -m STEPS | -d DELAY) [-i MESSAGE] [--secret-out FILE]\n        encrypt MESSAGE (default stdin) under a stored or freshly built puzzle\n  key SECRET            print the key, to open an envelope early\n\nReceiver:\n  solve FILE...         solve puzzles (envelopes or bare puzzles), one thread each,\n                        saving progress to FILE.ckpt; print each key\n  open ENVELOPE (-k KEY | -s SECRET | --solve) [-o MESSAGE]\n        check the key and the tag, then write the message (default stdout).\n        KEY is 64 hex digits, a file holding them, or - for stdin. Other local\n        users can read command-line arguments, so pass an unpublished key in a\n        file or on stdin\n  info FILE             describe a puzzle, envelope, secret or checkpoint\n\nMeasurement:\n  bench [latency | throughput | build | attack | all]\n  selftest              check every backend against plain SHA-256, then a round trip\n  vectors               print the test vectors as JSON\n\nPuzzle options:\n  -n, --chains N        chains (default 16)\n  -m, --steps M         hash steps per chain, e.g. 2^28\n  -d, --delay T         or: choose m for a delay of T (90, 10m, 2h) ...\n      --step-ns L       ... against a solver taking L ns per step (default: this machine)\n  -b, --link-bytes B    link width (default 24; see SPEC.md section 8)\n  -j, --threads J       build threads (default: all cores)\n  -q, --quiet\n\nBackends: set LEANSEAL_BACKEND=portable|armv8-sha2|x86-sha-ni to override.\n";
 
 enum CliError {
     Message(String, i32),
@@ -738,8 +738,20 @@ fn run_jobs(
                 }
             }
             Some(Err(e)) => {
+                let resumed_from = j.checkpoint.as_ref().filter(|_| j.resumed);
                 let e = Failure::code(&j.path, *e);
-                eprintln!("leanseal: {e}");
+                match resumed_from {
+                    // Nothing authenticates a checkpoint, so a damaged one also
+                    // ends here; do not report the puzzle as malformed.
+                    Some(ck) if e.code == Some(Error::Puzzle) => eprintln!(
+                        "leanseal: {}: the solve resumed from {} does not yield the committed key; \
+                         the checkpoint may be damaged. Remove it, or pass --no-checkpoint, and \
+                         solve from the start before concluding that the puzzle is malformed",
+                        j.path.display(),
+                        ck.display()
+                    ),
+                    _ => eprintln!("leanseal: {e}"),
+                }
                 rc = e.exit_code();
             }
             Some(Ok(_)) if !quiet => {
@@ -795,7 +807,7 @@ fn read_key(arg: &OsStr) -> CliResult<[u8; 32]> {
     if let Some(k) = arg.to_str().and_then(|s| unhex(s).ok()) {
         return Ok(k);
     }
-    let bad = || usage("-k takes 64 hex digits or a file holding them");
+    let bad = || usage("-k takes 64 hex digits, a file holding them, or - for stdin");
     let mut data = read_file(arg).map_err(|_| bad())?;
     let result = if data.len() < 80 {
         std::str::from_utf8(&data)
@@ -838,6 +850,11 @@ fn open(args: &[OsString], be: Backend, stop: u64, ready: Option<&Path>) -> CliR
     {
         return Err(usage(
             "open takes one ENVELOPE and exactly one of -k KEY, -s SECRET, --solve",
+        ));
+    }
+    if a.pos[0] == "-" && keyarg == Some(OsStr::new("-")) {
+        return Err(usage(
+            "the envelope and the key cannot both come from stdin",
         ));
     }
     let mut j = load_job(&a.pos[0], solve && checkpoints)?;

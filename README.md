@@ -41,20 +41,20 @@ leanSeal implements the chained-hash puzzle of Mahmoody, Moran and Vadhan (CRYPT
 
 The sender therefore waits `m` steps on `n` cores, and everyone else waits `n·m` steps. The message is encrypted and authenticated with HMAC-SHA256 under the key.
 
-## Headline numbers
+## Reference parameters and performance
 
-Reference puzzle: a 30-second lock with `n = 16` chains of `m = 2^29` steps and 24-byte links.
+The figures below are for the reference puzzle: a 30-second lock with `n = 16` chains of `m = 2^29` steps and 24-byte links. Measured figures come from a MacBook Air with an Apple M4 (10 CPU cores, fanless).
 
 | Quantity | Value | Basis |
 |---|---|---|
 | Delay against the assumed attacker | 30 s | Assumes one chained SHA-256 every 3.5 ns, 3.7 times faster than the fastest published hardware design |
 | Chance that an attacker with the Bitcoin network's hash rate derives the key early | at most about 2<sup>−117</sup> | Proved in the random-oracle model |
-| Building the puzzle, Apple M4 laptop, all CPU cores | about 21 s | Measured; can be done before the transaction exists |
+| Building the puzzle, all CPU cores | about 21 s | Scaled from measurement; can be done before the transaction exists |
 | Opening with the revealed key | 12 ms | Measured; command-line tool, end to end |
-| Opening without the key, one laptop core | about 3 min 21 s | Measured |
+| Opening without the key, one CPU core | about 3 min 21 s | Scaled from measurement |
 | Added to a transaction | 512 B, or 152 B with precomputed single-chain puzzles | Exact |
 
-The build and solve times are half those measured for a one-minute puzzle; both scale linearly with the delay. See [benchmarks](docs/benchmarks.md) for the measurements and [the security model](docs/security.md) for the assumptions.
+The build and solve times are half those measured for a one-minute puzzle, since both scale linearly with the delay. See [benchmarks](docs/benchmarks.md) for the measurements and [the security model](docs/security.md) for the assumptions.
 
 ## Quick start
 
@@ -72,7 +72,7 @@ Seal a message and open it both ways:
 ```sh
 leanseal gen -d 30s --step-ns 3.5 -o tx.secret    # build a 30-second puzzle in advance
 leanseal encrypt -s tx.secret -i tx.bin -o tx.env # seal the message under it
-leanseal open tx.env -k "$(leanseal key tx.secret)" -o out.bin   # fast path: the sender's key
+leanseal key tx.secret | leanseal open tx.env -k - -o out.bin   # fast path: the sender's key
 leanseal open tx.env --solve -o out.bin           # fallback: solve the puzzle
 ```
 

@@ -84,6 +84,12 @@ leanseal open tx.env --solve -o tx.bin
 leanseal solve a.env b.env c.env
 ```
 
+`-k` takes the key as 64 hex digits, as a file holding them, or as `-` to read it from standard input. Other local users can read a command's arguments while it runs, so pass a key that is not yet published in a file or on standard input:
+
+```sh
+leanseal key tx.secret | leanseal open tx.env -k - -o tx.bin
+```
+
 `leanseal info FILE` describes any leanSeal file: a puzzle, an envelope, a secret or a checkpoint.
 
 ### Puzzle options

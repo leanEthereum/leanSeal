@@ -150,6 +150,14 @@ fn round_trip_grid() -> TestResult {
     Ok(())
 }
 #[test]
+fn generation_in_several_blocks_matches_solving() -> TestResult {
+    // Generation runs each chain in blocks of 2^22 steps; solving runs it in one call.
+    let (p, key) = build(2, (1 << 22) + 3, 24)?;
+    let mut cur = p.cursor();
+    assert_eq!(p.solve(&mut cur, Backend::best()?, 0, |_| false)?, key);
+    Ok(())
+}
+#[test]
 fn threaded_determinism_and_masks() -> TestResult {
     let mut rng = TestRng::new(b"determinism");
     let mut salt = [0; 16];

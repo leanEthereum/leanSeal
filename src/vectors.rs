@@ -37,6 +37,8 @@ pub fn generate_vectors() -> Result<String> {
         (5, 100, 12, 33),
         (8, 1000, 7, 100),
         (16, 64, 12, 64),
+        // The default link width, with the reference number of chains.
+        (16, 50, 24, 48),
     ];
     let mut out = String::from("{\n  \"spec\": \"leanseal v1\",\n  \"cases\": [\n");
     let mut built = Vec::new();
@@ -112,7 +114,7 @@ pub fn generate_vectors() -> Result<String> {
         field(&mut out, "state", &state, ", ");
         field(&mut out, "acc", &ca, ", ");
         field(&mut out, "hex", &ckpt, "}}");
-        out.push_str(if k < 6 { ",\n" } else { "\n" });
+        out.push_str(if k + 1 < cases.len() { ",\n" } else { "\n" });
         built.push(Built {
             p,
             key,

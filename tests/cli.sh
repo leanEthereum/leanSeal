@@ -29,6 +29,8 @@ printf 'the vote is 7 to 2' > msg
 "$CS" encrypt -q -s sec -i msg -o env
 KEY=$("$CS" key sec)
 "$CS" open env -k "$KEY" -o out1 && cmp msg out1
+printf '%s\n' "$KEY" | "$CS" open env -k - -o out1s && cmp msg out1s || fail "open with the key on stdin"
+expect_exit 2 "$CS" open - -k - < env
 "$CS" open env -s sec -o out2 && cmp msg out2
 "$CS" open env --solve -q -o out3 && cmp msg out3
 SOLVED=$("$CS" solve -q env | cut -d' ' -f1)
@@ -131,6 +133,15 @@ cp long.ckpt saved.ckpt
 set +e; "$CS" open long --solve -q >> long.ckpt 2>/dev/null; code=$?; set -e
 [ "$code" = 2 ] || fail "open with stdout on the checkpoint exited $code, wanted 2"
 cmp -s long.ckpt saved.ckpt || fail "open changed the checkpoint that stdout pointed at"
+# A damaged checkpoint state is not authenticated: the solve fails the key
+# check, and the message must point at the checkpoint, not at the puzzle.
+cp long dmg && cp long.ckpt dmg.ckpt
+printf '\377' | dd of=dmg.ckpt bs=1 seek=60 conv=notrunc 2>/dev/null
+set +e; "$CS" solve -q dmg > /dev/null 2> log; code=$?; set -e
+[ "$code" = 1 ] || fail "solve from a damaged checkpoint exited $code, wanted 1"
+grep -q "checkpoint may be damaged" log || fail "damaged checkpoint reported as a malformed puzzle"
+"$CS" solve -q --no-checkpoint dmg > /dev/null || fail "solve from the start after a damaged checkpoint"
+rm -f dmg dmg.ckpt
 "$CS" solve long > keys 2> log
 grep -q resuming log || fail "solve did not resume"
 [ "$(cut -d' ' -f1 keys)" = "$("$CS" key slong)" ] || fail "resumed solve key"
