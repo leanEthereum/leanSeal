@@ -13,7 +13,7 @@ contract SealedAccount {
 
     receive() external payable {}
 
-    function run(address target, bytes calldata data) external returns (bytes memory) {
+    function run(address target, bytes calldata data) external {
         require(msg.sender == inbox, "only inbox");
         (bool ok, bytes memory ret) = target.call(data);
         if (!ok) {
@@ -21,6 +21,5 @@ contract SealedAccount {
                 revert(add(ret, 32), mload(ret))
             }
         }
-        return ret;
     }
 }

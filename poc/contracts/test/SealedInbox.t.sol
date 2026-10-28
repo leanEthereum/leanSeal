@@ -6,7 +6,33 @@ import {SealedInbox} from "../src/SealedInbox.sol";
 import {SealedAccount} from "../src/SealedAccount.sol";
 import {Token} from "../src/demo/Token.sol";
 import {Pool} from "../src/demo/Pool.sol";
+import {LeanSeal} from "../src/LeanSeal.sol";
 import {Seal} from "./Seal.sol";
+
+contract Burner {
+    function burn() external pure {
+        assembly {
+            for {} 1 {} {}
+        }
+    }
+}
+
+contract ReentryProbe {
+    SealedInbox public immutable inbox;
+    bool public accepted;
+    bool public wasExecuting;
+    uint256 public hits;
+
+    constructor(SealedInbox i) {
+        inbox = i;
+    }
+
+    function ping() external {
+        hits++;
+        wasExecuting = inbox.executing();
+        (accepted,) = address(inbox).call(abi.encodeCall(SealedInbox.execute, (new bytes[](1))));
+    }
+}
 
 contract SealedInboxTest is Test {
     uint256 constant DEPOSIT = 0.01 ether;
@@ -31,11 +57,11 @@ contract SealedInboxTest is Test {
         puzzle = vm.parseJsonBytes(json, ".cases[4].puzzle");
         key = vm.parseJsonBytes32(json, ".cases[4].key");
 
-        inbox = new SealedInbox(DEPOSIT, WINDOW);
+        inbox = new SealedInbox(DEPOSIT, 0.002 ether, WINDOW, 1_000_000, 10_000_000, 4096);
         account = new SealedAccount(address(inbox));
         a = new Token("A");
         b = new Token("B");
-        pool = new Pool(a, b);
+        pool = new Pool(a, b, address(inbox));
         a.mint(address(this), 1000 ether);
         b.mint(address(this), 1000 ether);
         a.approve(address(pool), type(uint256).max);
@@ -75,13 +101,13 @@ contract SealedInboxTest is Test {
         assertEq(alice.balance, 1 ether, "deposit refunded");
 
         vm.expectRevert(SealedInbox.OutsideWindow.selector);
-        inbox.execute(slot, new bytes[](2));
+        inbox.execute(new bytes[](2));
 
         vm.roll(slot + WINDOW + 1);
         bytes[] memory envs = new bytes[](2);
         (envs[0], envs[1]) = (e0, e1);
         vm.prank(keeper);
-        inbox.execute(slot, envs);
+        inbox.execute(envs);
 
         // Alice was first in the committed order, so she got the better price.
         uint256 outAlice = b.balanceOf(alice);
@@ -97,7 +123,7 @@ contract SealedInboxTest is Test {
 
         vm.roll(slot + WINDOW + 1);
         bytes[] memory envs = new bytes[](1);
-        inbox.execute(slot, envs);
+        inbox.execute(envs);
         (,,, SealedInbox.State st,,,,) = inbox.tickets(id);
         assertEq(uint8(st), uint8(SealedInbox.State.Missed));
         assertEq(alice.balance, 1 ether - DEPOSIT, "deposit forfeited");
@@ -108,7 +134,7 @@ contract SealedInboxTest is Test {
         vm.expectEmit(true, false, false, true);
         emit SealedInbox.Executed(id, true, true);
         inbox.forceOpen(id, key, e);
-        assertEq(solver.balance, DEPOSIT, "solver paid");
+        assertEq(solver.balance, 0.002 ether, "solver paid");
         assertGt(b.balanceOf(alice), 0, "executed late");
     }
 
@@ -117,14 +143,14 @@ contract SealedInboxTest is Test {
         uint64 slot = uint64(block.number);
         uint256 id = submit(alice, e);
         vm.roll(slot + WINDOW + 1);
-        inbox.execute(slot, new bytes[](1));
+        inbox.execute(new bytes[](1));
         vm.roll(slot + 50);
         vm.prank(solver);
         vm.expectEmit(true, false, false, true);
         emit SealedInbox.Executed(id, false, true);
         inbox.forceOpen(id, key, e);
         assertEq(b.balanceOf(alice), 0);
-        assertEq(solver.balance, DEPOSIT, "solver paid even when expired");
+        assertEq(solver.balance, 0.002 ether, "solver paid even when expired");
     }
 
     function testRejectsWrongKeyAndLateReveal() public {
@@ -152,7 +178,7 @@ contract SealedInboxTest is Test {
         vm.roll(slot + WINDOW + 1);
         bytes[] memory envs = new bytes[](2);
         (envs[0], envs[1]) = (junk, good);
-        inbox.execute(slot, envs);
+        inbox.execute(envs);
         assertGt(b.balanceOf(alice), 0);
     }
 
@@ -166,6 +192,208 @@ contract SealedInboxTest is Test {
         bytes[] memory envs = new bytes[](1);
         envs[0] = sealSwap(90 ether, 100); // same key, different transaction
         vm.expectRevert(SealedInbox.WrongEnvelope.selector);
-        inbox.execute(slot, envs);
+        inbox.execute(envs);
+    }
+
+    function ticketState(uint256 id) internal view returns (SealedInbox.State st) {
+        (,,, st,,,,) = inbox.tickets(id);
+    }
+
+    function ready(bytes memory e) internal returns (uint256 id, bytes[] memory envs) {
+        uint64 slot = uint64(block.number);
+        id = submit(alice, e);
+        vm.roll(slot + 1);
+        inbox.reveal(id, key);
+        vm.roll(slot + 3);
+        envs = new bytes[](1);
+        envs[0] = e;
+    }
+
+    function testUndelegatedSenderDoesNotBlockSlot() public {
+        bytes memory e = sealSwap(10 ether, 100);
+        uint256 bad = submit(bob, e);
+        uint256 good = submit(alice, e);
+        vm.etch(bob, hex"");
+        vm.roll(block.number + 1);
+        inbox.reveal(bad, key);
+        inbox.reveal(good, key);
+        vm.roll(block.number + 2);
+        bytes[] memory envs = new bytes[](2);
+        envs[0] = e;
+        envs[1] = e;
+        assertEq(inbox.execute(envs), 2);
+        assertGt(b.balanceOf(alice), 0);
+        assertEq(inbox.pendingReveals(), 0);
+    }
+
+    function testUnderfundedExecuteKeepsTicket() public {
+        (uint256 id, bytes[] memory envs) = ready(sealSwap(10 ether, 100));
+        (bool ok, bytes memory err) = address(inbox).call{gas: 300_000}(abi.encodeCall(SealedInbox.execute, (envs)));
+        assertFalse(ok);
+        assertEq(bytes4(err), SealedInbox.InsufficientGas.selector);
+        assertEq(uint8(ticketState(id)), uint8(SealedInbox.State.Revealed));
+        assertEq(inbox.cursor(), 0);
+        assertEq(inbox.execute(envs), 1);
+        assertGt(b.balanceOf(alice), 0);
+    }
+
+    function testOversizedGasRejected() public {
+        bytes memory e = sealSwap(1 ether, 100);
+        vm.expectRevert(SealedInbox.GasTooHigh.selector);
+        inbox.submit{value: DEPOSIT}(e, 1_000_001);
+    }
+
+    function testSlotGasBudget() public {
+        bytes memory e = sealSwap(1 ether, 100);
+        for (uint256 i; i < 10; i++) {
+            inbox.submit{value: DEPOSIT}(e, 1_000_000);
+        }
+        vm.expectRevert(SealedInbox.SlotFull.selector);
+        inbox.submit{value: DEPOSIT}(e, 1);
+    }
+
+    function testBatchProgressAcrossCalls() public {
+        bytes memory e = sealSwap(10 ether, 100);
+        uint256 i0 = submit(alice, e);
+        uint256 i1 = submit(bob, e);
+        vm.roll(block.number + 1);
+        inbox.reveal(i0, key);
+        inbox.reveal(i1, key);
+        vm.roll(block.number + 2);
+        bytes[] memory envs = new bytes[](2);
+        envs[0] = e;
+        envs[1] = e;
+        // Enough to deliver the first allowance, but not both reserves.
+        uint256 processed = inbox.execute{gas: 700_000}(envs);
+        assertEq(processed, 1);
+        assertEq(inbox.cursor(), 1);
+        assertEq(uint8(ticketState(i1)), uint8(SealedInbox.State.Revealed));
+        envs = new bytes[](1);
+        envs[0] = e;
+        assertEq(inbox.execute(envs), 1);
+        assertEq(inbox.head(), 1);
+        assertEq(inbox.cursor(), 0);
+        assertGt(b.balanceOf(alice), b.balanceOf(bob));
+    }
+
+    function testMalformedEnvelopeRejectedAtSubmit() public {
+        bytes memory e = abi.encodePacked(bytes8(0), puzzle);
+        vm.expectRevert(LeanSeal.Format.selector);
+        inbox.submit{value: DEPOSIT}(e, 200_000);
+        e = sealSwap(1 ether, 100);
+        e[0] = 0;
+        vm.expectRevert(LeanSeal.Format.selector);
+        inbox.submit{value: DEPOSIT}(e, 200_000);
+        vm.expectRevert(SealedInbox.EnvelopeTooLarge.selector);
+        inbox.submit{value: DEPOSIT}(new bytes(4097), 200_000);
+    }
+
+    function testOutOfSpecParametersRejected() public {
+        bytes32 ctx =
+            bytes32(abi.encodePacked(uint8(1), uint8(1), uint16(0), uint32(1), uint64((1 << 48) + 1), bytes16(0)));
+        bytes memory p = abi.encodePacked(bytes4("LSPZ"), ctx, LeanSeal.commitment(ctx, key), bytes1(0));
+        bytes memory e = Seal.seal(p, key, bytes16(0), hex"abcdef");
+        vm.expectRevert(LeanSeal.Format.selector);
+        inbox.submit{value: DEPOSIT}(e, 200_000);
+    }
+
+    function testSlotsExecuteInOrder() public {
+        bytes memory e0 = sealSwap(10 ether, 100);
+        bytes memory e1 = sealSwap(10 ether, 100);
+        uint256 id0 = submit(alice, e0);
+        vm.roll(block.number + 1);
+        uint256 id1 = submit(bob, e1);
+        inbox.reveal(id0, key);
+        vm.roll(block.number + 1);
+        inbox.reveal(id1, key);
+        vm.roll(block.number + 3);
+        bytes[] memory envs = new bytes[](1);
+        envs[0] = e1;
+        vm.expectRevert(SealedInbox.WrongEnvelope.selector);
+        inbox.execute(envs);
+        envs[0] = e0;
+        inbox.execute(envs);
+        envs[0] = e1;
+        inbox.execute(envs);
+        assertGt(b.balanceOf(alice), b.balanceOf(bob));
+        assertEq(inbox.head(), inbox.queueLength());
+    }
+
+    function testRevealedSwapCannotBeFrontRun() public {
+        (, bytes[] memory envs) = ready(sealSwap(10 ether, 100));
+        vm.prank(bob);
+        vm.expectRevert("locked");
+        pool.swap(true, 50 ether, 0);
+        vm.expectRevert("locked");
+        pool.addLiquidity(1, 1);
+        inbox.execute(envs);
+        vm.prank(bob);
+        pool.swap(true, 50 ether, 0);
+        assertFalse(inbox.locked());
+    }
+
+    function testForceOpenPaysOnlyBounty() public {
+        bytes memory e = sealSwap(10 ether, 100);
+        uint256 id = submit(alice, e);
+        vm.roll(block.number + 3);
+        inbox.execute(new bytes[](1));
+        vm.prank(alice);
+        inbox.forceOpen(id, key, e);
+        assertEq(alice.balance, 1 ether - DEPOSIT + inbox.bounty());
+        assertEq(inbox.burned(), DEPOSIT - inbox.bounty());
+        assertEq(address(inbox).balance, inbox.burned());
+    }
+
+    function testUnderfundedForceOpenKeepsTicket() public {
+        bytes memory e = sealSwap(10 ether, 100);
+        uint256 id = submit(alice, e);
+        vm.roll(block.number + 3);
+        inbox.execute(new bytes[](1));
+        (bool ok,) = address(inbox).call{gas: 300_000}(abi.encodeCall(SealedInbox.forceOpen, (id, key, e)));
+        assertFalse(ok);
+        assertEq(uint8(ticketState(id)), uint8(SealedInbox.State.Missed));
+        vm.prank(solver);
+        inbox.forceOpen(id, key, e);
+    }
+
+    function testGasBurnerDoesNotBlockFollowingTicket() public {
+        Burner burner = new Burner();
+        bytes memory bad = Seal.seal(
+            puzzle,
+            key,
+            bytes16(uint128(123)),
+            abi.encode(address(burner), abi.encodeCall(Burner.burn, ()), uint64(100))
+        );
+        bytes memory good = sealSwap(10 ether, 100);
+        vm.prank(bob);
+        uint256 id0 = inbox.submit{value: DEPOSIT}(bad, 1_000_000);
+        uint256 id1 = submit(alice, good);
+        vm.roll(block.number + 1);
+        inbox.reveal(id0, key);
+        inbox.reveal(id1, key);
+        vm.roll(block.number + 2);
+        bytes[] memory envs = new bytes[](2);
+        envs[0] = bad;
+        envs[1] = good;
+        assertEq(inbox.execute{gas: 3_000_000}(envs), 2);
+        assertGt(b.balanceOf(alice), 0);
+        assertFalse(inbox.executing());
+    }
+
+    function testReentrantExecutionCannotAdvanceQueue() public {
+        ReentryProbe probe = new ReentryProbe(inbox);
+        bytes memory e = Seal.seal(
+            puzzle,
+            key,
+            bytes16(uint128(123)),
+            abi.encode(address(probe), abi.encodeCall(ReentryProbe.ping, ()), uint64(100))
+        );
+        (, bytes[] memory envs) = ready(e);
+        inbox.execute(envs);
+        assertEq(probe.hits(), 1);
+        assertTrue(probe.wasExecuting());
+        assertFalse(probe.accepted());
+        assertFalse(inbox.executing());
+        assertEq(inbox.head(), 1);
     }
 }

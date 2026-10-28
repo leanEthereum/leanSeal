@@ -28,7 +28,7 @@ library LeanSeal {
         uint256 b = uint8(w0[5]);
         uint256 n = uint32(bytes4(w0 << 64));
         uint256 m = uint64(bytes8(w0 << 96));
-        if (b == 0 || b > 32 || n == 0 || m == 0) revert Format();
+        if (b == 0 || b > 32 || n == 0 || n > 2 ** 20 || m == 0 || m > 2 ** 48 || n * m > 2 ** 60) revert Format();
         return 68 + n * b;
     }
 
@@ -53,11 +53,19 @@ library LeanSeal {
         (, commit) = header(env, 8);
     }
 
-    /// Check the key and tag of envelope `env`, then decrypt it.
-    function open(bytes memory env, bytes32 key) internal view returns (bytes memory out) {
+    /// Validate canonical structure and bounds, not puzzle solvability.
+    function validate(bytes memory env) internal pure {
         if (env.length < 8 || bytes8(_word(env, 0)) != ENVELOPE_MAGIC) revert Format();
         uint256 at = 8 + puzzleLen(env, 8);
         if (env.length < at + 52) revert Format();
+        uint256 len = uint32(bytes4(_word(env, at + 16)));
+        if (len > 2 ** 24 || env.length != at + 52 + len) revert Format();
+    }
+
+    /// Check the key and tag of envelope `env`, then decrypt it.
+    function open(bytes memory env, bytes32 key) internal view returns (bytes memory out) {
+        validate(env);
+        uint256 at = 8 + puzzleLen(env, 8);
         (bytes32 ctx, bytes32 commit) = header(env, 8);
         if (commitment(ctx, key) != commit) revert Commit();
         bytes16 nonce = bytes16(_word(env, at));
@@ -94,8 +102,10 @@ library LeanSeal {
 
     function _slice(bytes memory data, uint256 at, uint256 len) private view returns (bytes memory out) {
         out = new bytes(len);
+        bool ok;
         assembly {
-            pop(staticcall(gas(), 4, add(add(data, 32), at), len, add(out, 32), len))
+            ok := staticcall(gas(), 4, add(add(data, 32), at), len, add(out, 32), len)
         }
+        if (!ok) revert Format();
     }
 }

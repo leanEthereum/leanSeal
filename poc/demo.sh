@@ -21,7 +21,13 @@ BIN=node/target/release/sealnet
 
 anvil --port $PORT --hardfork prague --block-time 2 --silent &
 PIDS=($!)
-trap 'kill ${PIDS[@]} 2>/dev/null' EXIT
+cleanup() {
+  kill "${PIDS[@]}" 2>/dev/null || true
+  for pid in "${PIDS[@]}"; do wait "$pid" 2>/dev/null || true; done
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 sleep 1
 
 out=$(cd contracts && DEPLOYER=$DEPLOYER ALICE=$ALICE SEARCHER=$SEARCHER \

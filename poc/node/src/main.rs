@@ -69,9 +69,13 @@ impl Args {
 /// Integers, also written as powers of two (2^20).
 fn parse_num(v: &str) -> Result<u64> {
     match v.split_once('^') {
-        Some(("2", e)) => Ok(1u64 << e.parse::<u32>()?),
+        Some(("2", e)) => 1u64.checked_shl(e.parse::<u32>()?).ok_or_else(|| eyre!("power of two out of u64 range: {v}")),
         _ => Ok(v.parse()?),
     }
+}
+
+fn checked_u32(value: u64, name: &str) -> Result<u32> {
+    u32::try_from(value).map_err(|_| eyre!("--{name} exceeds uint32 range"))
 }
 
 async fn connect(a: &Args) -> Result<(DynProvider, Address)> {
@@ -99,10 +103,15 @@ async fn wait_block_above(p: &DynProvider, n: u64) -> Result<u64> {
 }
 
 async fn send(a: &Args) -> Result<()> {
+    let gas = checked_u32(a.num("gas", 300_000)?, "gas")?;
+    let n = checked_u32(a.num("chains", 8)?, "chains")?;
+    let m = a.num("steps", 1 << 26)?;
+    if n == 0 || n > 1 << 20 || m == 0 || m > 1 << 48 || u64::from(n).checked_mul(m).is_none_or(|v| v > 1 << 60) {
+        bail!("--chains/--steps out of range: require 1 <= chains <= 2^20, 1 <= steps <= 2^48, chains*steps <= 2^60");
+    }
     let (p, _) = connect(a).await?;
     let to = a.addr("to")?;
     let data: Bytes = a.get("data")?.parse()?;
-    let gas = a.num("gas", 300_000)?;
     if a.flag("plain") {
         let tip = 2_000_000_000;
         let tx = TransactionRequest::default()
@@ -117,7 +126,6 @@ async fn send(a: &Args) -> Result<()> {
         return Ok(());
     }
     let inbox = SealedInbox::new(a.addr("inbox")?, p.clone());
-    let (n, m) = (a.num("chains", 8)? as u32, a.num("steps", 1 << 26)?);
     let t = Instant::now();
     let (puzzle, key) = leanseal::generate(n, m, 24, &leanseal::GenOptions::default())?;
     log("sender", format!("built a puzzle of {n}x{m} steps in {:.1?}", t.elapsed()));
@@ -129,7 +137,7 @@ async fn send(a: &Args) -> Result<()> {
     let envelope = leanseal::seal(&puzzle, &key, &nonce, &plain)?;
     let deposit = inbox.deposit().call().await?;
     let r = inbox
-        .submit(envelope.clone().into(), gas as u32)
+        .submit(envelope.clone().into(), gas)
         .value(deposit)
         .send()
         .await?
@@ -193,68 +201,110 @@ async fn keeper(a: &Args) -> Result<()> {
     let addr = a.addr("inbox")?;
     let inbox = SealedInbox::new(addr, p.clone());
     let window = inbox.revealWindow().call().await?;
-    let mut slot = a.num("from", p.get_block_number().await?)?;
-    log("keeper", format!("executing slots from block {slot}, window {window} blocks"));
+    log("keeper", format!("reconciling on-chain queue, window {window} blocks"));
     loop {
-        let head = p.get_block_number().await?;
-        while slot + window < head {
-            if inbox.slotLength(slot).call().await? > U256::ZERO && !inbox.slotDone(slot).call().await? {
+        let result: Result<()> = async {
+            loop {
+                let head = inbox.head().call().await?;
+                if head == inbox.queueLength().call().await? { break; }
+                let slot = inbox.slotAt(head).call().await?;
+                if slot + window >= p.get_block_number().await? { break; }
+                let cursor = usize::try_from(inbox.cursor().call().await?)?;
                 let envs: Vec<Bytes> = sealed_events(&p, addr, (2, U256::from(slot)))
-                    .await?
-                    .into_iter()
-                    .map(|e| e.envelope)
-                    .collect();
-                let r = inbox.execute(slot, envs).send().await?.get_receipt().await?;
+                    .await?.into_iter().skip(cursor).take(32).map(|e| e.envelope).collect();
+                if envs.is_empty() { bail!("missing envelopes for slot {slot}"); }
+                // Partial progress is supported even when overhead exceeds one block.
+                let r = inbox.execute(envs).gas(25_000_000).send().await?.get_receipt().await?;
+                if !r.status() { bail!("execute reverted; will reconcile again"); }
                 for l in r.inner.logs() {
                     if let Ok(e) = SealedInbox::Executed::decode_log(&l.inner) {
                         log("keeper", format!("slot {slot}: executed #{} in order (ok: {})", e.id, e.ok));
                     } else if let Ok(e) = SealedInbox::Missed::decode_log(&l.inner) {
-                        log("keeper", format!("slot {slot}: #{} missed its reveal, deposit forfeited", e.id));
+                        log("keeper", format!("slot {slot}: #{} missed its reveal, penalty burned", e.id));
                     }
                 }
             }
-            slot += 1;
-        }
+            Ok(())
+        }.await;
+        if let Err(e) = result { log("keeper", format!("retrying after error: {e}")); }
         tokio::time::sleep(POLL).await;
     }
+}
+
+async fn solve_ticket(p: &DynProvider, addr: Address, id: U256, max_steps: u64) -> Result<()> {
+    let inbox = SealedInbox::new(addr, p.clone());
+    if inbox.tickets(id).call().await?.state != 4 {
+        log("solver", format!("#{id} already handled; lost race or historical event"));
+        return Ok(());
+    }
+    let ev = sealed_events(p, addr, (1, id)).await?.pop().ok_or_else(|| eyre!("no envelope for #{id}"))?;
+    let env = leanseal::Envelope::decode(&ev.envelope)?;
+    let puzzle = env.puzzle.clone();
+    if u64::from(puzzle.n()).checked_mul(puzzle.m()).is_none_or(|steps| steps > max_steps) {
+        log("solver", format!("skipping #{id}: exceeds --max-steps {max_steps}"));
+        return Ok(());
+    }
+    // Recheck after fetching the envelope, immediately before doing expensive work.
+    if inbox.tickets(id).call().await?.state != 4 {
+        log("solver", format!("#{id}: lost race before solving"));
+        return Ok(());
+    }
+    log("solver", format!("solving #{id}: {}x{} sequential steps", puzzle.n(), puzzle.m()));
+    let t = Instant::now();
+    let key = tokio::task::spawn_blocking(move || {
+        let mut cur = puzzle.cursor();
+        puzzle.solve(&mut cur, leanseal::backend::Backend::best()?, 0, |_| false)
+    }).await??;
+    log("solver", format!("found the key of #{id} in {:.1?}", t.elapsed()));
+    if inbox.tickets(id).call().await?.state != 4 {
+        log("solver", format!("#{id}: lost race before claiming"));
+        return Ok(());
+    }
+    let claim = async {
+        let r = inbox.forceOpen(id, key.into(), ev.envelope).gas(5_000_000).send().await?.get_receipt().await?;
+        if !r.status() { bail!("claim reverted"); }
+        for l in r.inner.logs() {
+            if let Ok(e) = SealedInbox::Executed::decode_log(&l.inner) {
+                log("solver", format!("forced #{} open in block {}; executed late: {}", e.id, r.block_number.unwrap_or_default(), e.ok));
+            }
+        }
+        Ok(())
+    }.await;
+    if let Err(e) = claim {
+        if inbox.tickets(id).call().await?.state != 4 {
+            log("solver", format!("#{id}: lost claim race"));
+        } else { return Err(e); }
+    }
+    Ok(())
 }
 
 async fn solver(a: &Args) -> Result<()> {
     let (p, _) = connect(a).await?;
     let addr = a.addr("inbox")?;
-    let inbox = SealedInbox::new(addr, p.clone());
-    let mut from = p.get_block_number().await?;
-    log("solver", "watching for missed reveals");
+    let mut from = a.num("from", 0)?;
+    let max_steps = a.num("max-steps", 1 << 34)?;
+    log("solver", format!("watching for missed reveals from block {from}"));
     loop {
-        let head = p.get_block_number().await?;
-        if head >= from {
-            let f = Filter::new()
-                .address(addr)
-                .event_signature(SealedInbox::Missed::SIGNATURE_HASH)
-                .from_block(from)
-                .to_block(head);
-            for l in p.get_logs(&f).await? {
-                let id = SealedInbox::Missed::decode_log(&l.inner)?.data.id;
-                let ev = sealed_events(&p, addr, (1, id)).await?.pop().ok_or_else(|| eyre!("no envelope for #{id}"))?;
-                let env = leanseal::Envelope::decode(&ev.envelope)?;
-                let puzzle = env.puzzle.clone();
-                log("solver", format!("solving #{id}: {}x{} sequential steps", puzzle.n(), puzzle.m()));
-                let t = Instant::now();
-                let key = tokio::task::spawn_blocking(move || {
-                    let mut cur = puzzle.cursor();
-                    puzzle.solve(&mut cur, leanseal::backend::Backend::best()?, 0, |_| false)
-                })
-                .await??;
-                log("solver", format!("found the key of #{id} in {:.1?}", t.elapsed()));
-                let r = inbox.forceOpen(id, key.into(), ev.envelope.clone()).send().await?.get_receipt().await?;
-                for l in r.inner.logs() {
-                    if let Ok(e) = SealedInbox::Executed::decode_log(&l.inner) {
-                        log("solver", format!("forced #{} open in block {}; executed late: {}", e.id, r.block_number.unwrap_or_default(), e.ok));
+        let scan: Result<()> = async {
+            let head = p.get_block_number().await?;
+            if head >= from {
+                let f = Filter::new().address(addr)
+                    .event_signature(SealedInbox::Missed::SIGNATURE_HASH).from_block(from).to_block(head);
+                for l in p.get_logs(&f).await? {
+                    match SealedInbox::Missed::decode_log(&l.inner) {
+                        Ok(ev) => {
+                            if let Err(e) = solve_ticket(&p, addr, ev.id, max_steps).await {
+                                log("solver", format!("#{}: {e}; continuing", ev.id));
+                            }
+                        }
+                        Err(e) => log("solver", format!("invalid event: {e}; continuing")),
                     }
                 }
+                from = head + 1;
             }
-            from = head + 1;
-        }
+            Ok(())
+        }.await;
+        if let Err(e) = scan { log("solver", format!("scan error: {e}; retrying")); }
         tokio::time::sleep(POLL).await;
     }
 }
@@ -267,7 +317,35 @@ async fn sandwich(a: &Args) -> Result<()> {
     let size = U256::from(a.num("size", 50)?) * U256::from(10u64).pow(U256::from(18));
     log("searcher", "watching the public mempool");
     let mut seen = std::collections::HashSet::new();
+    let mut from = p.get_block_number().await?;
     loop {
+        let head = p.get_block_number().await?;
+        if head >= from {
+            let f = Filter::new().address(inbox_addr)
+                .event_signature(SealedInbox::Revealed::SIGNATURE_HASH).from_block(from).to_block(head);
+            for l in p.get_logs(&f).await? {
+                let attack: Result<()> = async {
+                    let ev = SealedInbox::Revealed::decode_log(&l.inner)?;
+                    let sealed = sealed_events(&p, inbox_addr, (1, ev.id)).await?.pop().ok_or_else(|| eyre!("missing envelope"))?;
+                    let env = leanseal::Envelope::decode(&sealed.envelope)?;
+                    let plain = env.open(&ev.key.0)?;
+                    let (target, data, _) = <(Address, Bytes, u64)>::abi_decode_params(&plain)?;
+                    if target != pool_addr { return Ok(()); }
+                    let Ok(call) = Pool::swapCall::abi_decode(&data) else { return Ok(()) };
+                    println!("[searcher] revealed swap #{}: {} in, front-running it", ev.id, fmt_eth(call.amountIn));
+                    let receipt = pool.swap(call.aToB, size, U256::ZERO).gas(300_000)
+                        .send().await?.get_receipt().await?;
+                    if !receipt.status() {
+                        println!("[searcher] front-run of revealed #{} reverted: pool locked until the batch executes", ev.id);
+                    } else {
+                        println!("[searcher] sandwich landed");
+                    }
+                    Ok(())
+                }.await;
+                if let Err(e) = attack { log("searcher", format!("revealed attack error: {e}")); }
+            }
+            from = head + 1;
+        }
         let block = p.get_block_by_number(BlockNumberOrTag::Pending).full().await?;
         let txs = block.map(|b| b.transactions.into_transactions_vec()).unwrap_or_default();
         for tx in txs {
@@ -332,5 +410,19 @@ async fn main() -> Result<()> {
         "sandwich" => sandwich(&a).await,
         "delegate" => delegate(&a).await,
         _ => bail!("unknown command {cmd}"),
+    }
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::*;
+    #[test]
+    fn rejects_wrapped_options() {
+        assert!(parse_num("2^64").is_err());
+        assert!(parse_num("2^4294967296").is_err());
+        assert!(checked_u32(parse_num("4294967297").unwrap(), "chains").is_err());
+        assert!(checked_u32(parse_num("4294967296").unwrap(), "gas").is_err());
+        assert_eq!(parse_num("2^26").unwrap(), 1 << 26);
+        assert_eq!(checked_u32(u32::MAX.into(), "gas").unwrap(), u32::MAX);
     }
 }

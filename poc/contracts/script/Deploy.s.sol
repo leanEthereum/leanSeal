@@ -16,11 +16,11 @@ contract Deploy is Script {
         uint256 searcher = vm.envUint("SEARCHER");
 
         vm.startBroadcast(deployer);
-        SealedInbox inbox = new SealedInbox(0.01 ether, 2);
+        SealedInbox inbox = new SealedInbox(0.01 ether, 0.002 ether, 2, 1_000_000, 10_000_000, 4096);
         SealedAccount account = new SealedAccount(address(inbox));
         Token a = new Token("A");
         Token b = new Token("B");
-        Pool pool = new Pool(a, b);
+        Pool pool = new Pool(a, b, address(inbox));
         a.mint(vm.addr(deployer), 1000 ether);
         b.mint(vm.addr(deployer), 1000 ether);
         a.approve(address(pool), type(uint256).max);
