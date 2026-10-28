@@ -31,8 +31,7 @@ The puzzle is the chained-hash puzzle of Mahmoody, Moran and Vadhan~\cite{MMV11}
   \end{tabularx}
 \end{table}
 
-\needspace{5\baselineskip}
-\paragraph{Our results.}
+\subsection{Our results}\label{sec:results}
 \begin{enumerate}[label=\arabic*.,leftmargin=1.5em]
   \item \textbf{A design.} We describe how \leanseal serves as the decryption path of an encrypted mempool (\cref{sec:mempool}). It uses the same data as LUCID and the hybrid design, a ciphertext bound to a commitment to its key, so its puzzle fits them as a fallback that needs no third party.
   \item \textbf{A concrete security proof.} In the random-oracle model, a classical attacker derives the key even one oracle round early with probability at most about $2^{-117}$ for a 30-second lock against the hash rate of the whole Bitcoin network (\cref{sec:security}). Turning rounds into seconds needs one hardware parameter, the fastest time for one chained SHA-256, which we set at 3.5\,ns, 3.7 times faster than the fastest published design that we know of.
