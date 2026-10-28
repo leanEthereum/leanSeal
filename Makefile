@@ -19,7 +19,11 @@ bench: all
 vectors: all
 	$(LEANSEAL) vectors > tests/vectors.json
 
+paper:
+	$(MAKE) -C paper
+	cp paper/leanseal.pdf docs/leanseal.pdf
+
 clean:
 	$(CARGO) clean
 
-.PHONY: all test bench vectors clean
+.PHONY: all test bench vectors paper clean

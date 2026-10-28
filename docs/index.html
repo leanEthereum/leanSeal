@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>leanSeal: Time-Lock Encryption from Hashes Alone</title>
+<title>leanSeal: A Hash-Based Time-Lock Fallback for Encrypted Mempools</title>
 <meta name="description" content="leanSeal seals a message so that anyone can open it after a fixed amount of sequential SHA-256 work, or at once when the sender reveals the key. No trusted setup, no committee, nothing but a hash function.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -87,7 +87,8 @@ svg .rule { stroke: var(--rule); }
     <p class="authors">Vitalik Buterin · Quang Dao · Justin Drake</p>
     <nav class="actions" aria-label="Project links">
 
-      <a class="btn primary" href="guide.html">Read the guide</a>
+      <a class="btn primary" href="leanseal.pdf">Read the paper</a>
+      <a class="btn" href="guide.html">Earlier guide</a>
       <a class="btn" href="https://github.com/leanEthereum/leanSeal/blob/main/SPEC.md">Specification</a>
       <a class="btn" href="https://github.com/leanEthereum/leanSeal">Code</a>
     </nav>
@@ -138,19 +139,20 @@ svg .rule { stroke: var(--rule); }
       <text x="305" y="258" font-size="11" class="muted">K hashes every end y₁, …, yₙ, so no chain can be left out.</text>
     </svg>
     </div>
-    <figcaption>The sender knows every link and runs its chains side by side. Anyone else must run them one after another, because each chain's starting link is hidden under the end of the previous chain. The sender's parallel width becomes everyone else's delay, and the puzzle is just the <i>n</i> links.</figcaption>
+    <figcaption>The sender knows every link and runs its chains side by side. Anyone else must run them one after another, because each chain's starting link is hidden under the end of the previous chain. The sender's parallel width becomes everyone else's delay, and the puzzle consists of the <i>n</i> links.</figcaption>
   </figure>
 
   <section class="metrics" aria-label="The reference puzzle">
-    <div class="metric"><div class="v">60 s</div><div class="k">delay against an attacker computing one chained SHA-256 every 3.5 ns</div></div>
+    <div class="metric"><div class="v">30 s</div><div class="k">reference delay, against an attacker computing one chained SHA-256 every 3.5 ns</div></div>
     <div class="metric"><div class="v">512 B</div><div class="k">added to a sealed transaction: a 452-byte puzzle and 60 bytes of encryption</div></div>
-    <div class="metric"><div class="v">42.1 s</div><div class="k">to build the puzzle on an Apple M4 laptop CPU, before the transaction exists</div></div>
+    <div class="metric"><div class="v">21 s</div><div class="k">to build the puzzle on an Apple M4 laptop CPU, before the transaction exists</div></div>
     <div class="metric"><div class="v">12.0 ms</div><div class="k">to open it when the sender reveals the key, the normal case</div></div>
   </section>
 
   <h2>Why</h2>
-  <p>In an encrypted mempool, block builders order transactions before they can read them. The hard part is opening them afterwards. A committee holding a decryption key asks you to trust that no threshold of its members colludes. Letting the sender reveal its own key lets the sender walk away from an ordering it dislikes. Efficient time-lock puzzles avoid both, but rely on RSA or class groups, which need a trusted setup or fall to quantum computers.</p>
-  <p>leanSeal uses nothing but SHA-256. Behind commit–reveal, users reveal their keys as usual and nothing is ever solved; a user who stays silent cannot cancel a transaction with a well-formed puzzle, because anyone can force it open.</p>
+  <p>In an encrypted mempool, block builders order transactions before they can read them. The transactions must then be opened. A committee that holds a decryption key must be trusted not to collude and to stay online. A sender that reveals its own key can withhold it when the ordering is unfavorable. Efficient time-lock puzzles avoid both, but rely on RSA or class groups, which need a trusted setup or are broken by quantum computers.</p>
+  <p>leanSeal uses nothing but SHA-256. The sender still reveals its own key after the ordering, and in the normal case no puzzle is solved. If the sender withholds the key, anyone can solve the attached puzzle and recover it, so the transaction of a sender that built its puzzle honestly is disclosed even if that sender goes offline or changes its mind.</p>
+  <p>Disclosure is not execution. By the time a puzzle is solved, the transaction may have expired or may revert, so withholding can still delay or cancel it, and a deposit forfeited on a missed reveal must deter that, as in plain commit–reveal. No efficient check of puzzles is known either, so a sender that plans to withhold can attach a puzzle that never opens. The paper sets out what the puzzle adds over commit–reveal with the same deposit.</p>
 
   <h2>How it works</h2>
   <ol class="steps">
@@ -161,11 +163,20 @@ svg .rule { stroke: var(--rule); }
 
   <h2>What we show</h2>
   <div class="cols">
-    <div class="card"><h3>A proved delay</h3>In the random-oracle model, a classical attacker derives the key even one oracle round early with probability about 2<sup>−116</sup> for a one-minute lock, against the hash rate of the whole Bitcoin network.</div>
-    <div class="card"><h3>An affordable sender</h3>The sender's work is unavoidable for hash-only time locks, but it can be paid in advance: a wallet can keep a stock of puzzles and build more while idle or charging.</div>
+    <div class="card"><h3>A proved delay</h3>In the random-oracle model, a classical attacker derives the key even one oracle round early with probability about 2<sup>−117</sup> for a 30-second lock, against the hash rate of the whole Bitcoin network.</div>
+    <div class="card"><h3>Sender work done in advance</h3>The sender's work is unavoidable for hash-only time locks, but a puzzle does not depend on the transaction it seals, so a wallet can keep a stock of puzzles and build more while idle.</div>
     <div class="card"><h3>A clear limit</h3>Delay encryption, where one computation per slot opens every transaction sent to it, is impossible from hashes alone when the setup is cheap. Per-transaction puzzles are what hashes can do.</div>
     <div class="card"><h3>A specified implementation</h3>A versioned byte format with test vectors, a Rust implementation with SHA-256 hardware backends, and an independent Python implementation that agrees on every vector.</div>
   </div>
+
+  <h2>Limitations</h2>
+  <ul>
+    <li><b>Disclosure, not execution.</b> The puzzle guarantees that a withheld transaction becomes public, not that it executes in its committed position.</li>
+    <li><b>Puzzles are not checked.</b> Only a well-formed puzzle opens to its key, and no efficient check is known.</li>
+    <li><b>The delay rests on a hardware estimate.</b> The 30 seconds assume an attacker 6.6 times faster than one laptop core, which needs 3.3 minutes. A faster attacker shortens the delay; restoring it multiplies every sender's work.</li>
+    <li><b>Recovery work is per puzzle.</b> Independent puzzles share no work, so each withheld key costs one full solve.</li>
+    <li><b>Excluded transactions become readable too.</b> Expiry prevents execution, not disclosure. The secrecy is temporary: it protects against front-running, not the lasting confidentiality that shielded transfers need.</li>
+  </ul>
 
   <h2>Status</h2>
   <div class="status">leanSeal is a research proof of concept. The proof of the delay theorem has not been machine-checked or reviewed by a third party, and no human cryptographer has reviewed the code. Post-quantum security is proved for the idealized chained puzzle; a bound for leanSeal's exact encoding against quantum attackers is open. Do not protect anything valuable with it yet.</div>
@@ -173,7 +184,7 @@ svg .rule { stroke: var(--rule); }
   <h2>Try it</h2>
 <pre>git clone https://github.com/leanEthereum/leanSeal && cd leanSeal
 make && make test
-target/release/leanseal gen -n 16 -m 2^30 -o tx.secret     # build a puzzle
+target/release/leanseal gen -n 16 -m 2^29 -o tx.secret     # build a 30-second puzzle
 target/release/leanseal encrypt -s tx.secret -i tx.bin -o tx.env
 target/release/leanseal open tx.env --solve -o tx.bin      # anyone, after n·m steps</pre>
 
