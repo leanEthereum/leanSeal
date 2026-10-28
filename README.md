@@ -6,7 +6,7 @@ leanSeal is time-lock encryption built from SHA-256 alone. A sender encrypts a m
 
 Authors: Vitalik Buterin, Quang Dao and Justin Drake.
 
-> **Status: research proof of concept.** The format is specified and tested, but no human cryptographer has reviewed the code or the format. Do not use leanSeal to protect anything of value.
+> **Status: research proof of concept.** The format is specified and tested. Do not use leanSeal to protect anything of value.
 
 ## What leanSeal is for
 

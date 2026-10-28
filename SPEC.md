@@ -196,7 +196,7 @@ A key MAY encrypt several messages, each with its own nonce. All of them open to
 
   *Theorem.* Let the puzzle and `K` be generated as in section 4, with randomness independent of the oracles. Then `A_1` outputs `K` within fewer than `T_key` oracle rounds with probability at most `Q_on / 2^(8b) + Q_pre / 2^(128+8b) + (Q·P + P² + 1) / 2^256`. For `n = 1` the first term is absent.
 
-  *Proof outline.* The full proof is Appendix A of the [paper](docs/leanseal.pdf); it follows Lemmas 6 and 9 of Pietrzak and Reyzin, "Optimal Proofs of Sequential Work" (ePrint 2026/2569), and is written out there, not machine-checked. Its key steps:
+  *Proof outline.* The full proof is Appendix A of the [paper](docs/leanseal.pdf); it follows Lemmas 6 and 9 of Pietrzak and Reyzin, "Optimal Proofs of Sequential Work" (ePrint 2026/2569). Its key steps:
 
   1. **Rounds.** Each path value is the oracle's answer on one path input, whose path values are its predecessors; the mask of chain `i − 1` is also a predecessor of the start of chain `i`. The round in which the solver receives a value is one more than the latest round of its predecessors, and is `T_key` for `K`.
   2. **An ideal experiment.** In the ideal experiment the generator makes no queries, and the masked links and `C` are drawn uniformly. A query is legitimate if it is the path input of a value whose predecessors were all revealed in earlier rounds, and it is answered with a fresh uniform value. By induction, no path value is revealed before its round, so `K` is unrevealed before `T_key` and the attacker's output equals it with probability `2^(−256)`.

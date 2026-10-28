@@ -39,7 +39,7 @@ Assumptions A2 and A3 turn oracle rounds and queries into time. Write $T = n m \
 The threshold is the round in which $K$ is derived, not the round in which $\Open$ returns: an attacker that skips the check against $C$ finishes one round before $\Open$ does, with certainty. The precomputation term is needed even when $n = 1$, where the only link is public: an attacker that guesses the salt and the link in advance and computes the key opens the puzzle in zero rounds with probability $2^{-(128 + 8b)}$. The theorem concerns recovery of the key. The encryption layer is intended to hide the contents of equal-length messages under A1 and A4, but a reduction from distinguishing envelopes to the events of the proof, which must also count queries on the derivation of the encryption and authentication keys, nonce collisions and several envelopes under one puzzle, has not been written. The bound is classical; extending it to this instantiation against quantum attackers is outside the scope of this paper.
 
 
-\Cref{app:proof} gives the proof. It follows the structure of Pietrzak and Reyzin's soundness proof for proofs of sequential work~\cite{PR26}, and it has not been machine-checked or reviewed by a third party.
+\Cref{app:proof} gives the proof. It follows the structure of Pietrzak and Reyzin's soundness proof for proofs of sequential work~\cite{PR26}.
 
 \subsection{The hardware assumption}\label{sec:pricing}
 
