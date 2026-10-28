@@ -15,7 +15,7 @@ Encryption uses only SHA-256. For a fresh 16-byte nonce, subkeys $k_{\mathrm{enc
   \label{tab:measurements}
   \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}Xrr@{}}
     \toprule
-    Measured & M4 Air & M4 Max \\
+    \colhead{Measured} & \colhead{M4 Air} & \colhead{M4 Max} \\
     \midrule
     One chain step, one CPU core & 23.2\,ns & 24.1\,ns \\
     Total CPU hash rate, independent chains & 461\,M/s & 867\,M/s \\
@@ -43,7 +43,7 @@ The delay depends only on $N$; the number of chains $n$ sets how many cores can 
   \label{tab:chains}
   \begin{tabular}{@{}rrrl@{}}
     \toprule
-    Chains $n$ & Puzzle & Added to a transaction & Building on a 10-core laptop \\
+    \colhead{Chains $n$} & \colhead{Puzzle} & \colhead{Added to a transaction} & \colhead{Building on a 10-core laptop} \\
     \midrule
     16 & 452\,B & 512\,B & on demand, about 21\,s \\
     4 & 164\,B & 224\,B & on demand, about 50\,s \\

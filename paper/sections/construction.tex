@@ -8,7 +8,9 @@ The notation follows the specification (\texttt{SPEC.md} in the repository~\cite
 \[
   F_i(s) = \SHA\bigl(s \cat \salt \cat \mathsf{be32}(i)\bigr),
 \]
-where $\salt$ is 16 random bytes drawn for each puzzle. Its input is exactly 52 bytes, so one step is one SHA-256 compression, and no other hash in the format has an input of that length. A puzzle has $n$ chains of $m$ steps and $b$-byte links; the specification bounds the parameters, in particular $m \le 2^{48}$. The reference parameters are $n = 16$, $m = 2^{29}$ and $b = 24$: $N = 2^{33}$ steps, a 30-second delay at 3.5\,ns per step, and a 452-byte puzzle. The measurements of \cref{sec:costs} use the one-minute puzzle, with $m = 2^{30}$.
+where $\salt$ is 16 random bytes drawn for each puzzle. Its input is exactly 52 bytes, so one step is one SHA-256 compression, and no other hash in the format has an input of that length.
+
+A puzzle has $n$ chains of $m$ steps and $b$-byte links; the specification bounds the parameters, in particular $m \le 2^{48}$. The reference parameters are $n = 16$, $m = 2^{29}$ and $b = 24$: $N = 2^{33}$ steps, a 30-second delay at 3.5\,ns per step, and a 452-byte puzzle. The measurements of \cref{sec:costs} use the one-minute puzzle, with $m = 2^{30}$.
 
 \label{sec:rom}We prove the delay in the random-oracle model~\cite{MMV11}: each chain step and each labelled hash is an independent random function that anyone can query, and an attacker is charged only for its queries. Time after publication is counted in \emph{oracle rounds}: all queries in a round are chosen before any answer from that round arrives. A bound in rounds therefore holds however much parallel hardware the attacker has; turning rounds into seconds takes the hardware assumption of \cref{sec:security}.
 

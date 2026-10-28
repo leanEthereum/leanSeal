@@ -8,7 +8,7 @@ This section treats the puzzle as a black box and describes how it supports an e
   \label{tab:props}
   \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}X@{}}
     \toprule
-    Property & \leanseal \\
+    \colhead{Property} & \colhead{\leanseal} \\
     \midrule
     Contents hidden until the order is fixed & yes, for $T$ after exposure, under the hardware assumption \\
     Every included transaction opens & yes, without the sender or anyone else, if the puzzle is well formed, which is not checked (\cref{sec:withholding}) \\
@@ -33,7 +33,9 @@ This section treats the puzzle as a black box and describes how it supports an e
 \end{enumerate}
 
 
-A ciphertext bound to a commitment to its key is the structure that recent Ethereum designs already use. In LUCID (EIP-8184)~\cite{LUCID}, a sealed transaction's ticket goes on chain and carries a commitment $\mathsf{keccak256}(k_{\mathrm{dem}})$ to the key and a hash of the ciphertext envelope, which itself travels off chain. The key is released by a key publisher of the sender's choice, possibly the sender itself, and the publication fee is paid only when decryption succeeds. In the hybrid design of Wagner and Ma~\cite{WM25}, the sender puts $\mathrm{Enc}_k(\mathit{tx})$ and $\mathsf{H}(k)$ on chain and gives a committee a threshold encryption of $k$, so that either the sender or the committee can open. \leanseal fits both as a fallback that needs no third party: the sender is its own key publisher, and the puzzle replaces the committee as the party that discloses the key when the sender does not. Inside LUCID only the puzzle is used. It travels in the envelope's opaque header with $K$ as $k_{\mathrm{dem}}$; its SHA-256 commitment $C$ is separate from the ticket's keccak commitment, and the cipher stays ChaCha20-Poly1305. The puzzle provides eventual disclosure only: executing a transaction whose key is disclosed minutes late needs an additional protocol rule, which LUCID does not have.
+A ciphertext bound to a commitment to its key is the structure that recent Ethereum designs already use. In LUCID (EIP-8184)~\cite{LUCID}, a sealed transaction's ticket goes on chain and carries a commitment $\mathsf{keccak256}(k_{\mathrm{dem}})$ to the key and a hash of the ciphertext envelope, which itself travels off chain. The key is released by a key publisher of the sender's choice, possibly the sender itself, and the publication fee is paid only when decryption succeeds. In the hybrid design of Wagner and Ma~\cite{WM25}, the sender puts $\mathrm{Enc}_k(\mathit{tx})$ and $\mathsf{H}(k)$ on chain and gives a committee a threshold encryption of $k$, so that either the sender or the committee can open. \leanseal fits both as a fallback that needs no third party: the sender is its own key publisher, and the puzzle replaces the committee as the party that discloses the key when the sender does not.
+
+Inside LUCID, only the puzzle is used. It travels in the envelope's opaque header with $K$ as $k_{\mathrm{dem}}$; its SHA-256 commitment $C$ is separate from the ticket's keccak commitment, and the cipher stays ChaCha20-Poly1305. The puzzle provides eventual disclosure only: executing a transaction whose key is disclosed minutes late needs an additional protocol rule, which LUCID does not have.
 
 The reveal should be due as soon as the ordering is fixed. In LUCID, the builder's bid commits to the tickets of slot $n$, keys are released once the beacon block carrying the bid is attested and must be seen before the payload-timeliness committee votes, and the decrypted transactions execute at the top of block $n+1$, before any ordinary transaction. A short window shortens the delay the puzzle must provide and limits what a sender learns before deciding whether to reveal (\cref{sec:withholding}).
 
@@ -43,7 +45,9 @@ The attacker's clock starts at \emph{exposure}, $\texp$, the first moment anyone
 \[
   \torder - \texp < N \cdot \lattacker,
 \]
-with a margin for propagation. A forced opening finishes $N \cdot \lsolver$ after a solver starts, which on a laptop core is minutes after the deadline. If the attacker is $k$ times faster than assumed, the delay shrinks $k$-fold; once it falls below $\torder - \texp$, the contents can be read before the order is fixed. Privacy before ordering is then lost and content-dependent MEV becomes possible again, for any party that can solve the puzzle in time.
+with a margin for propagation. A forced opening finishes $N \cdot \lsolver$ after a solver starts, which on a laptop core is minutes after the deadline.
+
+If the attacker is $k$ times faster than assumed, the delay shrinks $k$-fold. Once it falls below $\torder - \texp$, the contents can be read before the order is fixed: privacy before ordering is lost, and content-dependent MEV becomes possible again for any party that can solve the puzzle in time.
 
 \subsection{Choosing the delay}\label{sec:choosing-t}
 
@@ -55,7 +59,7 @@ The delay should be the smallest that covers the time from exposure to the fixed
   \label{tab:choosing-t}
   \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{2.7cm}rrr@{}}
     \toprule
-    Setting & Time to fix the order & Delay $T$ & Building & Forced opening \\
+    \colhead{Setting} & \colhead{Time to fix the order} & \colhead{Delay $T$} & \colhead{Building} & \colhead{Forced opening} \\
     \midrule
     Rollup with a sequencer & 1--2\,s & 15\,s & 11\,s & 1.7\,min \\
     Ethereum with enshrined PBS; puzzle sent to the builder, or published after a commitment & up to one slot, 12\,s & \textbf{30\,s} & 21\,s & 3.3\,min \\

@@ -4,7 +4,9 @@
 We compare the real experiment with an ideal one in which the values $\Open$ computes are drawn only when the attacker reaches them, show that the ideal experiment is sequential, and bound the probability that the two differ.
 
 \emph{Path values.}
-For each chain $i$, let $y_{i,0} = s_i = \Hstart(\ctx, i, x_i)$ and $y_{i,k} = F_i(y_{i,k-1})$ for $k = 1, \dots, m$, so that $y_{i,m} = y_i$. Let $\mu_i = \Hmask(\ctx, y_i)$ for $i < n$, $a_0 = \ctx$, $a_i = \Hacc(a_{i-1}, y_i)$, $K = \Hkey(\ctx, a_n)$ and $C = \Hcommit(\ctx, K)$. These $P$ values are the \emph{path values}. Each path value $v$ is the answer on one \emph{path input} $u(v)$. The \emph{predecessors} of $v$ are the path values in $u(v)$, at most two; in addition, $\mu_{i-1}$ is a predecessor of $s_i$ for $i \ge 2$, since $x_i = z_{i-1} \oplus \trunc{\mu_{i-1}}{b}$. Let $\rho(v)$ be the oracle round in which $\Open$ receives $v$:
+For each chain $i$, let $y_{i,0} = s_i = \Hstart(\ctx, i, x_i)$ and $y_{i,k} = F_i(y_{i,k-1})$ for $k = 1, \dots, m$, so that $y_{i,m} = y_i$. Let $\mu_i = \Hmask(\ctx, y_i)$ for $i < n$, $a_0 = \ctx$, $a_i = \Hacc(a_{i-1}, y_i)$, $K = \Hkey(\ctx, a_n)$ and $C = \Hcommit(\ctx, K)$. These $P$ values are the \emph{path values}. Each path value $v$ is the answer on one \emph{path input} $u(v)$. The \emph{predecessors} of $v$ are the path values in $u(v)$, at most two; in addition, $\mu_{i-1}$ is a predecessor of $s_i$ for $i \ge 2$, since $x_i = z_{i-1} \oplus \trunc{\mu_{i-1}}{b}$.
+
+Let $\rho(v)$ be the oracle round in which $\Open$ receives $v$:
 \[
   \rho(s_i) = (i - 1)(m + 2) + 1, \qquad
   \rho(y_{i,k}) = \rho(s_i) + k, \qquad
