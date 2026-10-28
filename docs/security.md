@@ -33,6 +33,26 @@ where `Q = Q_pre + Q_on`, `P = n(m + 3) + 1` and `b` is the link width in bytes.
 
 Against an attacker making `R = 10^21` queries per second, about the Bitcoin network's hash rate, for the whole delay `T` (so `Q_on = R·T`), the bound with 24-byte links is about 2<sup>−117</sup> for a 30-second puzzle and 2<sup>−97</sup> for a one-year puzzle. The proof is written out but has not been machine-checked or independently reviewed.
 
+### Round counts: an example with three chains
+
+The bound compares the attacker with the honest solver round by round, where a round is one batch of parallel hash calls. The solver derives the key in round `T_key = n(m + 2) + 1` and checks it against the commitment `C` one round later; the sender needs `m + n + 3` rounds. A small case makes these counts easy to check. Take `n = 3` and `m = 2`, and number the chains from 1. The table gives the first round in which a solver without the key can hold each value (round 0 is publication):
+
+| Value | What it is | In the puzzle | Solver has it in round |
+|---|---|---|---|
+| `x_1` | link of chain 1 | yes | 0 |
+| `z_1`, `z_2` | masked links, `z_i = mask_i[0:b] ⊕ x_{i+1}` | yes | 0 |
+| `C` | commitment to the key | yes | 0 |
+| `s_1` | start of chain 1 | no | 1 |
+| `y_1` | end of chain 1, `m = 2` steps later | no | 3 |
+| `mask_1`, `a_1`, `x_2` | mask and accumulator from chain 1; `x_2 = z_1 ⊕ mask_1[0:b]` | no | 4 |
+| `s_2`, `y_2` | start and end of chain 2 | no | 5, 7 |
+| `mask_2`, `a_2`, `x_3` | mask and accumulator from chain 2; the link of chain 3 | no | 8 |
+| `s_3`, `y_3` | start and end of chain 3 | no | 9, 11 |
+| `a_3` | accumulator after chain 3 | no | 12 |
+| `K` | key, `TH(key, ctx ‖ a_3)` | no | 13 |
+
+So the solver derives `K` in round 13 = 3·(2 + 2) + 1 and checks it against `C` in round 14. Each chain costs `m` steps plus one round for its start and one for its mask and accumulator, which share a round. The sender, which drew all three links itself, needs 8 = 2 + 3 + 3 rounds: the three starts in round 1, the chains in rounds 2 and 3, the accumulator in rounds 4 to 6 with the masks alongside, then `K` and `C`. With the reference parameters these extra rounds are negligible next to the `n·m` chain steps. The only way to start chain 3 early is to guess `x_3`; with 24-byte links each guess is right with probability 2<sup>−192</sup>.
+
 ### Link width
 
 The link width enters the first two terms of the bound. With `n = 16` and the budget above:

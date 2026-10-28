@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sample recent Ethereum mainnet blocks and measure transaction sizes.
 
-Reproduces the Ethereum statistics quoted in the leanSeal paper and guide.
+Reproduces the Ethereum statistics quoted in the leanSeal paper.
 
     python3 -I bench/eth-sample.py [--rpc URL] [--last BLOCK] [--count 20] \
         --out bench-results/eth-sample.json

@@ -88,7 +88,7 @@ The examples assume `target/release` is on your `PATH`. The [usage guide](docs/u
 | [Security model](docs/security.md) | What leanSeal guarantees, what the delay rests on and what it does not do |
 | [Benchmarks](docs/benchmarks.md) | Measurements on Apple M4 laptops and an x86 server |
 | [Prototype mempool](poc/README.md) | An encrypted mempool on an EVM chain: sealed submission, ordered execution and forced opening |
-| [Project site](https://leanethereum.github.io/leanSeal/) | Overview, and the earlier long-form guide |
+| [Project site](https://leanethereum.github.io/leanSeal/) | Overview |
 
 ## License
 
