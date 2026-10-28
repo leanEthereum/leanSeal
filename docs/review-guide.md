@@ -12,7 +12,7 @@ The tests are extensive, but they share one blind spot. The Rust implementation 
 |---|---|---|
 | SHA-256 and HMAC are correct | NIST and RFC 4231 vectors ([tests/library.rs:20](../tests/library.rs#L20), [:59](../tests/library.rs#L59)); Python uses `hashlib` | — |
 | Every backend matches portable SHA-256 | Random comparison on 1–4 lanes ([tests/library.rs:79](../tests/library.rs#L79)); `selftest` in CI asserts which backend ran | — |
-| Rust implements the specification as Python reads it | Python recomputes every field of every vector ([ref/leanseal_ref.py:356](../ref/leanseal_ref.py#L356)); each side opens the other's envelopes ([tests/cross.sh](../tests/cross.sh)) | That the specification is right |
+| Rust implements the specification as Python reads it | Python recomputes every field of every vector ([ref/leanseal_ref.py:366](../ref/leanseal_ref.py#L366)); each side opens the other's envelopes ([tests/cross.sh](../tests/cross.sh)) | That the specification is right |
 | Decoders reject malformed input | Mutation tests ([tests/decode_props.rs:165](../tests/decode_props.rs#L165)) and four cargo-fuzz targets | — |
 | Round trips work | Grids of `n`, `m`, `b`; checkpoint stop and resume | Randomness quality, constant time, file permissions, the order of checks |
 
@@ -69,9 +69,9 @@ These are invisible to every test that compares outputs.
 
 | Location | What to check |
 |---|---|
-| [src/main.rs:606–608](../src/main.rs#L606-L608) | Each `encrypt` draws a fresh nonce from `getrandom`, so a secret reused for several envelopes never repeats a nonce. |
-| [src/runtime.rs:85–117](../src/runtime.rs#L85-L117) | Files are written to a new temporary file (`create_new`, so no symlink is followed), synced and renamed. Secret files get mode 0600. |
-| [src/main.rs:888–891](../src/main.rs#L888-L891) | `open` writes the message only after `Envelope::open` succeeds. |
+| [src/main.rs:607–609](../src/main.rs#L607-L609) | Each `encrypt` draws a fresh nonce from `getrandom`, so a secret reused for `q` envelopes repeats a 16-byte nonce with probability at most about `q² / 2^129`. |
+| [src/runtime.rs:82–114](../src/runtime.rs#L82-L114) | Files are written to a new temporary file (`create_new`, so no symlink is followed), synced and renamed. Secret files get mode 0600. |
+| [src/main.rs:896–899](../src/main.rs#L896-L899) | `open` writes the message only after `Envelope::open` succeeds. |
 | [src/secret.rs:4–7](../src/secret.rs#L4-L7) | Wiping is `fill(0)` followed by `black_box`: best effort, not guaranteed against compiler copies. |
 
 ### 6. The accelerated backends: [src/backend/](../src/backend/)

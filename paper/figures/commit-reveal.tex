@@ -19,7 +19,7 @@
     % Main path.
     \draw[arr] (wallet) -- node[lab, above] {$\mathrm{Enc}_K(\mathit{tx})$, puzzle,\\$C = \mathsf{H}(K)$}
                           node[lab, below, text=black!60] {fee paid\\in the clear} (builder);
-    \draw[arr] (builder) -- node[lab, above] {ordering\\final} (nodes);
+    \draw[arr] (builder) -- node[lab, above] {order\\fixed} (nodes);
     % Normal path: the user reveals K.
     \draw[arr, accent, line width=0.9pt]
       (wallet.north) .. controls (2.0,2.1) and (10.6,2.1) .. (nodes.north)
