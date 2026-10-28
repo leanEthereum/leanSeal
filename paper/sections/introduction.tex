@@ -14,7 +14,7 @@ The puzzle is the chained-hash puzzle of Mahmoody, Moran and Vadhan~\cite{MMV11}
 
 \input{figures/schedules}
 
-\begin{table}[t]
+\begin{table}[b]
   \centering\small
   \caption{The reference puzzle at a glance: a 30-second lock of $n = 16$ chains of $2^{29}$ SHA-256 steps with 24-byte links. Times are on an Apple M4 MacBook Air (\cref{sec:costs}); building and forced opening are half our measurements of the one-minute puzzle ($m = 2^{30}$, run with 32-byte links and the same chain work), since both are linear in the delay.}
   \label{tab:glance}
@@ -31,6 +31,7 @@ The puzzle is the chained-hash puzzle of Mahmoody, Moran and Vadhan~\cite{MMV11}
   \end{tabularx}
 \end{table}
 
+\needspace{5\baselineskip}
 \paragraph{Our results.}
 \begin{enumerate}[label=\arabic*.,leftmargin=1.5em]
   \item \textbf{A design.} We describe how \leanseal serves as the decryption path of an encrypted mempool (\cref{sec:mempool}). It uses the same data as LUCID and the hybrid design, a ciphertext bound to a commitment to its key, so its puzzle fits them as a fallback that needs no third party.
