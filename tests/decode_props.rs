@@ -1,11 +1,11 @@
 // Property test of the decoder invariants, on stable and without new
-// dependencies. The invariants and seeds are the fuzz crate's own modules,
-// included by path, so `cargo test` and `cargo fuzz` check the same things.
-#[path = "../fuzz/src/alloc_count.rs"]
+// dependencies. The invariants and seeds are shared with the fuzz crate,
+// which includes them by path, so `cargo test` and `cargo fuzz` check the same things.
+#[path = "support/alloc_count.rs"]
 mod alloc_count;
-#[path = "../fuzz/src/checks.rs"]
+#[path = "support/checks.rs"]
 mod checks;
-#[path = "../fuzz/src/seeds.rs"]
+#[path = "support/seeds.rs"]
 mod seeds;
 
 use leanseal::{Error, Puzzle, MAX_MSG, MAX_N};

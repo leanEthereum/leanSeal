@@ -17,6 +17,7 @@ include = [
     "/tests/*.rs",
     "/tests/*.sh",
     "/tests/vectors.json",
+    "/tests/support/*.rs",
     "/ref/leanseal_ref.py",
     "/Makefile",
     "/demo.sh",

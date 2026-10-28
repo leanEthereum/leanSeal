@@ -9,10 +9,7 @@ use std::{
     fs::{self, OpenOptions},
     io::{self, Read, Write},
     path::{Path, PathBuf},
-    sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 
@@ -320,17 +317,18 @@ pub struct SolveProgress {
     /// Elapsed seconds.
     pub elapsed: f64,
 }
-/// Solve one job per scoped thread, handling signals and periodic checkpoints.
+/// Solve one job per scoped thread, with periodic checkpoints. Setting `stop`
+/// stops every job and checkpoints it; the caller owns the flag, for example
+/// to set it from a signal handler installed before `ready` is created.
 /// The callback runs on the caller's thread.
 pub fn solve_jobs(
     jobs: &mut [SolveJob],
     backend: Backend,
+    stop: &AtomicBool,
     stop_after: u64,
     ready: Option<&Path>,
     mut progress: impl FnMut(&SolveProgress),
 ) -> io::Result<()> {
-    let stop = Arc::new(AtomicBool::new(false));
-    crate::signal::install(stop.clone())?;
     if let Some(path) = ready {
         let _ = OpenOptions::new()
             .write(true)
@@ -350,7 +348,6 @@ pub fn solve_jobs(
         let mut handles = Vec::new();
         let begin = Instant::now();
         for job in jobs.iter() {
-            let stop = &stop;
             match crate::thread::spawn(scope, move || {
                 crate::backend::fast_qos();
                 let t0 = Instant::now();
@@ -509,9 +506,10 @@ mod tests {
                 fs::write(job.checkpoint.as_ref().unwrap(), job.cursor.encode(&p)?)?;
                 jobs.push(SolveJob::load(&path, true)?);
             }
-            let failure =
-                crate::thread::fail_after(started, || solve_jobs(&mut jobs, be, 0, None, |_| {}))
-                    .unwrap_err();
+            let failure = crate::thread::fail_after(started, || {
+                solve_jobs(&mut jobs, be, &AtomicBool::new(false), 0, None, |_| {})
+            })
+            .unwrap_err();
             assert_eq!(failure.to_string(), "could not start 3 solver threads");
             for (i, job) in jobs.iter().enumerate() {
                 assert!(job.save_error.is_none());

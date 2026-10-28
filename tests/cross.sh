@@ -23,4 +23,9 @@ for b in 1 12 24 32; do
   $PY open c.env --key "$KEY" > out && cmp msg out || fail "Python open of a leanseal envelope, b=$b"
   [ "$($PY key c.sec)" = "$KEY" ] || fail "Python reads a leanseal secret, b=$b"
 done
+# The Python CLI refuses to write the secret over the envelope.
+if $PY encrypt --chains 2 --steps 10 --in msg --out same --secret-out ./same 2>/dev/null; then
+  fail "Python wrote the secret over the envelope"
+fi
+[ ! -e same ] || fail "Python left a file after refusing the secret path"
 echo "cross tests: ok"

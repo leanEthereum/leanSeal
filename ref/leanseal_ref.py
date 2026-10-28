@@ -291,6 +291,16 @@ def read_file(path):
         return stream.read()
 
 
+def same_file(a, b):
+    """True if paths a and b name the same file, through links or not."""
+    if os.path.realpath(a) == os.path.realpath(b):
+        return True
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
 def write_file(path, value, private=False):
     """Write through a new temporary file, then rename it over path.
 
@@ -483,6 +493,9 @@ def main():
             return check_vectors(args.file)
         if args.command == "encrypt":
             parameters(args.chains, args.steps, args.link_bytes)
+            # The secret written over the envelope would publish the key.
+            require(args.secret_out is None or not same_file(args.output, args.secret_out),
+                    "the secret file is the envelope file; choose another --secret-out")
             with open(args.input, "rb") as stream:
                 message = stream.read(MAX_MESSAGE + 1)
             require(len(message) <= MAX_MESSAGE, "message too long")

@@ -9,7 +9,6 @@ mod puzzle;
 pub mod rng;
 pub mod runtime;
 mod secret;
-mod signal;
 mod thread;
 pub mod vectors;
 pub use envelope::*;

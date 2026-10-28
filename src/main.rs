@@ -5,6 +5,7 @@ use std::{
     io::{self, IsTerminal, Write},
     os::unix::ffi::{OsStrExt, OsStringExt},
     path::Path,
+    sync::{atomic::AtomicBool, Arc},
     time::Instant,
 };
 const USAGE:&str="usage: leanseal <command> [options]\n\nSender:\n  gen -o SECRET (-m STEPS | -d DELAY) [-n CHAINS] [-b BYTES]\n        build a puzzle in advance and keep it, with its key, in SECRET\n  encrypt -o ENVELOPE (-s SECRET | -m STEPS | -d DELAY) [-i MESSAGE] [--secret-out FILE]\n        encrypt MESSAGE (default stdin) under a stored or freshly built puzzle\n  key SECRET            print the key, to open an envelope early\n\nReceiver:\n  solve FILE...         solve puzzles (envelopes or bare puzzles), one thread each,\n                        saving progress to FILE.ckpt; print each key\n  open ENVELOPE (-k KEY | -s SECRET | --solve) [-o MESSAGE]\n        check the key and the tag, then write the message (default stdout).\n        KEY is 64 hex digits, a file holding them, or - for stdin. Other local\n        users can read command-line arguments, so pass an unpublished key in a\n        file or on stdin\n  info FILE             describe a puzzle, envelope, secret or checkpoint\n\nMeasurement:\n  bench [latency | throughput | build | attack | all]\n  selftest              check every backend against plain SHA-256, then a round trip\n  vectors               print the test vectors as JSON\n\nPuzzle options:\n  -n, --chains N        chains (default 16)\n  -m, --steps M         hash steps per chain, e.g. 2^28\n  -d, --delay T         or: choose m for a delay of T (90, 10m, 2h) ...\n      --step-ns L       ... against a solver taking L ns per step (default: this machine)\n  -b, --link-bytes B    link width (default 24; see SPEC.md section 8)\n  -j, --threads J       build threads (default: all cores)\n  -q, --quiet\n\nBackends: set LEANSEAL_BACKEND=portable|armv8-sha2|x86-sha-ni to override.\n";
@@ -658,7 +659,14 @@ fn run_jobs(
     let show = !quiet && io::stderr().is_terminal();
     let count = jobs.len();
     let p = jobs.first().map(|j| (j.puzzle.n(), j.puzzle.m()));
-    solve_jobs(jobs, be, stop_after, ready, |s| {
+    // The solver checkpoints and stops on SIGINT or SIGTERM. The handlers are
+    // installed before the ready file appears and stay until the process exits.
+    let signalled = Arc::new(AtomicBool::new(false));
+    for sig in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+        signal_hook::flag::register(sig, signalled.clone())
+            .map_err(|e| Failure::io("signal handler", e))?;
+    }
+    solve_jobs(jobs, be, &signalled, stop_after, ready, |s| {
         if !show {
             return;
         }
@@ -901,8 +909,16 @@ fn open(args: &[OsString], be: Backend, stop: u64, ready: Option<&Path>) -> CliR
 fn print_puzzle(p: &Puzzle, be: Backend) -> CliResult<()> {
     let ns = benchmark::latency_ns(be, 0.1);
     let work = p.n() as f64 * p.m() as f64;
-    output(&format!("  chains n       {}\n  steps/chain m  {}\n  link bytes b   {}\n  salt           {}\n  commitment     {}\n  puzzle id      {}\n  puzzle size    {} bytes\n  work n*m       {} steps: {} here at {:.1} ns/step\n  last-link guess  each costs m steps, succeeds with chance 2^-{}\n",
-        p.n(),p.m(),p.b(),hex(p.salt()),hex(p.commitment()),hex(&p.id()),68+p.links().len(),fmt_si(work),fmt_duration(work*ns*1e-9),ns,8*u32::from(p.b())))
+    output(&format!("  chains n       {}\n  steps/chain m  {}\n  link bytes b   {}\n  salt           {}\n  commitment     {}\n  puzzle id      {}\n  puzzle size    {} bytes\n  work n*m       {} steps: {} here at {:.1} ns/step\n",
+        p.n(),p.m(),p.b(),hex(p.salt()),hex(p.commitment()),hex(&p.id()),68+p.links().len(),fmt_si(work),fmt_duration(work*ns*1e-9),ns))?;
+    // With one chain the only link is public, so there is no link to guess.
+    if p.n() > 1 {
+        output(&format!(
+            "  last-link guess  each costs m steps, succeeds with chance 2^-{}\n",
+            8 * u32::from(p.b())
+        ))?;
+    }
+    Ok(())
 }
 fn info(args: &[OsString], be: Backend) -> CliResult<i32> {
     if args.len() != 1 {

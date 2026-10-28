@@ -49,6 +49,13 @@ jobs:
         run: |
           sh tests/cli.sh
           sh tests/cross.sh
+      - name: Test the packaged crate
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          cargo package --no-verify --allow-dirty
+          mkdir pkg && tar xzf target/package/leanseal-*.crate -C pkg
+          cd pkg/leanseal-* && cargo test --release
 
   msrv:
     name: Build with MSRV
