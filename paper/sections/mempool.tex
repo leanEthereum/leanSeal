@@ -1,6 +1,26 @@
 \section{Sealing Transactions with \leanseal}\label{sec:mempool}
 
-This section treats the puzzle as a black box and describes how it supports an encrypted mempool. The sender runs $\Build$ to obtain a puzzle $Z$, which contains a commitment $C$, and a key $K$. Anyone can check a claimed key against $C$ with one hash. Anyone can also recover $K$ from $Z$, without the sender, with $N$ sequential hashes, which takes at least $T = N\ell$ seconds on the fastest hardware. \Cref{sec:construction,sec:security} construct the puzzle and prove this.
+This section treats the puzzle as a black box and describes how it supports an encrypted mempool. The sender runs $\Build$ to obtain a puzzle $Z$, which contains a commitment $C$, and a key $K$. Anyone can check a claimed key against $C$ with one hash. Anyone can also recover $K$ from $Z$, without the sender, with $N$ sequential hashes, which takes at least $T = N\ell$ seconds on the fastest hardware. \Cref{sec:construction,sec:security} construct the puzzle and prove this. \Cref{tab:props} lists the properties an encrypted mempool may want and what \leanseal provides; no known design provides all of them, and \cref{sec:comparison} compares the alternatives.
+
+\begin{table}[t]
+  \centering\small
+  \caption{Properties of an encrypted mempool, and what \leanseal provides.}
+  \label{tab:props}
+  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}X@{}}
+    \toprule
+    Property & \leanseal \\
+    \midrule
+    Contents hidden until the order is fixed & yes, for $T$ after exposure, under the hardware assumption \\
+    Every included transaction opens & yes, without the sender or anyone else, if the puzzle is well formed, which is not checked (\cref{sec:withholding}) \\
+    No free cancellation after seeing the order & no: withholding still delays or, with expiry, cancels execution; a deposit must deter it (\cref{sec:withholding}) \\
+    Excluded transactions stay private & no: they open after $T$ like any other (\cref{sec:noninclusion}) \\
+    Sender, fee and size hidden & no; the envelope is public and the size can be padded \\
+    Trusted parties or setup & none \\
+    Post-quantum & plausibly; proved for the idealized puzzle only (\cref{sec:attacks}) \\
+    Cost & 152 to 512 bytes per transaction, sender work proportional to $T$ paid in advance, no work for the network in the normal case (\cref{sec:costs}) \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
 
 \subsection{The flow}\label{sec:flow}
 
@@ -47,30 +67,6 @@ The delay should be the smallest that covers the time from exposure to the fixed
 \end{table}
 
 The last row shows why \leanseal needs an order that is fixed early. Waiting for today's finality makes every cost thirty times larger than in the reference setting, so a protocol either accepts that a reorganization exposes revealed transactions (\cref{sec:reorgs}) or relies on fast finality, which brings the delay back to the reference range. Public gossip remains affordable for a wait of one or two slots but not longer, so the puzzle should not wait in a public mempool.
-
-\subsection{What \leanseal provides}\label{sec:mempool-props}
-
-\Cref{tab:props} lists the properties an encrypted mempool may want and what \leanseal gives. No known design gives all of them; \cref{sec:comparison} compares the alternatives.
-
-\begin{table}[t]
-  \centering\small
-  \caption{Properties of an encrypted mempool, and what \leanseal provides.}
-  \label{tab:props}
-  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}X@{}}
-    \toprule
-    Property & \leanseal \\
-    \midrule
-    Contents hidden until the order is fixed & yes, for $T$ after exposure, under the hardware assumption \\
-    Every included transaction opens & yes, without the sender or anyone else, if the puzzle is well formed, which is not checked (\cref{sec:withholding}) \\
-    No free cancellation after seeing the order & no: withholding still delays or, with expiry, cancels execution; a deposit must deter it (\cref{sec:withholding}) \\
-    Excluded transactions stay private & no: they open after $T$ like any other (\cref{sec:noninclusion}) \\
-    Sender, fee and size hidden & no; the envelope is public and the size can be padded \\
-    Trusted parties or setup & none \\
-    Post-quantum & plausibly; proved for the idealized puzzle only (\cref{sec:attacks}) \\
-    Cost & 152 to 512 bytes per transaction, sender work proportional to $T$ paid in advance, no work for the network in the normal case (\cref{sec:costs}) \\
-    \bottomrule
-  \end{tabularx}
-\end{table}
 
 \subsection{A proof of concept}\label{sec:poc}
 
