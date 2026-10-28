@@ -14,7 +14,10 @@ For each chain $i$, let $y_{i,0} = s_i = \Hstart(\ctx, i, x_i)$ and $y_{i,k} = F
 Every path value $v$ other than $s_1$ satisfies $\rho(v) = 1 + \max_w \rho(w)$, the maximum taken over its predecessors $w$.
 
 \emph{The two experiments.}
-In the real experiment $\Real$, the oracles are random functions sampled lazily; $\Adv_0$ runs, $\Build$ runs, and $\Adv_1$ receives $Z$. The ideal experiment $\Ideal$ uses the same lazily sampled oracles, but $\Build$ makes no queries. It draws the salt and $x_1$ as before, and draws $z_1, \dots, z_{n-1}$ and $C$ uniformly. A query of $\Adv_1$ is \emph{legitimate} if, when it is submitted, it equals $u(v)$ for a path value $v$ whose predecessors have all been revealed; for $s_i$ with $i \ge 2$ this defines $x_i = z_{i-1} \oplus \trunc{\mu_{i-1}}{b}$. $\Ideal$ answers a legitimate query with $v$, drawing $v$ uniformly the first time ($C$ was drawn already), and marks $v$ revealed. It answers every other query, and all queries of $\Adv_0$, from the lazily sampled oracles. When $\Adv_1$ stops, $\Ideal$ draws the path values never revealed, which fixes the remaining links.
+In the real experiment $\Real$, the oracles are random functions sampled lazily; $\Adv_0$ runs, $\Build$ runs, and $\Adv_1$ receives $Z$. The ideal experiment $\Ideal$ uses the same lazily sampled oracles, but $\Build$ makes no queries. It draws the salt and $x_1$ as before, and draws $z_1, \dots, z_{n-1}$ and $C$ uniformly. A query of $\Adv_1$ is \emph{legitimate} if it equals $u(v)$ for a path value $v$ whose predecessors were all revealed before the query was submitted, that is, in earlier rounds; for $s_i$ with $i \ge 2$ this defines $x_i = z_{i-1} \oplus \trunc{\mu_{i-1}}{b}$. $\Ideal$ answers a legitimate query with $v$, drawing $v$ uniformly the first time ($C$ was drawn already), and marks $v$ revealed at the end of the round; a repeated legitimate query receives the same $v$. It answers every other query, and all queries of $\Adv_0$, from the lazily sampled oracles. When $\Adv_1$ stops, $\Ideal$ draws the path values never revealed, which fixes the remaining links.
+
+\emph{Drawing in advance.}
+$\Ideal$ reads a path value only after revealing it, and $C$ only to publish it: deciding whether a query is legitimate uses only the values of revealed predecessors, and uses $x_i$ only once $\mu_{i-1}$ is revealed. So $\Ideal$ has the same distribution if all its randomness is drawn at the start: the salt, $x_1$ and $z_1, \dots, z_{n-1}$; an independent uniform value $\nu(v)$ for every path value $v$, with $\nu(C)$ published as $C$; and lazily sampled oracles $H'$. We use this form below. The path values are the $\nu(v)$, and they determine the path inputs: $u(s_1)$ from the salt and $x_1$, $x_i = z_{i-1} \oplus \trunc{\nu(\mu_{i-1})}{b}$ for $i \ge 2$, and every other $u(v)$ from the values of the predecessors of $v$.
 
 \begin{claim}\label{claim:sequential}
 In $\Ideal$, no path value $v$ is revealed before oracle round $\rho(v)$.
@@ -27,7 +30,15 @@ By induction on $\rho(v)$; for $s_1$, with $\rho = 1$, there is nothing to show.
 Let $\Bad$ be the event, in $\Ideal$, that (a)~two path values are equal, or (b)~a query that is not legitimate equals a path input, evaluated with the path values as finally drawn. Then the probability that $\Adv_1$ outputs $K$ early in $\Real$ is at most the probability that it does so in $\Ideal$ plus $\Pr_{\Ideal}[\Bad]$.
 \end{claim}
 \begin{claimproof}
-Run both experiments on the same randomness, with the oracle's answers on path inputs in $\Real$ taken to be the path values drawn in $\Ideal$. If (a) fails, the path inputs are distinct, so these answers are independent and uniform as in $\Real$; the puzzle has the same distribution in both, because $z_i = \trunc{\mu_i}{b} \oplus x_{i+1}$ is uniform when $x_{i+1}$ is, and $C$ is an answer on a fresh input. If (b) fails, every query either is legitimate, and receives the path value in both experiments, or is not a path input, and receives the same oracle answer in both. So the two transcripts agree unless $\Bad$ happens.
+We build $\Real$ from the randomness of $\Ideal$, drawn in advance.
+
+\emph{Links.} Set $x_{i+1} = z_i \oplus \trunc{\nu(\mu_i)}{b}$ for $i < n$. Since $z_i$ is uniform and independent of everything else, the links $x_2, \dots, x_n$ are uniform and independent of the salt, $x_1$, $\nu$ and $H'$, as $\Build$ draws them.
+
+\emph{Oracle.} Define $H$ by following the honest path in order of $\rho$ (ties in a fixed order): the input $u(v)$ of each path value $v$ receives the answer $\nu(v)$, unless an earlier path value has the same input; every other input receives the answer of $H'$. Each path input is determined by the salt, the links and earlier answers, and a new path input receives a value not used before. By the usual lazy-sampling argument, $H$ is a uniformly random oracle independent of the salt and the links, so running $\Adv_0$, $\Build$ and $\Adv_1$ with $H$ is the experiment $\Real$. Because $H$ is a single function, an answer that $\Adv_0$ obtains and that $\Build$ or $\Adv_1$ later obtains again is the same answer.
+
+\emph{Commitment and puzzle.} Suppose (a) fails. Then the path inputs are distinct: inputs to different oracles are different points, the starts carry their chain index, and two equal inputs to one oracle contain equal path values. So $H$ answers every path input $u(v)$ with $\nu(v)$, and the values that $\Build$ computes are the $\nu(v)$. Its commitment is $H(u(C)) = \nu(C)$, the $C$ that $\Ideal$ publishes, and its masked links are $\trunc{\nu(\mu_i)}{b} \oplus x_{i+1} = z_i$. The two puzzles are equal.
+
+\emph{Queries.} Off (a), $H$ agrees with $H'$ at every input that is not a path input. Compare the two runs query by query. A query of $\Adv_0$ is never legitimate; if it is not a path input, it receives the answer of $H'$ in both experiments. A legitimate query of $\Adv_1$ equals some $u(v)$ and receives $\nu(v)$ in both, also when it is repeated. A query of $\Adv_1$ that is not legitimate and is not a path input receives the answer of $H'$ in both. By induction on the queries, the transcripts, and so the sets of revealed values, agree up to the first query that is not legitimate and equals a path input. That query is event (b); in particular, a path input that $\Adv_0$ queried, whose answer $\Build$ would reuse, is event (b). So the outputs of the two experiments agree unless $\Bad$ happens.
 \end{claimproof}
 
 \begin{claim}\label{claim:bad}
@@ -37,7 +48,7 @@ The probability of\/ $\Bad$ in\/ $\Ideal$ is at most
 \]
 \end{claim}
 \begin{claimproof}
-In $\Ideal$, a path value that is not revealed when a query is submitted is drawn later, independently of that query. So is $x_i$ for $i \ge 2$ while $\mu_{i-1}$ is not revealed, and so are the salt and $x_1$ for every query of $\Adv_0$. Nothing is conditioned on: each bound below is the probability that a fixed query equals a value drawn after it.
+In $\Ideal$, a query depends only on the values revealed before it was submitted, on the puzzle and on answers of $H'$. A path value other than $C$ that is not revealed when a query is submitted is therefore independent of that query. So is $x_i = z_{i-1} \oplus \trunc{\nu(\mu_{i-1})}{b}$ for $i \ge 2$ while $\mu_{i-1}$ is not revealed, and so are the salt and every link for every query of $\Adv_0$. The commitment $C$ is public, but it is no predecessor of any path value and is independent of the others. Nothing is conditioned on: each bound below is the probability that a fixed query equals a value independent of it.
 \begin{itemize}[leftmargin=1.5em]
   \item Event (a): there are at most $P^2$ pairs of independent uniform 32-byte values, so its probability is at most $P^2 / 2^{256}$.
   \item Event (b), queries to $\Hstart$: a query names one index $i$ and equals $u(s_i)$ only if it contains $x_i$. A query of $\Adv_1$ with $i = 1$ is legitimate whenever it equals $u(s_1)$. One with $i \ge 2$ that is not legitimate was submitted while $\mu_{i-1}$ was not revealed, so it contains $x_i$ with probability $2^{-8b}$; this case needs $n \ge 2$. A query of $\Adv_0$ must also contain the salt, so it succeeds with probability $2^{-(128 + 8b)}$.
@@ -47,7 +58,7 @@ Summing over the $\Qon$ and $\Qpre$ queries gives the claim.
 \end{claimproof}
 
 \emph{Conclusion.}
-In $\Ideal$, if $\Adv_1$ stops before round $\Tkey$, then $K$ is not revealed by \cref{claim:sequential}, so it is drawn after $\Adv_1$'s output, and the output equals it with probability $2^{-256}$; $C$, drawn independently, tells $\Adv$ nothing about it. \Cref{claim:hybrid,claim:bad} add $\Pr_{\Ideal}[\Bad]$.
+In $\Ideal$, if $\Adv_1$ stops before round $\Tkey$, then $K$ is not revealed by \cref{claim:sequential}, so $\nu(K)$ is independent of $\Adv_1$'s output, and the output equals it with probability $2^{-256}$; $C = \nu(C)$ is independent of $\nu(K)$ and tells $\Adv$ nothing about it. \Cref{claim:hybrid,claim:bad} add $\Pr_{\Ideal}[\Bad]$.
 \end{proof}
 
 The proof follows the structure of Pietrzak and Reyzin's soundness proof for proofs of sequential work (their Lemmas 6 and~9)~\cite{PR26}. Section~8 of the specification gives the same argument for \leanseal's byte encoding. It has not been machine-checked or reviewed by a third party.
