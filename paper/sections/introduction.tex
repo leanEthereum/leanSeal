@@ -1,6 +1,6 @@
 \section{Introduction}\label{sec:intro}
 
-In an encrypted mempool, block builders order transactions before they can read them, which removes their ability to front-run or sandwich a transaction based on its contents. The central question is who opens the transactions afterwards. Current designs give three answers, each at a cost.
+In an encrypted mempool~\cite{PP26}, block builders order transactions before they can read them, which removes their ability to front-run or sandwich a transaction based on its contents. The central question is who opens the transactions afterwards. Current designs give three answers, each at a cost.
 \begin{itemize}[leftmargin=1.5em]
   \item \textbf{A committee} holds a threshold decryption key and opens what was ordered, as in Shutter~\cite{Shutter}. Privacy then rests on no threshold of its members colluding, and liveness on enough of them being online.
   \item \textbf{A trusted execution environment} opens transactions inside hardware whose vendor and side channels must be trusted.
@@ -8,7 +8,7 @@ In an encrypted mempool, block builders order transactions before they can read 
 \end{itemize}
 Hybrid designs~\cite{WM25} let either the sender or a committee open, which removes the free option while the committee is online and the committee's liveness problem while the sender is honest. Their failure case remains a dishonest sender while the committee is offline.
 
-We present \leanseal, a fallback for self-decryption that needs no committee. The sender opens its own transaction in the normal case, but it attaches a time-lock puzzle that anyone can solve to recover the key after a fixed amount of sequential computation, about 30 seconds on Ethereum. If the puzzle is well formed, withholding the key therefore cannot keep the transaction hidden. The result is a timed commitment~\cite{BN00} that uses only SHA-256: it needs no trusted setup, no committee and no hardware trust, and its idealized version is secure against quantum openers.
+We present \leanseal, a fallback for self-decryption that needs no committee: no designated party has to be online or trusted for a withheld transaction to be disclosed. The sender opens its own transaction in the normal case, but it attaches a time-lock puzzle that anyone can solve to recover the key after a fixed amount of sequential computation, about 30 seconds on Ethereum. If the puzzle is well formed, a sender that withholds its key can still delay or cancel the transaction's execution, but cannot keep the transaction hidden. The reveal and the puzzle together form a timed commitment~\cite{BN00}. The puzzle uses only a hash function such as SHA-256: it needs no trusted setup and no hardware trust, and its idealized version is secure against quantum openers.
 
 The puzzle is the chained-hash puzzle of Mahmoody, Moran and Vadhan~\cite{MMV11}, in which the sender computes as many hashes as an opener, but in parallel (\cref{fig:schedules}). They also proved that no puzzle built only from hashes can make the sender's work grow more slowly than the delay, so the cost of \leanseal falls on the sender. This paper examines whether that cost is acceptable for sealing transactions (\cref{tab:glance}), and what an encrypted mempool built on the puzzle can and cannot provide.
 
