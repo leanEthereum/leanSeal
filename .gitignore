@@ -9,3 +9,4 @@ __pycache__/
 /poc/contracts/out
 /poc/contracts/cache
 /poc/contracts/broadcast
+.DS_Store
