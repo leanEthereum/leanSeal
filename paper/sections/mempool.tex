@@ -8,7 +8,7 @@ This section treats the puzzle as a black box and describes how it backs an encr
 \begin{enumerate}[leftmargin=1.5em]
   \item \textbf{Submit.} The sender takes a puzzle from its stock and encrypts its signed transaction under $K$. It sends the sealed transaction together with a plaintext envelope: the account that pays, a nonce, a gas limit, a fee and a deposit (\cref{sec:admission}).
   \item \textbf{Order.} The builder orders sealed transactions without reading them. The ordering commits to the hash of each whole sealed transaction, not just to $C$: once $K$ is known, anyone could seal a different transaction under the same puzzle.
-  \item \textbf{Reveal.} Once the ordering is fixed, the sender publishes $K$. Nodes check it against $C$, decrypt in about 12\,ms and execute the transaction in its committed position. Nobody solves anything.
+  \item \textbf{Reveal.} Once the ordering is fixed, the sender publishes $K$. Nodes check it against $C$, decrypt in milliseconds and execute the transaction in its committed position. Nobody solves anything.
   \item \textbf{Fallback.} If the sender stays silent past the reveal deadline, its deposit is forfeited, and anyone can solve the puzzle and publish $K$. A well-formed puzzle therefore opens without its sender, but its transaction can only run late or not at all.
 \end{enumerate}
 
@@ -16,7 +16,7 @@ This section treats the puzzle as a black box and describes how it backs an encr
 
 A ciphertext bound to a commitment to its key is the shape that recent Ethereum designs already use. In LUCID (EIP-8184)~\cite{LUCID}, a sealed transaction's ticket goes on chain and carries a commitment $\mathsf{keccak256}(k_{\mathrm{dem}})$ to the key and a hash of the ciphertext envelope, which itself travels off chain. The key is released by a key publisher of the sender's choice, possibly the sender itself, and the publication fee is paid only when decryption succeeds. In the hybrid design of Wagner and Ma~\cite{WM25}, the sender puts $\mathrm{Enc}_k(\mathit{tx})$ and $\mathsf{H}(k)$ on chain and gives a committee a threshold encryption of $k$, so that either the sender or the committee can open. \leanseal fits both as a fallback that needs no third party: the sender is its own key publisher, and the puzzle replaces the committee as the party that discloses the key when the sender does not. Inside LUCID only the puzzle is used. It travels in the envelope's opaque header with $K$ as $k_{\mathrm{dem}}$; its SHA-256 commitment $C$ is separate from the ticket's keccak commitment, and the cipher stays ChaCha20-Poly1305. The puzzle provides eventual disclosure only: executing a transaction whose key is disclosed minutes late needs an additional protocol rule, which LUCID does not have.
 
-The reveal should be due as soon as the ordering is fixed. In LUCID, the builder's bid commits to the tickets of slot $n$, keys are released once the payload is out and must be seen before the payload-timeliness committee votes, and the decrypted transactions execute at the top of block $n+1$, before any ordinary transaction. A short window shortens the delay the puzzle must provide and limits what a sender learns before deciding whether to reveal (\cref{sec:withholding}).
+The reveal should be due as soon as the ordering is fixed. In LUCID, the builder's bid commits to the tickets of slot $n$, keys are released once the beacon block carrying the bid is attested and must be seen before the payload-timeliness committee votes, and the decrypted transactions execute at the top of block $n+1$, before any ordinary transaction. A short window shortens the delay the puzzle must provide and limits what a sender learns before deciding whether to reveal (\cref{sec:withholding}).
 
 \subsection{The timing condition}\label{sec:timing}
 
@@ -28,11 +28,11 @@ with a margin for propagation. A forced opening finishes $N \cdot \lsolver$ afte
 
 \subsection{Choosing the delay}\label{sec:choosing-t}
 
-The delay should be the smallest that covers the time from exposure to the fixed order, $\torder - \texp$. Building, forced opening, the solvers' load and the window in which a silent sender holds an option all grow linearly with $T$; only the size does not. The attacker speed already carries a margin of about 3.7 over the fastest published design (\cref{sec:pricing}), so we take $T$ about twice the time to fix the order. \Cref{tab:choosing-t} applies this to the settings of \cref{sec:realistic}. We use $T = 30$\,s as the reference: it covers a puzzle that is sent only to the slot's builder, or published after a commitment, and ordered within one 12-second slot.
+The delay should be the smallest that covers the time from exposure to the fixed order, $\torder - \texp$. Building, forced opening, the solvers' load and the window in which a silent sender holds an option all grow linearly with $T$; only the size does not. The attacker speed already carries a margin of about 3.7 over the fastest published design (\cref{sec:pricing}), so we take $T$ about twice the time to fix the order, with a floor of 15\,s and rounded up. \Cref{tab:choosing-t} applies this to the settings of \cref{sec:realistic}. We use $T = 30$\,s as the reference: it covers a puzzle that is sent only to the slot's builder, or published after a commitment, and ordered within one 12-second slot.
 
 \begin{table}[t]
   \centering\small
-  \caption{The delay per setting. Building uses all cores of the M4 Air (0.70\,s per second of delay); forced opening uses one of its cores (6.6 times the delay).}
+  \caption{The delay per setting. Building uses all cores of the M4 Air (0.70\,s per second of delay); forced opening uses one of its cores (6.7 times the delay).}
   \label{tab:choosing-t}
   \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{2.7cm}rrr@{}}
     \toprule

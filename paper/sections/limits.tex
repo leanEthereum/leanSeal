@@ -19,7 +19,7 @@ Rivest, Shamir and Wagner~\cite{RSW96} introduced time-lock puzzles from repeate
 
 \begin{enumerate}[label=\arabic*.,leftmargin=1.5em]
   \item \textbf{The speed of chained SHA-256.} Every parameter is priced against $\ell$. A circuit-level estimate from chip designers would turn the assumed advantage of 3.7 into a defensible number.
-  \item \textbf{Checking puzzles.} A proof over all $nm$ chain steps would cost far more than building the puzzle. Is there a cheap check, for example one that spot-checks the chains or the links between them?
+  \item \textbf{Checking puzzles.} A proof over all $nm$ chain steps would cost far more than building the puzzle. Is there a cheap check, for example one that spot-checks the chains or the links between them? Short of that, a solver that finds a malformed puzzle could prove it with a bisection game over checkpoints of the chains, which Naraghi also assumes, without analysing it, for the pads of blind simultaneous release~\cite{Naraghi26}.
   \item \textbf{A quantum bound for the exact encoding}, extending Afshar et al.\ to truncated links, the accumulator and the commitment.
-  \item \textbf{Mechanism design.} Deposit sizes, solver payment and the execution of late-opened transactions, tested in a protocol such as LUCID.
+  \item \textbf{Mechanism design.} Deposit sizes that survive fee inversion~\cite{Naraghi26}, solver payment, simultaneous release of keys, and the execution of late-opened transactions, tested in a protocol such as LUCID.
 \end{enumerate}
