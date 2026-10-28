@@ -1,12 +1,12 @@
 \section{Security}\label{sec:security}
 
-Secrecy until the deadline rests on two assumptions about SHA-256 and two about the attacker's hardware. This section states them, proves the delay in the random-oracle model, and prices the one hardware number the proof cannot supply.
+Secrecy until the deadline rests on two assumptions about SHA-256 and two about the attacker's hardware. This section states them, proves the delay in the random-oracle model, and estimates the one hardware parameter that the proof cannot supply.
 
 \subsection{Assumptions}\label{sec:assumptions}
 
 \begin{description}[leftmargin=1.5em,font=\normalfont\bfseries]
   \item[A1. No shortcut.] The chain step and the labelled hashes behave like independent random functions (the random-oracle model, applied heuristically to the SHA-256 compression function). If this fails, the delay is lost and the hash must be replaced, which the versioned format allows.
-  \item[A2. Speed.] During the delay, nobody computes one chain step in less than $\ell$. An error here shrinks the delay in proportion.
+  \item[A2. Speed.] During the delay, no party computes one chain step in less than $\ell$. An error here shrinks the delay in proportion.
   \item[A3. Budget.] The attacker computes at most $R$ hashes per second in total. An error here grows the bound of \cref{thm:delay} in proportion, from a starting point so small that no realistic error matters.
   \item[A4. Encryption.] HMAC-SHA256 is a pseudorandom function.
 \end{description}
@@ -33,7 +33,7 @@ and the first term is absent when $n = 1$.
 \end{theorem}
 
 \paragraph{The bound in seconds.}
-Assumptions A2 and A3 turn oracle rounds and queries into time. Write $T = n m \ell$, and let the attacker make $\Qon = R \cdot T$ queries after publication. Against $R = 10^{21}$ hashes per second, roughly the whole Bitcoin network, the bound is about $2^{-117}$ for a 30-second lock and $2^{-97}$ for a one-year lock. Precomputation barely changes this: a full year of queries at the same rate before a 30-second puzzle is published adds about $2^{-128}$. With 24-byte links the first term, the chance of guessing a link, dominates; for a 30-second lock the full-width terms are smaller by a factor of about $2^{31}$. At a fixed delay the bound depends on the number of chains only weakly, through $P \approx N$, except that the first term is absent when $n = 1$. It covers every saving, however small: except with this probability, the attacker does not derive the key even one oracle round before the honest opener.
+Assumptions A2 and A3 turn oracle rounds and queries into time. Write $T = n m \ell$, and let the attacker make $\Qon = R \cdot T$ queries after publication. Against $R = 10^{21}$ hashes per second, roughly the whole Bitcoin network, the bound is about $2^{-117}$ for a 30-second lock and $2^{-97}$ for a one-year lock. Precomputation changes this only slightly: a full year of queries at the same rate before a 30-second puzzle is published adds about $2^{-128}$. With 24-byte links the first term, the chance of guessing a link, dominates; for a 30-second lock the full-width terms are smaller by a factor of about $2^{31}$. At a fixed delay the bound depends on the number of chains only weakly, through $P \approx N$, except that the first term is absent when $n = 1$. The bound covers every speed-up, however small: except with this probability, the attacker does not derive the key even one oracle round before the honest opener.
 
 \paragraph{Scope.}
 The threshold is the round in which $K$ is derived, not the round in which $\Open$ returns: an attacker that skips the check against $C$ finishes one round before $\Open$ does, with certainty. The precomputation term is needed even when $n = 1$, where the only link is public: an attacker that guesses the salt and the link in advance and computes the key opens the puzzle in zero rounds with probability $2^{-(128 + 8b)}$. The theorem is about recovering the key. The encryption layer is intended to hide the contents of equal-length messages under A1 and A4, but a reduction from distinguishing envelopes to the events of the proof, which must also count queries on the derivation of the encryption and authentication keys, has not been written. The bound is classical; extending it to this instantiation against quantum attackers is outside the scope of this paper.
@@ -43,9 +43,9 @@ The threshold is the round in which $K$ is derived, not the round in which $\Ope
 
 \subsection{The hardware assumption}\label{sec:pricing}
 
-The attacker's total hash rate is easy to price, because the hardware exists: the Bitcoin network computes about $10^{21}$ hashes per second (October 2026), and we take $R = 10^{21}$. Mining hardware computes many independent hashes at once and says little about how fast one hash can follow another, so it bounds $R$, not $\ell$.
+The attacker's total hash rate can be estimated from deployed hardware: the Bitcoin network computes about $10^{21}$ hashes per second (October 2026), and we take $R = 10^{21}$. Mining hardware computes many independent hashes at once and says little about how fast one hash can follow another, so it bounds $R$, not $\ell$.
 
-The speed $\ell$ is the assumption that most needs physical evidence. \Cref{tab:pricing} collects what is known. Relative to the fastest published design we found, a synthesized 7\,nm core at 13.0\,ns per hash~\cite{BCF+20}, we assume an \emph{advantage} of $A \approx 3.7$, that is, $\ell = 3.5$\,ns: 6.6 times faster than one core of the M4 laptop we measured. Some advantage over the published core is certain, since it is a general-purpose design that registers every round and does not exploit the constant part of a chain step's input; \cref{app:hardware} gives a circuit model for a chip built for chains. We do not claim 3.5\,ns is a lower bound. The theorem holds for whatever $\ell$ the reader believes, and every cost in \cref{sec:costs} scales linearly with $1/\ell$.
+The speed $\ell$ is the assumption that most needs hardware evidence. \Cref{tab:pricing} collects what is known. Relative to the fastest published design we found, a synthesized 7\,nm core at 13.0\,ns per hash~\cite{BCF+20}, we assume an \emph{advantage} of $A \approx 3.7$, that is, $\ell = 3.5$\,ns: 6.6 times faster than one core of the M4 laptop we measured. Some advantage over the published core is certain, since it is a general-purpose design that registers every round and does not exploit the constant part of a chain step's input; \cref{app:hardware} gives a circuit model for a chip built for chains. We do not claim 3.5\,ns is a lower bound. The theorem holds for whatever $\ell$ the reader believes, and every cost in \cref{sec:costs} scales linearly with $1/\ell$.
 
 \begin{table}[t]
   \centering\small
@@ -66,16 +66,16 @@ The speed $\ell$ is the assumption that most needs physical evidence. \Cref{tab:
 \end{table}
 
 \paragraph{Sensitivity.}
-Only A1 fails abruptly. An attacker $k$ times faster than assumed opens a 30-second puzzle in $30/k$ seconds; restoring the margin costs $k$ times more sender work and no extra bytes. An attacker with $k$ times the budget multiplies the bound by $k$, which stays below $2^{-64}$ unless $k$ exceeds $2^{52}$. Slower honest hardware costs time, never secrecy. The secrecy is also temporary: a sealed transaction becomes public anyway, so only hardware that exists during its delay matters, and $\ell$ can be repriced as hardware improves.
+Only A1 fails abruptly. An attacker $k$ times faster than assumed opens a 30-second puzzle in $30/k$ seconds; restoring the margin costs $k$ times more sender work and no extra bytes. An attacker with $k$ times the budget multiplies the bound by $k$, which stays below $2^{-64}$ unless $k$ exceeds $2^{52}$. Slower honest hardware costs time, never secrecy. The secrecy is also temporary: a sealed transaction becomes public in any case, so only hardware that exists during its delay matters, and $\ell$ can be repriced as hardware improves.
 
 \subsection{Attacks and link width}\label{sec:attacks}
 
 \begin{itemize}[leftmargin=1.5em]
-  \item \textbf{Guess a link.} An attacker can guess a hidden link $x_k$ and run chains $k, k+1, \dots$ while its own earlier chains are still running. This is the first term of the theorem; with 24-byte links each guess is right with probability $2^{-192}$. Because the key needs every chain's end, a guess cannot be checked against $C$ until the attacker's own chains reach link $k$.
-  \item \textbf{Precompute.} Every hash on the honest path depends on the puzzle's fresh salt and a fresh link, so work done before publication or on another puzzle does not help, except as counted by the theorem's second and third terms.
-  \item \textbf{Use a quantum computer.} Afshar et al.~\cite{ACHLM23} prove that the idealized chained puzzle keeps its delay against quantum openers in the quantum random-oracle model. Carrying this over to \leanseal's exact encoding has not been done; our bound is classical.
-  \item \textbf{Get the puzzle early.} The attacker's clock starts when it first holds the puzzle. Puzzles built in advance must stay private until use.
-  \item \textbf{Replace the message.} A claimed key is checked against $C$ with one hash and the tag then authenticates the transaction. But once $K$ is known, anyone can seal a different transaction under the same puzzle, so an ordering must bind the hash of the whole sealed transaction (\cref{sec:flow}).
+  \item \textbf{Link guessing.} An attacker can guess a hidden link $x_k$ and run chains $k, k+1, \dots$ while its own earlier chains are still running. This is the first term of the theorem; with 24-byte links each guess is right with probability $2^{-192}$. Because the key needs every chain's end, a guess cannot be checked against $C$ until the attacker's own chains reach link $k$.
+  \item \textbf{Precomputation.} Every hash on the honest path depends on the puzzle's fresh salt and a fresh link, so work done before publication or on another puzzle does not help, except as counted by the theorem's second and third terms.
+  \item \textbf{Quantum attackers.} Afshar et al.~\cite{ACHLM23} prove that the idealized chained puzzle keeps its delay against quantum openers in the quantum random-oracle model. Carrying this over to \leanseal's exact encoding has not been done; our bound is classical.
+  \item \textbf{Early access.} The attacker's clock starts when it first holds the puzzle. Puzzles built in advance must stay private until use.
+  \item \textbf{Message substitution.} A claimed key is checked against $C$ with one hash and the tag then authenticates the transaction. But once $K$ is known, anyone can seal a different transaction under the same puzzle, so an ordering must bind the hash of the whole sealed transaction (\cref{sec:flow}).
 \end{itemize}
 
 The link width $b$ enters the online guessing term $\Qon / 2^{8b}$ and the preprocessing term. With $n = 16$ and the attacker budget above, 16-byte links (324-byte puzzle) give $2^{-53}$ for a 30-second lock, 24-byte links (452 bytes) give $2^{-117}$, and 32-byte links (580 bytes) give $2^{-148}$; for a one-year lock, which needs at least 33 chains to respect the format's limit $m \le 2^{48}$, the three give about $2^{-33}$, $2^{-97}$ and $2^{-108}$. We use 24 bytes, which keeps the bound near $2^{-96}$ or below for delays up to a year. With $n = 1$ there is no hidden link, so the online guessing term vanishes; the preprocessing term still depends on the salt and link entropy.

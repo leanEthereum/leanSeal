@@ -1,6 +1,6 @@
 \section{The Puzzle}\label{sec:construction}
 
-A \emph{hash chain} starts from a value and hashes it many times in a row. Each step needs the previous output, so even unlimited hardware needs the steps one after another. A single chain of $N$ steps would make a fine lock, except that its builder also needs $N$ sequential steps. The construction of Mahmoody, Moran and Vadhan~\cite{MMV11} fixes this: the sender builds $n$ short chains of $m$ steps at the same time and links them so that an opener can only run them in order. The opener's delay is $N = nm$ steps; the sender's wall time is $m$ steps on $n$ cores.
+A \emph{hash chain} starts from a value and hashes it many times in a row. Each step needs the previous output, so even unlimited hardware needs the steps one after another. A single chain of $N$ steps would serve as a lock, except that its builder also needs $N$ sequential steps. The construction of Mahmoody, Moran and Vadhan~\cite{MMV11} avoids this: the sender builds $n$ short chains of $m$ steps at the same time and links them so that an opener can only run them in order. The opener's delay is $N = nm$ steps; the sender's wall time is $m$ steps on $n$ cores.
 
 \subsection{Notation and model}\label{sec:prelims}\label{sec:notation}
 

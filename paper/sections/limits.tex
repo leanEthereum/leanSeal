@@ -1,6 +1,6 @@
 \section{Limits, Related Work and Open Questions}\label{sec:related}
 
-\subsection{What hashes cannot do}\label{sec:limits}\label{sec:mmv-limit}\label{sec:delay-encryption}\label{sec:batching}
+\subsection{Limits of hash-only constructions}\label{sec:limits}\label{sec:mmv-limit}\label{sec:delay-encryption}\label{sec:batching}
 
 \paragraph{The delay is limited by the sender's work.}
 Mahmoody, Moran and Vadhan~\cite{MMV11} proved that if building a puzzle takes $N$ hash calls, an attacker with unlimited parallelism can open it in about $N$ oracle rounds. The chained puzzle needs about $N$ rounds, so it is asymptotically optimal among random-oracle constructions: no hash-only puzzle can make the sender's work grow more slowly than the delay. The attack itself makes enormous numbers of queries, so this is a limit on what a proof can promise, not a cheap way to open puzzles.
@@ -9,7 +9,7 @@ Mahmoody, Moran and Vadhan~\cite{MMV11} proved that if building a puzzle takes $
 Suppose a public setup costs $S$ hash calls, after which senders encrypt to a slot with $E$ calls each and one long computation per slot opens everything. Then running the setup and encrypting is itself a puzzle that costs $S + E$ calls, so by the result above it opens in about $S + E$ rounds: with a cheap setup, the delay is limited by the cost of one encryption. A long setup is not covered by this argument, but if each slot then has a unique, quickly checkable key, computing it is a verifiable delay function, which hashes alone cannot give~\cite{MSW20,GRY25,AAKTvC26}. No method is known that opens independent puzzles for less than one full solve each.
 
 \paragraph{Size.}
-Each chain the sender runs in parallel needs its own hidden link, so a chained puzzle that lets the sender work $g$ ways in parallel has about $gb$ bytes. Whether a hash-only puzzle can be smaller is open.
+Each chain the sender runs in parallel needs its own hidden link, so a chained puzzle that allows the sender $g$-fold parallelism has about $gb$ bytes. Whether a hash-only puzzle can be smaller is open.
 
 \subsection{Related work}\label{sec:prior}
 
@@ -18,8 +18,8 @@ Rivest, Shamir and Wagner~\cite{RSW96} introduced time-lock puzzles from repeate
 \subsection{Open questions}\label{sec:open}
 
 \begin{enumerate}[label=\arabic*.,leftmargin=1.5em]
-  \item \textbf{The speed of chained SHA-256.} Every parameter is priced against $\ell$. A circuit-level estimate from chip designers would turn the assumed advantage of 3.7 into a defensible number.
+  \item \textbf{The speed of chained SHA-256.} Every parameter is set relative to $\ell$. A circuit-level estimate from chip designers would turn the assumed advantage of 3.7 into a defensible number.
   \item \textbf{Checking puzzles.} A proof over all $nm$ chain steps would cost far more than building the puzzle. Is there a cheap check, for example one that spot-checks the chains or the links between them? Short of that, a solver that finds a malformed puzzle could prove it with a bisection game over checkpoints of the chains, which Naraghi also assumes, without analysing it, for the pads of blind simultaneous release~\cite{Naraghi26}.
   \item \textbf{A quantum bound for the exact encoding}, extending Afshar et al.\ to truncated links, the accumulator and the commitment.
-  \item \textbf{Mechanism design.} Deposit sizes that survive fee inversion~\cite{Naraghi26}, solver payment, simultaneous release of keys, and the execution of late-opened transactions, tested in a protocol such as LUCID.
+  \item \textbf{Mechanism design.} Deposit sizes that remain effective under fee inversion~\cite{Naraghi26}, solver payment, simultaneous release of keys, and the execution of late-opened transactions, tested in a protocol such as LUCID.
 \end{enumerate}
