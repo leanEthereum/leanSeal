@@ -1,0 +1,35 @@
+% Notation for leanSeal (follows SPEC.md, Section 1).
+\newcommand{\ctx}{\mathit{ctx}}
+\newcommand{\salt}{\mathit{salt}}
+\newcommand{\lbl}[1]{\mathsf{#1}}
+\newcommand{\Hlab}[1]{\mathsf{H}_{\lbl{#1}}}
+\newcommand{\Hstart}{\Hlab{start}}
+\newcommand{\Hmask}{\Hlab{mask}}
+\newcommand{\Hacc}{\Hlab{acc}}
+\newcommand{\Hkey}{\Hlab{key}}
+\newcommand{\Hcommit}{\Hlab{commit}}
+\newcommand{\THash}{\mathsf{TH}}
+\newcommand{\SHA}{\mathsf{SHA256}}
+\newcommand{\HMAC}{\mathsf{HMAC}}
+\newcommand{\trunc}[2]{[#1]_{#2}}
+\newcommand{\cat}{\mathbin{\|}}
+\newcommand{\Build}{\mathsf{Build}}
+\newcommand{\Open}{\mathsf{Open}}
+\newcommand{\Qpre}{Q_{\mathrm{pre}}}
+\newcommand{\Qon}{Q_{\mathrm{on}}}
+\newcommand{\Tkey}{T_{\mathrm{key}}}
+\newcommand{\lpub}{\ell_{\mathrm{pub}}}
+\newcommand{\Rs}{R_{\mathrm{s}}}
+\newcommand{\Adv}{\mathcal{A}}
+\newcommand{\Real}{\mathsf{R}}
+\newcommand{\Ideal}{\mathsf{G}}
+\newcommand{\Bad}{\mathsf{Bad}}
+\newcommand{\texp}{t_{\mathrm{exp}}}
+\newcommand{\torder}{t_{\mathrm{order}}}
+\newcommand{\tsolve}{t_{\mathrm{solve}}}
+\newcommand{\lattacker}{\ell_{\mathrm{attacker}}}
+\newcommand{\lsolver}{\ell_{\mathrm{solver}}}
+\newcommand{\hashlabel}[1]{\texttt{leanseal/v1/#1}}
+\newcommand{\magic}[1]{\texttt{"#1"}}
+% Status tags in tables (the "chips" of the web version).
+\newcommand{\tagm}[1]{\textsc{#1}}

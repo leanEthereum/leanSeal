@@ -1,0 +1,36 @@
+% Commit-reveal with a time-lock fallback (Figure 3 of the web version).
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[
+      x=1cm, y=1cm, font=\small,
+      box/.style={draw, rounded corners=3pt, minimum height=1.1cm, align=center, fill=black!3},
+      sub/.style={font=\footnotesize, text=black!60},
+      lab/.style={font=\footnotesize, align=center},
+      arr/.style={-{Stealth[length=5pt]}, line width=0.6pt},
+    ]
+    \node[box, minimum width=2.8cm] (wallet) at (1.4,0)
+      {\textbf{User wallet}\\[-1pt]{\footnotesize\color{black!60}precomputed puzzle}};
+    \node[box, minimum width=2.6cm] (builder) at (7.3,0)
+      {\textbf{Builder}\\[-1pt]{\footnotesize\color{black!60}orders it blind}};
+    \node[box, minimum width=2.6cm] (nodes) at (11.4,0)
+      {\textbf{Nodes}\\[-1pt]{\footnotesize\color{black!60}check $\mathsf{H}(K) = C$,}\\[-2pt]{\footnotesize\color{black!60}execute}};
+    \node[box, dashed, fill=none, minimum width=3.6cm] (solver) at (7.3,-2.5)
+      {\textbf{Any solver}\\[-1pt]{\footnotesize\color{black!60}runs $n \cdot m$ steps, publishes $K$}};
+    % Main path.
+    \draw[arr] (wallet) -- node[lab, above] {$\mathrm{Enc}_K(\mathit{tx})$, puzzle,\\$C = \mathsf{H}(K)$}
+                          node[lab, below, text=black!60] {fee paid\\in the clear} (builder);
+    \draw[arr] (builder) -- node[lab, above] {ordering\\final} (nodes);
+    % Normal path: the user reveals K.
+    \draw[arr, accent, line width=0.9pt]
+      (wallet.north) .. controls (2.0,2.1) and (10.6,2.1) .. (nodes.north)
+      node[pos=0.5, above, font=\footnotesize\bfseries, text=accent] {normal path: user reveals $K$ right after ordering};
+    % Fallback: the user stays silent.
+    \draw[arr, dashed] (builder.south) -- node[lab, right, text=black!60] {user silent} (solver.north);
+    \draw[arr, dashed] (solver.east) .. controls (10.6,-2.5) and (11.4,-1.8) .. (nodes.south)
+      node[pos=0.3, below right, lab] {after sequential recovery};
+    % Side note.
+    \node[sub, align=left, anchor=west] at (12.9,0) {No shared solve:\\one solve per\\silent user};
+  \end{tikzpicture}
+  \caption{Commit--reveal with a time-lock fallback. When users behave, no puzzle is ever solved. For a well-formed puzzle, withholding the key can delay a transaction but not cancel it.}
+  \label{fig:commit-reveal}
+\end{figure}

@@ -1,0 +1,16 @@
+[package]
+name = "sealnet"
+version = "0.1.0"
+edition = "2021"
+description = "Proof of concept: an encrypted mempool with leanSeal timed commitments"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace]
+
+[dependencies]
+leanseal = { path = "../.." }
+alloy = { version = "2", features = ["full"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+eyre = "0.6"
+getrandom = "0.2"

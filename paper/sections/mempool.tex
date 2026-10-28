@@ -1,0 +1,55 @@
+\section{Sealing Transactions with \leanseal}\label{sec:mempool}
+
+This section treats the puzzle as a black box and describes how it backs an encrypted mempool. The sender runs $\Build$ to get a puzzle $Z$, which contains a commitment $C$, and a key $K$. Anyone can check a claimed key against $C$ with one hash. Anyone can also recover $K$ from $Z$ alone with $N$ sequential hashes, which takes at least $T = N\ell$ seconds on the fastest hardware. \Cref{sec:construction,sec:security} construct the puzzle and prove this.
+
+\subsection{The flow}\label{sec:flow}
+
+\leanseal is used as a timed commitment~\cite{BN00}; \cref{fig:commit-reveal} shows the flow.
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Submit.} The sender takes a puzzle from its stock and encrypts its signed transaction under $K$. It sends the sealed transaction together with a plaintext envelope: the account that pays, a nonce, a gas limit, a fee and a deposit (\cref{sec:admission}).
+  \item \textbf{Order.} The builder orders sealed transactions without reading them. The ordering commits to the hash of each whole sealed transaction, not just to $C$: once $K$ is known, anyone could seal a different transaction under the same puzzle.
+  \item \textbf{Reveal.} Once the ordering is fixed, the sender publishes $K$. Nodes check it against $C$, decrypt in about 12\,ms and execute the transaction in its committed position. Nobody solves anything.
+  \item \textbf{Fallback.} If the sender stays silent past the reveal deadline, its deposit is forfeited, and anyone can solve the puzzle and publish $K$. A well-formed puzzle therefore opens without its sender.
+\end{enumerate}
+
+\input{figures/commit-reveal}
+
+The data this puts on chain, a ciphertext and a hash of its key, is the shape that recent Ethereum designs already use. In LUCID (EIP-8184)~\cite{LUCID}, a sealed transaction's ticket carries a key commitment and a ciphertext hash, and the key is released by a key publisher of the sender's choice, possibly the sender itself, with a fee forfeited on failure to reveal. In the hybrid design of Wagner and Ma~\cite{WM25}, the sender puts $\mathrm{Enc}_k(\mathit{tx})$ and $\mathsf{H}(k)$ on chain and gives a committee a threshold encryption of $k$, so that either the sender or the committee can open. \leanseal fits both as a decryption path that needs no third party: the sender is its own key publisher, and the puzzle replaces the committee as the party that opens when the sender does not.
+
+The reveal should be due as soon as the ordering is fixed. With enshrined proposer--builder separation, the builder commits to an ordered list of sealed transactions at the start of a slot, and senders reveal before the payload deadline of the same slot, as in LUCID. A short window shortens the delay the puzzle must provide and limits what a sender learns before deciding whether to reveal (\cref{sec:withholding}).
+
+\subsection{The timing condition}\label{sec:timing}
+
+The attacker's clock starts at \emph{exposure}, $\texp$, the first moment anyone but the sender holds the puzzle. The deadline $\torder$ is the moment the transaction's position can no longer change. The contents stay hidden until the deadline if
+\[
+  \torder - \texp < N \cdot \lattacker,
+\]
+with a margin for propagation. A forced opening finishes $N \cdot \lsolver$ after a solver starts, which on a laptop core is minutes after the deadline. If the attacker is $k$ times faster than assumed, the delay shrinks $k$-fold; once it falls below $\torder - \texp$, the contents can be read before the order is fixed. Even then the result is no worse than today's public mempool, where everyone reads a transaction as soon as it is broadcast.
+
+\subsection{What \leanseal provides}\label{sec:mempool-props}
+
+\Cref{tab:props} lists the properties an encrypted mempool may want and what \leanseal gives. No known design gives all of them; \cref{sec:comparison} compares the alternatives.
+
+\begin{table}[t]
+  \centering\small
+  \caption{Properties of an encrypted mempool, and what \leanseal provides.}
+  \label{tab:props}
+  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}X@{}}
+    \toprule
+    Property & \leanseal \\
+    \midrule
+    Contents hidden until the order is fixed & yes, for $T$ after exposure, under the hardware assumption \\
+    Every included transaction opens & yes, without the sender or anyone else, if the puzzle is well formed \\
+    No free cancellation after seeing the order & withholding delays but does not cancel; a deposit prices the delay (\cref{sec:withholding}) \\
+    Excluded transactions stay private & no: they open after $T$ like any other (\cref{sec:noninclusion}) \\
+    Sender, fee and size hidden & no; the envelope is public and the size can be padded \\
+    Trusted parties or setup & none \\
+    Post-quantum & plausibly; proved for the idealized puzzle only (\cref{sec:attacks}) \\
+    Cost & 152 to 512 bytes per transaction, sender work proportional to $T$ paid in advance, no work for the network in the normal case (\cref{sec:costs}) \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{A proof of concept}\label{sec:poc}
+
+We implemented this flow as a contract on any chain with EIP-7702, with off-chain sender, keeper and solver roles~\cite{leanSealRepo}. The block that includes a sealed transaction fixes its position. The sender reveals its key within two blocks, and anyone then executes the slot's revealed transactions in order: the contract checks each key against its commitment and decrypts the envelope, both with SHA-256 only, and calls the sender's account, which delegates to the contract for this. A missed reveal forfeits the deposit to whoever later opens the transaction from its puzzle. On a local chain, a plaintext swap was sandwiched by a searcher watching the mempool and lost 9.25\% against the fair price. The same swap, sealed, executed at the fair price. With its key withheld, it was opened by a solver 19.5\,s later and executed late. Submitting costs about 199{,}000 gas, revealing 74{,}000 and executing a swap with its decryption about 150{,}000. Ordering in a contract inherits the chain's reorganizations, so the prototype fits chains with fast finality; inside LUCID, the puzzle would travel in the ciphertext envelope's scheme-specific header.

@@ -1,0 +1,134 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------------------------------------------------------------------------
+% Layout and fonts (house style of the leanSig / leanXMSS notes)
+% ---------------------------------------------------------------------------
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[final]{microtype}
+\usepackage{xspace}
+
+% ---------------------------------------------------------------------------
+% Mathematics
+% ---------------------------------------------------------------------------
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{mathtools}
+% newpx must come after amsthm.
+\usepackage{newpxtext}
+\usepackage{newpxmath}
+
+% ---------------------------------------------------------------------------
+% Tables, lists, algorithms, figures
+% ---------------------------------------------------------------------------
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+\usepackage{caption}
+\usepackage{flafter}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,decorations.pathreplacing,positioning,calc,fit}
+\usepackage{xcolor}
+
+% ---------------------------------------------------------------------------
+% Links and cross-references
+% ---------------------------------------------------------------------------
+\definecolor{linkblue}{RGB}{0,51,153}
+\definecolor{accent}{RGB}{31,94,160}
+\definecolor{warn}{RGB}{176,48,32}
+\usepackage[colorlinks=true,linkcolor=linkblue,citecolor=linkblue,
+            urlcolor=linkblue,bookmarksnumbered=true,
+            pdftitle={leanSeal: Time-Lock Encryption from Hashes Alone},
+            pdfauthor={Vitalik Buterin, Quang Dao, Justin Drake}]{hyperref}
+\usepackage[nameinlink,capitalise,noabbrev]{cleveref}
+
+% ---------------------------------------------------------------------------
+% Project macros
+% ---------------------------------------------------------------------------
+\newcommand{\leanseal}{leanSeal\xspace}
+% Repository URL. Its final home is not decided yet: change it here only.
+\newcommand{\repourl}{https://github.com/leanEthereum/leanSeal}
+\newcommand{\repo}{\expandafter\url\expandafter{\repourl}}
+
+\input{macros}
+
+% ---------------------------------------------------------------------------
+% Theorem environments
+% ---------------------------------------------------------------------------
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{conjecture}{Conjecture}
+\newtheorem{claim}{Claim}
+\theoremstyle{definition}
+\newtheorem{assumption}{Assumption}
+\newenvironment{claimproof}%
+  {\begin{proof}[Proof of the claim]\renewcommand{\qedsymbol}{$\lozenge$}}%
+  {\end{proof}}
+
+\crefname{claim}{Claim}{Claims}
+\crefname{conjecture}{Conjecture}{Conjectures}
+\crefname{algorithm}{Algorithm}{Algorithms}
+\crefname{ALG@line}{line}{lines}
+\Crefname{ALG@line}{Line}{Lines}
+
+% ---------------------------------------------------------------------------
+% Typographic settings
+% ---------------------------------------------------------------------------
+\setlist{itemsep=2pt,topsep=4pt}
+\captionsetup{font=small,labelfont=bf,margin=0.5cm}
+\captionsetup[table]{skip=4pt}
+\renewcommand{\arraystretch}{1.12}
+\setcounter{tocdepth}{2}
+\algrenewcommand\algorithmiccomment[1]{\hfill\(\triangleright\) {\itshape #1}}
+
+\title{\textbf{\leanseal: Time-Lock Encryption from Hashes Alone}}
+\author{%
+  Vitalik Buterin\textsuperscript{1}%
+  \and Quang Dao\textsuperscript{2}%
+  \and Justin Drake\textsuperscript{1}}
+\date{%
+  \small
+  \textsuperscript{1}Ethereum Foundation\\
+  % TODO: add Vitalik Buterin's email address.
+  \texttt{justin.drake@ethereum.org}\\[3pt]
+  \textsuperscript{2}Carnegie Mellon University\\
+  \texttt{qvd@andrew.cmu.edu}\\[8pt]
+  October 2026}
+
+\begin{document}
+
+\maketitle
+
+\input{sections/abstract}
+\clearpage
+
+\begingroup
+\small
+\tableofcontents
+\endgroup
+\clearpage
+
+\input{sections/introduction}
+\input{sections/mempool}
+\input{sections/construction}
+\input{sections/security}
+\input{sections/costs}
+\input{sections/tradeoffs}
+\input{sections/comparison}
+\input{sections/limits}
+\input{sections/backmatter}
+
+\bibliographystyle{alpha}
+\bibliography{references}
+
+\appendix
+\crefalias{section}{appendix}
+\input{sections/appendix-proof}
+\input{sections/appendix-hardware}
+
+\end{document}

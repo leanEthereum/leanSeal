@@ -5,3 +5,7 @@ __pycache__/
 /target
 /bench/metal/leanseal-metal
 /.claude/
+/poc/node/target
+/poc/contracts/out
+/poc/contracts/cache
+/poc/contracts/broadcast

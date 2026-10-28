@@ -1,0 +1,55 @@
+\section{Implementation and Costs}\label{sec:costs}\label{sec:impl}\label{sec:params}
+
+\leanseal implements \cref{sec:construction} as a versioned format with a written specification, a Rust implementation and command-line tool, and an independent Python implementation that agrees with it on every test vector~\cite{leanSealRepo}. A solve saves its progress and can be resumed, and several puzzles can be solved at once, one per core. The Rust code depends only on \texttt{getrandom} and \texttt{signal-hook}, uses the ARMv8 and x86 SHA-256 instructions when present, and is tested with known answers, round trips, property tests over 480,000 mutated encodings and fuzzing of every decoder. The specification and an earlier C implementation were reviewed over several rounds by an AI model; no human cryptographer has reviewed the code or the format.
+
+\paragraph{Encryption.}
+Encryption uses only SHA-256. For a fresh 16-byte nonce, subkeys $k_{\mathrm{enc}}$ and $k_{\mathrm{mac}}$ are labelled hashes of $K$ and the nonce; the keystream is $\HMAC(k_{\mathrm{enc}}, \mathsf{be64}(j))$ for block $j$, and an HMAC tag under $k_{\mathrm{mac}}$ covers every preceding byte. A sealed transaction of $L$ bytes takes $128 + nb + L$ bytes: the $68 + nb$-byte puzzle, 8 bytes of framing, the nonce and length (20 bytes) and the tag (32 bytes). One puzzle can seal several messages under different nonces; they all open together.
+
+\subsection{Measurements}\label{sec:measurements}
+
+\Cref{tab:measurements} gives the measurements on two Apple laptops: a fanless MacBook Air with an M4 (10 CPU cores) and a MacBook Pro with an M4 Max (16 CPU cores). GPU figures come from a separate Metal benchmark of the chain step; the tool does not yet build puzzles on a GPU.
+
+\begin{table}[t]
+  \centering\small
+  \caption{Measurements. The reference puzzle has $n = 16$, $m = 2^{30}$ and 24-byte links.}
+  \label{tab:measurements}
+  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}Xrr@{}}
+    \toprule
+    Measured & M4 Air & M4 Max \\
+    \midrule
+    One chain step, one CPU core & 23.2\,ns & 24.1\,ns \\
+    Total CPU hash rate, independent chains & 461\,M/s & 867\,M/s \\
+    Total GPU hash rate, many chains in flight & 0.71\,G/s & 2.96\,G/s \\
+    Building the reference puzzle on the CPU & 42.1\,s & 30.1\,s \\
+    Opening it without the key, one core & 6\,min 42\,s & -- \\
+    Opening a sealed 110-byte transaction with the key & 12.0\,ms & -- \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{What a delay costs}\label{sec:building}
+
+Four formulas describe the scheme. The delay is $T = N\ell$. Building takes about $N / \Rs$, where $\Rs$ is the sender's total hash rate. The puzzle takes $68 + nb$ bytes. Opening without the key takes $N$ times the opener's own time per step: 6.7 minutes on one laptop core for a one-minute puzzle.
+
+So the sender's cost is a ratio: about 0.70 seconds of laptop CPU time per second of delay (0.097 on the M4 Max GPU, amortized over a batch that takes hours). For constructions from a random oracle, this work cannot be reduced asymptotically~\cite{MMV11} (\cref{sec:limits}). Two things make it affordable. First, a puzzle does not depend on the transaction it will seal, so a wallet can keep a stock and build more while idle or charging; the building time is then a cost, not a delay. A laptop CPU running all day builds about 2,000 one-minute puzzles. Second, the delay only needs to cover the time until the ordering is fixed (\cref{sec:timing}); halving the delay halves all the work and leaves the puzzle size unchanged.
+
+\subsection{The number of chains}\label{sec:chains}
+
+The delay depends only on $N$; the number of chains $n$ sets how many cores can work on one puzzle at once, and the size. A sender that builds a puzzle when its transaction is ready needs one chain per core it wants to use: $n = 16$ builds a reference puzzle in 42.1\,s on the M4 Air and 30.1\,s on the M4 Max. A sender that builds a stock gets its parallelism from building many puzzles at once instead (five 16-chain puzzles built together on the M4 Air took 37.5\,s each), so it can use a single chain per puzzle. \Cref{tab:chains} compares the options.
+
+\begin{table}[t]
+  \centering\small
+  \caption{One-minute puzzles ($N = 2^{34}$, 24-byte links) for different numbers of chains. The $n = 4$ time is projected from the measured time per step; the others are measured.}
+  \label{tab:chains}
+  \begin{tabular}{@{}rrrl@{}}
+    \toprule
+    Chains $n$ & Puzzle & Added to a transaction & Building on a 10-core laptop \\
+    \midrule
+    16 & 452\,B & 512\,B & on demand, 42.1\,s \\
+    4 & 164\,B & 224\,B & on demand, about 100\,s \\
+    1 & 92\,B & 152\,B & from a stock: one per 60\,s, about 1,400 a day \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+With $n = 1$, sealing a 110-byte transfer gives 262 bytes rather than 622, and the guessing term of \cref{thm:delay} vanishes. Ten single-chain puzzles built at once on the M4 Air, one per core, took 75\,s for $2^{31}$ steps each, on a machine that was not idle. A stock builder could interleave two single-chain puzzles per core, as the builder already does with chains, to keep the 1.5-fold gain of two SHA-256 pipelines per core.

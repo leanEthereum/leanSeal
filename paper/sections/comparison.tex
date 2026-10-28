@@ -1,0 +1,65 @@
+\section{Comparison with Other Encrypted-Mempool Designs}\label{sec:comparison}
+
+\subsection{The design space}\label{sec:design-space}
+
+Every encrypted mempool must answer who opens a transaction once it is ordered. \Cref{tab:design-space} compares the answers; the survey of Passerat-Palmbach~\cite{PP26} and the critique of Garimidi, Bonneau and Heimbach~\cite{GBH25} discuss them at length.
+
+\begin{table}[t]
+  \centering\footnotesize
+  \caption{Who opens a sealed transaction, and what each answer rests on. ``Excluded'' says whether a transaction that is never included stays private.}
+  \label{tab:design-space}
+  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{1.9cm}>{\raggedright\arraybackslash}p{2.0cm}@{}}
+    \toprule
+    Design & Privacy before ordering rests on & Opening guaranteed if & Excluded & Setup, PQ \\
+    \midrule
+    Private order flow & the builder or relay & the builder includes it & if trusted & none; n/a \\
+    Commit--reveal, LUCID self-decryption~\cite{LUCID} & nothing & the sender chooses to & private & none; yes \\
+    Threshold committee: Shutter~\cite{Shutter}, Aptos~\cite{AIP144}, batched schemes~\cite{CGPW24} & no threshold of members colluding & a threshold is online & private with per-transaction keys~\cite{CPGW24usenix} & DKG or setup; no \\
+    Hybrid~\cite{WM25} & no threshold colluding & the sender \emph{or} a threshold is online & private & as threshold \\
+    TEE builder & the vendor and physical security~\cite{TEEfail} & the operator is online & private & attestation; n/a \\
+    RSA time lock with proofs~\cite{Radius22} & the hardware estimate & always; proofs check the puzzle & opens after $T$ & RSA modulus; no \\
+    Delay encryption~\cite{BDF21} & the hardware estimate & one solve per round & opens after $T$ & trusted setup; no \\
+    \leanseal & the hardware estimate & the sender reveals \emph{or} the puzzle is well formed & opens after $T$ & none; plausibly \\
+    \leanseal OR committee & both & the sender, a threshold \emph{or} the puzzle & opens after $T$ & as threshold \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+The table shows the trade. Every design that keeps excluded transactions private has a party that can refuse to open, and that party is also the one that can fail to open; \cref{claim:noninclusion} says this is forced. Among designs with an input-free fallback, \leanseal is the only one with no setup and a plausible post-quantum argument. Its costs against the others are three: bytes (152 to 512 per transaction, against a 32-byte commitment), the sender's computation, and minutes rather than seconds for a forced opening.
+
+The closest work is the bonded sealed reveal of Naraghi~\cite{Naraghi26}, which appeared while this paper was being written. It uses iterated hashes as timed pads to remove the sender's option in a commit--reveal design, commits before it publishes, and slashes a sender whose pad turns out inconsistent. Naraghi proves that a forced opening which must finish within the slot is private and timely only if the attacker is less than about twice as fast as the honest solvers, once the transaction waits a slot in the mempool. \leanseal does not contradict this: the sender's reveal is its timely path, and the forced opening only has to finish within minutes. With a fallback window of 400\,s, a 4-second ordering delay and a 12-second wait, the same bound allows an attacker 26 times faster than the honest solvers. The price is the one stated in \cref{sec:withholding}: a silent sender's transaction cannot execute at its position in the same slot.
+
+\subsection{Composing \leanseal with a threshold committee}\label{sec:composition}
+
+A time lock and a committee fail in different ways: the time lock relies on a hardware estimate and leaks excluded transactions, and the committee relies on no threshold of its members colluding and on enough of them being online. The two can be combined in two ways. Let $K_{\mathrm{tl}}$ be a \leanseal key and $K_{\mathrm{th}}$ a key that a threshold committee releases for included transactions.
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{AND.} Encrypt under $\mathsf{H}(K_{\mathrm{tl}}, K_{\mathrm{th}})$. Reading the transaction needs both keys, so the contents stay hidden while the committee is honest \emph{or} the delay has not passed. With an honest committee, excluded transactions are never revealed. With a colluding committee, the puzzle still keeps the contents hidden for the delay, so the committee cannot read transactions before ordering them. Opening needs both the committee and the puzzle (or the sender's reveal), so a committee that goes offline blocks it.
+  \item \textbf{OR.} Encrypt the transaction's key twice, once under each. Either key opens the transaction, so opening needs the committee \emph{or} the puzzle: a committee that withholds keys or goes offline cannot block the opening. Privacy needs the committee to be honest \emph{and} the delay not to have passed.
+\end{itemize}
+\Cref{tab:composition} summarizes this. In both, the sender's own reveal remains the fast path. The OR form is the shape of the hybrid designs of \cref{sec:design-space}, with \leanseal as a fallback that trusts nobody; the AND form uses \leanseal as a floor for privacy under a committee.
+
+\begin{table}[t]
+  \centering\small
+  \caption{Composing \leanseal (time lock, TL) with a threshold committee (TH).}
+  \label{tab:composition}
+  \begin{tabularx}{\textwidth}{@{}l>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X@{}}
+    \toprule
+    & Contents hidden while & Opening guaranteed if & Excluded transactions \\
+    \midrule
+    TL alone & delay not passed & puzzle well formed & revealed after the delay \\
+    TH alone & committee honest & committee live & private, if the committee opens only included ones \\
+    TL AND TH & committee honest \emph{or} delay not passed & committee live \emph{and} puzzle well formed & private while the committee is honest \\
+    TL OR TH & committee honest \emph{and} delay not passed & committee live \emph{or} puzzle well formed & revealed after the delay \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{How realistic is \leanseal for an encrypted mempool?}\label{sec:realistic}
+
+\leanseal is realistic where three conditions hold: the order is fixed within seconds of exposure, a deposit is acceptable, and minutes of delay for a silent sender's transaction are tolerable. Three settings meet them.
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{The self-decryption path of LUCID or a hybrid.} Here \leanseal is a fallback that trusts nobody. In the OR form it removes the hybrid design's bad case, a silent sender while the committee is offline, at the cost of 92 to 452 bytes of puzzle per transaction. It needs no change to the data either design puts on chain.
+  \item \textbf{Sealed-bid and batch auctions.} Settlement can wait for every bid to open, so a withheld bid is forced open and still binds its bidder. This is the setting where \leanseal suffices on its own.
+  \item \textbf{Rollups and chains with fast finality}, where a sequencer or a fast-finality protocol fixes the order within seconds, so a one-minute lock leaves a wide margin.
+\end{itemize}
+It is unrealistic for transactions that wait several slots in a public mempool. The clock starts at exposure, so a one-minute lock is used up by a five-slot wait; broadcasting only a commitment and publishing the puzzle once the slot is reserved~\cite{Naraghi26}, or sending it only to the slot's builder, removes the wait. It is also unrealistic wherever excluded transactions must stay private and no committee is acceptable: no design achieves that (\cref{claim:noninclusion}).

@@ -1,0 +1,51 @@
+% Parallel building versus sequential opening (Figure 2 of the web version).
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[
+      x=1cm, y=1cm, font=\small,
+      chain/.style={draw=accent, fill=accent!12, line width=0.5pt},
+      note/.style={font=\footnotesize, text=black!60, align=left, anchor=west, inner xsep=0pt},
+      head/.style={font=\small\bfseries, anchor=west},
+    ]
+    % Bar of m steps, with tick marks for the individual steps.
+    \newcommand{\chainbar}[3]{% x0, y, width
+      \draw[chain] (#1,#2) rectangle ++(#3,0.34);
+      \foreach \t in {0.18,0.36,...,#3} {
+        \draw[accent!45, line width=0.3pt] ({#1+\t},#2) -- ++(0,0.34);
+      }
+    }
+    % ---------------- Sender ----------------
+    \node[head] at (-0.3,1.25) {Sender: $n$ chains in parallel};
+    \node[note] at (-0.3,0.85) {wall time $= m$ steps};
+    \foreach \i/\y in {1/0, 2/-0.55, 3/-1.10, 4/-1.65} {
+      \chainbar{0.35}{\y}{3.06}
+      \node[anchor=east] at (0.3,\y+0.17) {$x_{\i}$};
+      \node[anchor=west] at (3.45,\y+0.17) {$y_{\i}$};
+    }
+    \draw[decorate, decoration={brace, mirror, amplitude=4pt}]
+      (0.35,-1.80) -- node[below=5pt] {$m$ hash steps} (3.41,-1.80);
+    \node[note] at (-0.3,-2.75) {then publish $n - 1$ masked links,};
+    \node[note] at (-0.3,-3.15) {$z_i = \trunc{\Hmask(\ctx, y_i)}{b} \oplus x_{i+1}$};
+    % ---------------- Divider ----------------
+    \draw[black!25] (4.45,1.45) -- (4.45,-3.75);
+    % ---------------- Opener ----------------
+    \node[head] at (4.75,1.25) {Opener: each chain needs the previous chain's end};
+    \node[note] at (4.75,0.85) {wall time $= n \cdot m$ steps};
+    \foreach \i/\x/\y in {1/5.20/0, 2/7.54/-0.55, 3/9.88/-1.10, 4/12.22/-1.65} {
+      \chainbar{\x}{\y}{2.34}
+    }
+    \node[anchor=east] at (5.15,0.17) {$x_1$};
+    \node[anchor=west] at (14.58,-1.48) {$y_4$};
+    \foreach \i/\x/\y in {1/7.54/0, 2/9.88/-0.55, 3/12.22/-1.10} {
+      \draw[-{Stealth[length=4pt]}, accent, line width=0.8pt] (\x,\y) -- (\x,\y-0.21);
+      \node[anchor=west, text=accent, font=\footnotesize] at (\x+0.05,\y-0.08) {$\oplus\, z_{\i}$};
+    }
+    \draw[decorate, decoration={brace, mirror, amplitude=4pt}]
+      (5.20,-1.80) -- node[below=5pt] {$n \cdot m$ hash steps; no parallelism helps} (14.56,-1.80);
+    \node[note] at (4.75,-2.75) {Starting chain $i + 1$ early means guessing $x_{i+1}$,};
+    \node[note] at (4.75,-3.15) {one of $2^{192}$ values for a 24-byte link.};
+    \node[note] at (4.75,-3.55) {The key hashes every end $y_1, \dots, y_n$, so no chain can be left out.};
+  \end{tikzpicture}
+  \caption{The same $n$ chains, arranged two ways in time (drawn for $n = 4$). The sender knows every link and runs the chains side by side. An opener has to run them one after another, because each chain's starting link is hidden under the end of the previous chain. The puzzle is just the $n$ links, so its size grows with $n$ and not with the delay.}
+  \label{fig:schedules}
+\end{figure}
