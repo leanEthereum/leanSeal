@@ -8,20 +8,20 @@ In an encrypted mempool, block builders order transactions before they can read 
 \end{itemize}
 Hybrid designs~\cite{WM25} let either the sender or a committee open, which removes the free option while the committee is online and the committee's liveness problem while the sender is honest. Their bad case remains a dishonest sender while the committee is offline.
 
-\leanseal removes the free option without any committee. The sender opens its own transaction in the normal case, but it attaches a time-lock puzzle that anyone can solve to recover the key after about a minute of sequential computation. Withholding the key therefore delays a transaction but cannot cancel or hide it. This is a timed commitment~\cite{BN00}. The puzzle uses only SHA-256: it needs no trusted setup, no committee and no hardware trust, and the idealized version is secure against quantum openers. The price is the sender's work. The puzzle is the chained-hash puzzle of Mahmoody, Moran and Vadhan~\cite{MMV11}, in which the sender computes as many hashes as an opener, only in parallel, and they proved that no hash-only puzzle can do better. This paper asks whether that price is affordable for sealing transactions, and what an encrypted mempool built on it can and cannot provide.
+\leanseal removes the free option without any committee. The sender opens its own transaction in the normal case, but it attaches a time-lock puzzle that anyone can solve to recover the key after a fixed amount of sequential computation, about 30 seconds on Ethereum. Withholding the key therefore delays a transaction but cannot cancel or hide it. This is a timed commitment~\cite{BN00}. The puzzle uses only SHA-256: it needs no trusted setup, no committee and no hardware trust, and the idealized version is secure against quantum openers. The price is the sender's work. The puzzle is the chained-hash puzzle of Mahmoody, Moran and Vadhan~\cite{MMV11}, in which the sender computes as many hashes as an opener, only in parallel, and they proved that no hash-only puzzle can do better. This paper asks whether that price is affordable for sealing transactions, and what an encrypted mempool built on it can and cannot provide.
 
 \begin{table}[t]
   \centering\small
-  \caption{The reference puzzle at a glance: $n = 16$ chains of $2^{30}$ SHA-256 steps with 24-byte links. Measured times are on an Apple M4 MacBook Air (\cref{sec:costs}).}
+  \caption{The reference puzzle at a glance: a 30-second lock of $n = 16$ chains of $2^{29}$ SHA-256 steps with 24-byte links. Times are on an Apple M4 MacBook Air (\cref{sec:costs}); building and forced opening are half our measurements of the one-minute puzzle ($m = 2^{30}$), since both are linear in the delay.}
   \label{tab:glance}
   \begin{tabularx}{\textwidth}{@{}Xrl@{}}
     \toprule
     & Value & Basis \\
     \midrule
-    Earliest opening by an attacker & 60\,s & \tagm{assumed}: 3.5\,ns per chained hash \\
+    Earliest opening by an attacker & 30\,s & \tagm{assumed}: 3.5\,ns per chained hash \\
     Opening when the sender reveals the key, the normal case & 12.0\,ms & \tagm{measured} \\
-    Forced opening without the sender, one laptop core & 6\,min 42\,s & \tagm{measured} \\
-    Building the puzzle, before the transaction exists & 42.1\,s & \tagm{measured}: all CPU cores \\
+    Forced opening without the sender, one laptop core & 3\,min 21\,s & \tagm{measured}, halved \\
+    Building the puzzle, before the transaction exists & 21\,s & \tagm{measured}, halved: all CPU cores \\
     Added to a transaction, on-demand or stockpiled puzzle & 512 or 152\,B & exact \\
     \bottomrule
   \end{tabularx}
@@ -30,8 +30,8 @@ Hybrid designs~\cite{WM25} let either the sender or a committee open, which remo
 \paragraph{Our results.}
 \begin{enumerate}[label=\arabic*.,leftmargin=1.5em]
   \item \textbf{A design.} We describe \leanseal as a decryption path for an encrypted mempool: self-decryption with a time-lock fallback (\cref{sec:mempool}). It puts on chain the same data as LUCID and the hybrid design, a ciphertext and a hash of its key, so it fits them as a path that needs no third party.
-  \item \textbf{A concrete security proof.} In the random-oracle model, a classical attacker derives the key even one oracle round early with probability about $2^{-116}$ for a one-minute lock against the hash rate of the whole Bitcoin network (\cref{sec:security}). Turning rounds into seconds needs one hardware number, the fastest time for one chained SHA-256, which we price at 3.5\,ns, 3.7 times faster than the fastest published design we found.
-  \item \textbf{Affordable costs.} A one-minute puzzle takes 42.1\,s to build on a laptop CPU and can be built before the transaction exists. A sender that keeps a stock can use single-chain puzzles, which add 152 bytes to a transaction (\cref{sec:costs}).
+  \item \textbf{A concrete security proof.} In the random-oracle model, a classical attacker derives the key even one oracle round early with probability about $2^{-117}$ for a 30-second lock against the hash rate of the whole Bitcoin network (\cref{sec:security}). Turning rounds into seconds needs one hardware number, the fastest time for one chained SHA-256, which we price at 3.5\,ns, 3.7 times faster than the fastest published design we found.
+  \item \textbf{Affordable costs.} A 30-second puzzle, enough when the order is fixed within a slot, takes about 21\,s to build on a laptop CPU and can be built before the transaction exists (\cref{sec:choosing-t} chooses the delay per use case). A sender that keeps a stock can use single-chain puzzles, which add 152 bytes to a transaction (\cref{sec:costs}).
   \item \textbf{An honest account of the trade-offs.} A time lock also reveals transactions that are never included; we argue that this holds for every design whose fallback opening needs no secret, and show how validity windows, private submission and a committee limit it. Withholding still has some value, so a deposit carries the economics, and the time lock makes it enforceable (\cref{sec:tradeoffs}). We compare \leanseal with threshold, TEE, hybrid and delay-encryption designs (\cref{sec:comparison}).
   \item \textbf{An implementation}: a specified format with a Rust implementation, a second implementation in Python, test vectors and benchmarks, and a prototype encrypted mempool on an EVM chain in which a sealed swap escapes a sandwich that costs its plaintext version 9.25\% and a withheld key is forced open (\cref{sec:poc})~\cite{leanSealRepo}.
 \end{enumerate}

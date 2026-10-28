@@ -26,6 +26,29 @@ The attacker's clock starts at \emph{exposure}, $\texp$, the first moment anyone
 \]
 with a margin for propagation. A forced opening finishes $N \cdot \lsolver$ after a solver starts, which on a laptop core is minutes after the deadline. If the attacker is $k$ times faster than assumed, the delay shrinks $k$-fold; once it falls below $\torder - \texp$, the contents can be read before the order is fixed. Even then the result is no worse than today's public mempool, where everyone reads a transaction as soon as it is broadcast.
 
+\subsection{Choosing the delay}\label{sec:choosing-t}
+
+The delay should be the smallest that covers the time from exposure to the fixed order, $\torder - \texp$. Building, forced opening, the solvers' load and the window in which a silent sender holds an option all grow linearly with $T$; only the size does not. The attacker speed already carries a margin of about 3.7 over the fastest published design (\cref{sec:pricing}), so we take $T$ about twice the time to fix the order. \Cref{tab:choosing-t} applies this to the settings of \cref{sec:realistic}. We use $T = 30$\,s as the reference: it covers a puzzle that is sent only to the slot's builder, or published after a commitment, and ordered within one 12-second slot.
+
+\begin{table}[t]
+  \centering\small
+  \caption{The delay per setting. Building uses all cores of the M4 Air (0.70\,s per second of delay); forced opening uses one of its cores (6.6 times the delay).}
+  \label{tab:choosing-t}
+  \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{2.7cm}rrr@{}}
+    \toprule
+    Setting & Time to fix the order & Delay $T$ & Building & Forced opening \\
+    \midrule
+    Rollup with a sequencer & 1--2\,s & 15\,s & 11\,s & 1.7\,min \\
+    Ethereum with enshrined PBS; puzzle sent to the builder, or published after a commitment & up to one slot, 12\,s & \textbf{30\,s} & 21\,s & 3.3\,min \\
+    Sealed-bid auction; bid committed, then posted near the close & about one slot & 30\,s & 21\,s & 3.3\,min \\
+    Public gossip, waiting $w$ slots & $12(w+1)$\,s & $24(w+1)$\,s & $17(w+1)$\,s & $2.7(w+1)$\,min \\
+    Order fixed only at finality, Ethereum today & about 13\,min & 15\,min & 10.5\,min & 1.7\,h \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+The last row is why \leanseal needs an order that is fixed early. Waiting for today's finality makes every cost thirty times larger than in the reference setting, so a protocol either accepts that a reorganization exposes revealed transactions (\cref{sec:reorgs}) or relies on fast finality, which brings the delay back to the reference range. Public gossip is affordable for a wait of a slot or two but not more, which is why the puzzle should not wait in a public mempool.
+
 \subsection{What \leanseal provides}\label{sec:mempool-props}
 
 \Cref{tab:props} lists the properties an encrypted mempool may want and what \leanseal gives. No known design gives all of them; \cref{sec:comparison} compares the alternatives.
