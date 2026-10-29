@@ -4,11 +4,19 @@ pragma solidity ^0.8.24;
 import {LeanSeal} from "./LeanSeal.sol";
 import {SealedAccount} from "./SealedAccount.sol";
 
-/// Orders structurally valid envelopes; solvability is not verified.
+/// Orders structurally valid envelopes whose puzzles are within fixed work
+/// limits; solvability is not verified. Each sender may have at most `maxOpen`
+/// puzzles whose keys are not yet public.
 /// A missed reveal permanently locks deposit - bounty as the net penalty,
 /// even when the withholding sender claims its own bounty. The deposit prices
 /// only missed reveals: a sender that reveals on time and then revokes its
 /// approvals or moves its funds makes its own call fail without penalty.
+/// The bond prices malformation. Once a key matching the commitment is
+/// known, from a reveal or a forced opening, the envelope's tag is checked:
+/// if it verifies, the bond is credited back to the sender, and if it fails,
+/// the bond is burned. Chains that do not lead to the committed key cannot be
+/// proved here, since that needs a verification game; the bond of such a
+/// ticket stays locked with its deposit.
 /// Plaintext is abi.encode(address target, bytes data, uint64 expiry).
 /// gasLimit is the gas given to the delegated account call, including its wrapper.
 ///
@@ -36,7 +44,8 @@ contract SealedInbox {
         Revealed,
         Executed,
         Missed,
-        Forced
+        Forced,
+        Malformed
     }
 
     struct Ticket {
@@ -50,12 +59,34 @@ contract SealedInbox {
         bytes32 key;
     }
 
+    struct Config {
+        uint256 deposit;
+        uint256 bounty;
+        uint256 bond;
+        uint64 revealWindow;
+        uint32 maxTicketGas;
+        uint64 slotGasBudget;
+        uint32 maxEnvelope;
+        uint64 minWork;
+        uint64 maxWork;
+        uint32 maxChains;
+        uint8 minLinkBytes;
+        uint32 maxOpen;
+    }
+
     uint256 public immutable deposit;
     uint64 public immutable revealWindow;
     uint256 public immutable bounty;
+    uint256 public immutable bond;
     uint32 public immutable maxTicketGas;
     uint64 public immutable slotGasBudget;
     uint32 public immutable maxEnvelope;
+    /// Bounds on a puzzle's total steps n * m, its chains n and its link bytes b.
+    uint64 public immutable minWork;
+    uint64 public immutable maxWork;
+    uint32 public immutable maxChains;
+    uint8 public immutable minLinkBytes;
+    uint32 public immutable maxOpen;
     address public immutable account;
     bytes32 internal immutable delegation;
     uint256 public burned;
@@ -67,6 +98,10 @@ contract SealedInbox {
     address public immutable admin;
     bool public restricted;
     mapping(address => bool) public allowedTarget;
+    /// Puzzles per sender whose keys are not yet public.
+    mapping(address => uint256) public openPuzzles;
+    /// Bonds owed to senders, paid by `withdraw`.
+    mapping(address => uint256) public credit;
 
     modifier serial() {
         require(!busy, "busy");
@@ -103,6 +138,8 @@ contract SealedInbox {
     event Executed(uint256 indexed id, bool ok);
     event Missed(uint256 indexed id);
     event Forced(uint256 indexed id, address solver, bytes32 key);
+    event Malformed(uint256 indexed id);
+    event Withdrawn(address indexed to, uint256 amount);
 
     event Progress(uint256 head, uint256 cursor);
 
@@ -117,23 +154,25 @@ contract SealedInbox {
     error WrongEnvelope();
     error NotDelegated();
     error NotRestricted();
+    error OutOfLimits();
+    error TooManyOpen();
 
-    constructor(
-        uint256 deposit_,
-        uint256 bounty_,
-        uint64 revealWindow_,
-        uint32 maxTicketGas_,
-        uint64 slotGasBudget_,
-        uint32 maxEnvelope_
-    ) {
-        require(bounty_ <= deposit_, "bounty exceeds deposit");
+    constructor(Config memory c) {
+        require(c.bounty <= c.deposit, "bounty exceeds deposit");
+        require(c.minWork <= c.maxWork, "empty work range");
         admin = msg.sender;
-        bounty = bounty_;
-        maxTicketGas = maxTicketGas_;
-        slotGasBudget = slotGasBudget_;
-        maxEnvelope = maxEnvelope_;
-        deposit = deposit_;
-        revealWindow = revealWindow_;
+        bounty = c.bounty;
+        bond = c.bond;
+        maxTicketGas = c.maxTicketGas;
+        slotGasBudget = c.slotGasBudget;
+        maxEnvelope = c.maxEnvelope;
+        deposit = c.deposit;
+        revealWindow = c.revealWindow;
+        minWork = c.minWork;
+        maxWork = c.maxWork;
+        maxChains = c.maxChains;
+        minLinkBytes = c.minLinkBytes;
+        maxOpen = c.maxOpen;
         account = address(new SealedAccount(address(this)));
         delegation = keccak256(abi.encodePacked(hex"ef0100", account));
     }
@@ -150,12 +189,16 @@ contract SealedInbox {
 
     function submit(bytes calldata envelope, uint32 gasLimit) external payable returns (uint256 id) {
         if (!restricted) revert NotRestricted();
-        if (msg.value != deposit) revert BadDeposit();
+        if (msg.value != deposit + bond) revert BadDeposit();
         if (envelope.length > maxEnvelope) revert EnvelopeTooLarge();
         if (gasLimit > maxTicketGas) revert GasTooHigh();
         if (msg.sender.codehash != delegation) revert NotDelegated();
         bytes memory env = envelope;
         LeanSeal.validate(env);
+        (uint256 n, uint256 m, uint256 b) = LeanSeal.params(env, 8);
+        if (n * m < minWork || n * m > maxWork || n > maxChains || b < minLinkBytes) revert OutOfLimits();
+        if (openPuzzles[msg.sender] >= maxOpen) revert TooManyOpen();
+        openPuzzles[msg.sender]++;
         (bytes32 ctx, bytes32 commit) = LeanSeal.header(env, 8);
         id = tickets.length;
         uint64 slot = uint64(block.number);
@@ -167,7 +210,8 @@ contract SealedInbox {
     }
 
     /// Publish the key of a sealed ticket within its window. Anyone holding the
-    /// key may do this; the deposit goes back to the sender.
+    /// key may do this; the deposit goes back to the sender. The bond is
+    /// settled when the ticket executes, since the envelope is checked then.
     function reveal(uint256 id, bytes32 key) external {
         Ticket storage t = tickets[id];
         if (t.state != State.Sealed) revert WrongState();
@@ -175,6 +219,7 @@ contract SealedInbox {
         if (LeanSeal.commitment(t.context, key) != t.commitment) revert WrongKey();
         t.key = key;
         t.state = State.Revealed;
+        openPuzzles[t.sender]--;
         emit Revealed(id, key);
         _pay(t.sender, deposit);
     }
@@ -198,7 +243,15 @@ contract SealedInbox {
                 emit Missed(id);
             } else {
                 t.state = State.Executed;
-                emit Executed(id, _run(t, envelopes[processed]));
+                (bool ok, bool wellFormed) = _run(t, envelopes[processed]);
+                if (wellFormed) {
+                    credit[t.sender] += bond;
+                    emit Executed(id, ok);
+                } else {
+                    t.state = State.Malformed;
+                    burned += bond;
+                    emit Malformed(id);
+                }
             }
             cursor++;
             processed++;
@@ -212,17 +265,36 @@ contract SealedInbox {
         emit Progress(head, cursor);
     }
 
-    /// Publish a missed ticket's key, solved from its puzzle. The ticket does
-    /// not run. The caller receives only bounty; deposit - bounty remains locked
-    /// forever, including when the sender claims.
-    function forceOpen(uint256 id, bytes32 key) external {
+    /// Publish a missed ticket's key, solved from its puzzle, with its
+    /// envelope. The ticket does not run. The caller receives only bounty;
+    /// deposit - bounty remains locked forever, including when the sender
+    /// claims. The bond is credited back if the envelope's tag verifies under
+    /// the key and burned if it fails.
+    function forceOpen(uint256 id, bytes32 key, bytes calldata envelope) external {
         Ticket storage t = tickets[id];
         if (t.state != State.Missed) revert WrongState();
         if (LeanSeal.commitment(t.context, key) != t.commitment) revert WrongKey();
+        if (keccak256(envelope) != t.envelopeHash) revert WrongEnvelope();
         t.key = key;
-        t.state = State.Forced;
+        openPuzzles[t.sender]--;
         emit Forced(id, msg.sender, key);
+        if (LeanSeal.tagValid(envelope, key)) {
+            t.state = State.Forced;
+            credit[t.sender] += bond;
+        } else {
+            t.state = State.Malformed;
+            burned += bond;
+            emit Malformed(id);
+        }
         _pay(msg.sender, bounty);
+    }
+
+    /// Pay out the caller's credited bonds.
+    function withdraw() external {
+        uint256 amount = credit[msg.sender];
+        credit[msg.sender] = 0;
+        emit Withdrawn(msg.sender, amount);
+        _pay(msg.sender, amount);
     }
 
     function _enqueue(uint64 slot, uint256 id) internal {
@@ -248,31 +320,35 @@ contract SealedInbox {
         return tickets.length;
     }
 
-    /// Decrypt and run one ticket; false if its sender no longer delegates to
-    /// the canonical account, or the ticket fails to open, has expired or reverts.
-    function _run(Ticket storage t, bytes calldata envelope) internal returns (bool) {
+    /// Check the tag of one ticket, then decrypt and run it. `wellFormed` is
+    /// false if the tag fails under the revealed key, and then the ticket does
+    /// not run. `ok` is false if the sender no longer delegates to the
+    /// canonical account, or the plaintext does not decode, has expired or
+    /// reverts. The tag is checked outside the try, so a caller cannot turn a
+    /// failing tag into an ordinary failure by starving the inner call of gas.
+    function _run(Ticket storage t, bytes calldata envelope) internal returns (bool ok, bool wellFormed) {
         if (keccak256(envelope) != t.envelopeHash) revert WrongEnvelope();
+        if (!LeanSeal.tagValid(envelope, t.key)) return (false, false);
+        wellFormed = true;
         address sender = t.sender;
-        if (sender.codehash != delegation) return false;
+        if (sender.codehash != delegation) return (false, true);
         address target;
         bytes memory data;
         uint64 expiry;
         try this.openEnvelope(envelope, t.key) returns (address a, bytes memory d, uint64 e) {
             (target, data, expiry) = (a, d, e);
         } catch {
-            return false;
+            return (false, true);
         }
-        if (block.number > expiry) return false;
-        if (!allowedTarget[target]) return false;
+        if (block.number > expiry) return (false, true);
+        if (!allowedTarget[target]) return (false, true);
         bytes memory input = abi.encodeCall(SealedAccount.run, (target, data));
         uint256 allowance = t.gasLimit;
-        bool ok;
         assembly {
             tstore(0, 1)
             ok := call(allowance, sender, 0, add(input, 32), mload(input), 0, 0)
             tstore(0, 0)
         }
-        return ok;
     }
 
     /// Decrypt and decode an envelope; external so that `_run` can catch failures.

@@ -18,6 +18,12 @@ library LeanSeal {
 
     /// Length of the canonical puzzle starting at `at`, after checking its header.
     function puzzleLen(bytes memory data, uint256 at) internal pure returns (uint256) {
+        (uint256 n,, uint256 b) = params(data, at);
+        return 68 + n * b;
+    }
+
+    /// Chains `n`, steps per chain `m` and link bytes `b` of the puzzle starting at `at`.
+    function params(bytes memory data, uint256 at) internal pure returns (uint256 n, uint256 m, uint256 b) {
         if (data.length < at + 68) revert Format();
         bytes32 w0;
         assembly {
@@ -25,11 +31,10 @@ library LeanSeal {
         }
         // "LSPZ" | version 1 | b | 0 0 | n (4) | m (8) | ...
         if (bytes4(w0) != PUZZLE_MAGIC || uint8(w0[4]) != 1 || w0[6] != 0 || w0[7] != 0) revert Format();
-        uint256 b = uint8(w0[5]);
-        uint256 n = uint32(bytes4(w0 << 64));
-        uint256 m = uint64(bytes8(w0 << 96));
+        b = uint8(w0[5]);
+        n = uint32(bytes4(w0 << 64));
+        m = uint64(bytes8(w0 << 96));
         if (b == 0 || b > 32 || n == 0 || n > 2 ** 20 || m == 0 || m > 2 ** 48 || n * m > 2 ** 60) revert Format();
-        return 68 + n * b;
     }
 
     /// Context and commitment of the puzzle starting at `at`.
@@ -71,9 +76,7 @@ library LeanSeal {
         bytes16 nonce = bytes16(_word(env, at));
         uint256 len = uint32(bytes4(_word(env, at + 16)));
         if (env.length != at + 52 + len) revert Format();
-        uint256 end = at + 20 + len;
-        bytes32 kmac = sha256(abi.encodePacked(uint8(15), "leanseal/v1/mac", key, nonce));
-        if (hmac(kmac, _slice(env, 0, end)) != _word(env, end)) revert Tag();
+        if (!tagValid(env, key)) revert Tag();
         bytes32 kenc = sha256(abi.encodePacked(uint8(15), "leanseal/v1/enc", key, nonce));
         out = _slice(env, at + 20, len);
         for (uint256 i = 0; i * 32 < len; i++) {
@@ -84,6 +87,16 @@ library LeanSeal {
             }
         }
         // The last block's XOR may spill past `len`; that memory is not part of `out`.
+    }
+
+    /// Whether the tag of envelope `env` verifies under `key`. `env` must
+    /// already be valid; the key is not checked against the commitment.
+    function tagValid(bytes memory env, bytes32 key) internal view returns (bool) {
+        uint256 at = 8 + puzzleLen(env, 8);
+        bytes16 nonce = bytes16(_word(env, at));
+        uint256 end = at + 20 + uint32(bytes4(_word(env, at + 16)));
+        bytes32 kmac = sha256(abi.encodePacked(uint8(15), "leanseal/v1/mac", key, nonce));
+        return hmac(kmac, _slice(env, 0, end)) == _word(env, end);
     }
 
     function hmac(bytes32 key, bytes memory message) internal pure returns (bytes32) {

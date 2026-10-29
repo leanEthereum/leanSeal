@@ -16,7 +16,23 @@ contract Deploy is Script {
 
         vm.startBroadcast(deployer);
         // The inbox deploys its own SealedAccount; senders delegate to inbox.account().
-        SealedInbox inbox = new SealedInbox(0.01 ether, 0.002 ether, 2, 1_000_000, 10_000_000, 4096);
+        // Puzzles are fixed near the demo's 8 chains of 2^26 steps with 24-byte links.
+        SealedInbox inbox = new SealedInbox(
+            SealedInbox.Config({
+                deposit: 0.01 ether,
+                bounty: 0.002 ether,
+                bond: 0.005 ether,
+                revealWindow: 2,
+                maxTicketGas: 1_000_000,
+                slotGasBudget: 10_000_000,
+                maxEnvelope: 4096,
+                minWork: 1 << 28,
+                maxWork: 1 << 30,
+                maxChains: 16,
+                minLinkBytes: 24,
+                maxOpen: 4
+            })
+        );
         Token a = new Token("A");
         Token b = new Token("B");
         Pool pool = new Pool(a, b, address(inbox));

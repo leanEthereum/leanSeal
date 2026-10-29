@@ -3,7 +3,8 @@
 #   1. a plaintext swap is sandwiched by a searcher watching the mempool;
 #   2. the same swap sealed with leanSeal is ordered blind, revealed, executed;
 #   3. a sender that withholds its key loses its deposit; a solver publishes the
-#      key for the bounty, and the swap does not run.
+#      key for the bounty, and the swap does not run. Both envelopes verify, so
+#      the sender withdraws both bonds.
 set -euo pipefail
 cd "$(dirname "$0")"
 PORT=${PORT:-8545}
@@ -81,3 +82,4 @@ $BIN send --rpc $RPC --key-file "$KEYS/ALICE" --inbox $INBOX --to $POOL --data $
 await_forced ${FORCE_WAIT:-300}
 b1=$(bal)
 python3 -c "print(f'   key published; alice got {($b1-$b0)/1e18:.4f} B: the swap did not run, and she lost 0.008 ETH of her deposit')"
+$BIN withdraw --rpc $RPC --key-file "$KEYS/ALICE" --inbox $INBOX

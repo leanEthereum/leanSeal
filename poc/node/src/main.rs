@@ -4,6 +4,7 @@
 //!   send      seal a call, submit it, and reveal the key once it is ordered
 //!   keeper    execute each slot's revealed transactions after its window
 //!   solver    solve the puzzles of withheld keys and publish them for the bounty
+//!   withdraw  collect the sender's bonds, credited once each envelope's tag verifies
 //!   delegate  point the sender's account at the inbox's SealedAccount (EIP-7702)
 //!   sandwich  a searcher that front-runs plaintext swaps and keys it sees pending
 
@@ -168,10 +169,11 @@ async fn send(a: &Args) -> Result<()> {
     let mut nonce = [0u8; 16];
     getrandom::getrandom(&mut nonce)?;
     let envelope = leanseal::seal(&puzzle, &key, &nonce, &plain)?;
-    let deposit = inbox.deposit().call().await?;
+    // The deposit prices a missed reveal and the bond a failing tag.
+    let value = inbox.deposit().call().await? + inbox.bond().call().await?;
     let r = inbox
         .submit(envelope.clone().into(), gas)
-        .value(deposit)
+        .value(value)
         .send()
         .await?
         .get_receipt()
@@ -204,6 +206,31 @@ async fn send(a: &Args) -> Result<()> {
         bail!("the reveal of #{id} reverted in block {block}; its key is public but the ticket will miss");
     }
     log("sender", format!("revealed the key of #{id} in block {block}"));
+    Ok(())
+}
+
+async fn withdraw(a: &Args) -> Result<()> {
+    let (p, me) = connect(a).await?;
+    let inbox = SealedInbox::new(a.addr("inbox")?, p.clone());
+    let owed = inbox.credit(me).call().await?;
+    if owed.is_zero() {
+        log("sender", format!("no bonds owed to {me}"));
+        return Ok(());
+    }
+    let r = inbox.withdraw().send().await?.get_receipt().await?;
+    if !r.status() {
+        bail!("withdraw reverted");
+    }
+    // Read the amount from the receipt: more bonds may have been credited since `owed` was read.
+    let paid = r
+        .inner
+        .logs()
+        .iter()
+        .find_map(|l| SealedInbox::Withdrawn::decode_log(&l.inner).ok())
+        .ok_or_else(|| eyre!("withdraw emitted no Withdrawn event"))?
+        .data
+        .amount;
+    log("sender", format!("withdrew {} ETH of bonds", fmt_eth(paid)));
     Ok(())
 }
 
@@ -316,6 +343,8 @@ async fn keeper(a: &Args) -> Result<()> {
                         log("keeper", format!("slot {slot}: executed #{} in order (ok: {})", e.id, e.ok));
                     } else if let Ok(e) = SealedInbox::Missed::decode_log(&l.inner) {
                         log("keeper", format!("slot {slot}: #{} missed its reveal, penalty burned; it will not run", e.id));
+                    } else if let Ok(e) = SealedInbox::Malformed::decode_log(&l.inner) {
+                        log("keeper", format!("slot {slot}: #{} failed its tag check, bond burned; it will not run", e.id));
                     }
                 }
             }
@@ -334,6 +363,7 @@ async fn solve_ticket(p: &DynProvider, addr: Address, id: U256, max_steps: u64) 
     }
     let ev = sealed_events(p, addr, (1, id)).await?.pop().ok_or_else(|| eyre!("no envelope for #{id}"))?;
     let env = leanseal::Envelope::decode(&ev.envelope)?;
+    let envelope = ev.envelope.clone();
     let puzzle = env.puzzle.clone();
     if u64::from(puzzle.n()).checked_mul(puzzle.m()).is_none_or(|steps| steps > max_steps) {
         log("solver", format!("skipping #{id}: exceeds --max-steps {max_steps}"));
@@ -355,12 +385,15 @@ async fn solve_ticket(p: &DynProvider, addr: Address, id: U256, max_steps: u64) 
         log("solver", format!("#{id}: lost race before claiming"));
         return Ok(());
     }
-    // Publishing the key settles the ticket and pays the bounty; the ticket does not run.
+    // Publishing the key settles the ticket, pays the bounty and settles the
+    // bond by the envelope's tag; the ticket does not run.
     let claim = async {
-        let r = inbox.forceOpen(id, key.into()).send().await?.get_receipt().await?;
+        let r = inbox.forceOpen(id, key.into(), envelope).send().await?.get_receipt().await?;
         if !r.status() { bail!("claim reverted"); }
         let block = r.block_number.unwrap_or_default();
-        log("solver", format!("published the key of #{id} in block {block}; the bounty is paid and the call stays cancelled"));
+        let malformed = r.inner.logs().iter().any(|l| SealedInbox::Malformed::decode_log(&l.inner).is_ok());
+        let bond = if malformed { "the tag failed, so the bond is burned" } else { "the bond is owed back to the sender" };
+        log("solver", format!("published the key of #{id} in block {block}; the bounty is paid, {bond}, and the call stays cancelled"));
         Ok(())
     }.await;
     if let Err(e) = claim {
@@ -535,12 +568,13 @@ fn fmt_eth(v: U256) -> String {
 #[tokio::main]
 async fn main() -> Result<()> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
-    let (cmd, rest) = argv.split_first().ok_or_else(|| eyre!("usage: sealnet send|keeper|solver|delegate|sandwich [--opt value]..."))?;
+    let (cmd, rest) = argv.split_first().ok_or_else(|| eyre!("usage: sealnet send|keeper|solver|withdraw|delegate|sandwich [--opt value]..."))?;
     let a = Args::parse(rest)?;
     match cmd.as_str() {
         "send" => send(&a).await,
         "keeper" => keeper(&a).await,
         "solver" => solver(&a).await,
+        "withdraw" => withdraw(&a).await,
         "sandwich" => sandwich(&a).await,
         "delegate" => delegate(&a).await,
         _ => bail!("unknown command {cmd}"),
