@@ -4,20 +4,6 @@ A \emph{hash chain} starts from a value and hashes it many times in a row. Each 
 
 \subsection{Notation and model}\label{sec:prelims}\label{sec:notation}
 
-The notation follows the specification (\texttt{SPEC.md} in the repository~\cite{leanSealRepo}). Integers are encoded big-endian, $a \cat b$ is concatenation, $\trunc{v}{b}$ is the first $b$ bytes of $v$, and $\oplus$ is bytewise XOR. A \emph{labelled hash} is $\THash(\mathit{label}, x) = \SHA(\mathsf{u8}(|\mathit{label}|) \cat \mathit{label} \cat x)$, and we write $\Hstart, \Hmask, \Hacc, \Hkey, \Hcommit$ for labelled hashes with the labels \hashlabel{start}, \hashlabel{mask} and so on. The \emph{chain step} for chain $i$ is
-\[
-  F_i(s) = \SHA\bigl(s \cat \salt \cat \mathsf{be32}(i)\bigr),
-\]
-where $\salt$ is 16 random bytes drawn for each puzzle. Its input is exactly 52 bytes, so one step is one SHA-256 compression, and no other hash in the format has an input of that length.
-
-A puzzle has $n$ chains of $m$ steps and $b$-byte links; the specification bounds the parameters, in particular $m \le 2^{48}$. The reference parameters are $n = 16$, $m = 2^{29}$ and $b = 24$: $N = 2^{33}$ steps, a 30-second delay at 3.5\,ns per step, and a 452-byte puzzle. The measurements of \cref{sec:costs} use the one-minute puzzle, with $m = 2^{30}$.
-
-\label{sec:rom}We prove the delay in the random-oracle model~\cite{MMV11}: each chain step and each labelled hash is an independent random function that anyone can query, and an attacker is charged only for its queries. Time after publication is counted in \emph{oracle rounds}: all queries in a round are chosen before any answer from that round arrives. A bound in rounds therefore holds however much parallel hardware the attacker has; turning rounds into seconds takes the hardware assumption of \cref{sec:security}.
-
-\subsection{Building and opening}\label{sec:algorithms}
-
-\Cref{alg:build,alg:open} give the two algorithms, following Sections~4 and~5 of the specification with the byte encodings left out. The context $\ctx$ is a 32-byte encoding of the version, $b$, $n$, $m$ and the salt. Start hashes include the context and the chain index, and chain steps the salt and the index. Mask, key and commitment hashes include the context; the accumulator begins at the context and absorbs the chain ends in order.
-
 \begin{algorithm}[t]
   \caption{$\Build(n, m, b)$, run by the sender}\label{alg:build}
   \begin{algorithmic}[1]
@@ -53,7 +39,20 @@ A puzzle has $n$ chains of $m$ steps and $b$-byte links; the specification bound
   \end{algorithmic}
 \end{algorithm}
 
-The sender knows every link, so it runs the $n$ chains of \cref{alg:build} in parallel. Each link after the first is published only masked, under a hash of the end of the chain before it. The key is a hash of all chain ends in order, and the commitment $C$ lets anyone check a claimed key with one hash. An opener without the key has only $x_1$: it runs chain~1, uses its end to unhide $x_2$, runs chain~2, and so on, $nm$ steps in sequence (\cref{fig:schedules}). The only way to start a chain early is to guess its link. The sender encrypts the transaction under $K$ with HMAC-SHA256 (\cref{sec:costs}) and keeps the puzzle and key until it needs them.
+The notation follows the specification (\texttt{SPEC.md} in the repository~\cite{leanSealRepo}). Integers are encoded big-endian, $a \cat b$ is concatenation, $\trunc{v}{b}$ is the first $b$ bytes of $v$, and $\oplus$ is bytewise XOR. A \emph{labelled hash} is $\THash(\mathit{label}, x) = \SHA(\mathsf{u8}(|\mathit{label}|) \cat \mathit{label} \cat x)$, and we write $\Hstart, \Hmask, \Hacc, \Hkey, \Hcommit$ for labelled hashes with the labels \hashlabel{start}, \hashlabel{mask} and so on. The \emph{chain step} for chain $i$ is
+\[
+  F_i(s) = \SHA\bigl(s \cat \salt \cat \mathsf{be32}(i)\bigr),
+\]
+where $\salt$ is 16 random bytes drawn for each puzzle. Its input is exactly 52 bytes, so one step is one SHA-256 compression, and no other hash in the format has an input of that length.
 
+A puzzle has $n$ chains of $m$ steps and $b$-byte links; the specification bounds the parameters, in particular $m \le 2^{48}$. The reference parameters are $n = 16$, $m = 2^{29}$ and $b = 24$: $N = 2^{33}$ steps, a 30-second delay at 3.5\,ns per step, and a 452-byte puzzle. The measurements of \cref{sec:costs} use the one-minute puzzle, with $m = 2^{30}$.
+
+\label{sec:rom}We prove the delay in the random-oracle model~\cite{MMV11}: each chain step and each labelled hash is an independent random function that anyone can query, and an attacker is charged only for its queries. Time after publication is counted in \emph{oracle rounds}: all queries in a round are chosen before any answer from that round arrives. A bound in rounds therefore holds however much parallel hardware the attacker has; turning rounds into seconds takes the hardware assumption of \cref{sec:security}.
+
+\subsection{Building and opening}\label{sec:algorithms}
+
+\Cref{alg:build,alg:open} give the two algorithms, following Sections~4 and~5 of the specification with the byte encodings left out. The context $\ctx$ is a 32-byte encoding of the version, $b$, $n$, $m$ and the salt. Start hashes include the context and the chain index, and chain steps the salt and the index. Mask, key and commitment hashes include the context; the accumulator begins at the context and absorbs the chain ends in order.
+
+The sender knows every link, so it runs the $n$ chains of \cref{alg:build} in parallel. Each link after the first is published only masked, under a hash of the end of the chain before it. The key is a hash of all chain ends in order, and the commitment $C$ lets anyone check a claimed key with one hash. An opener without the key has only $x_1$: it runs chain~1, uses its end to unhide $x_2$, runs chain~2, and so on, $nm$ steps in sequence (\cref{fig:schedules}). The only way to start a chain early is to guess its link. The sender encrypts the transaction under $K$ with HMAC-SHA256 (\cref{sec:costs}) and keeps the puzzle and key until it needs them.
 
 Four choices in the encoding matter for security. Every hash depends on its puzzle's context or salt, and chain starts and steps also name their chain, so work on another puzzle does not help. Masks are hashes of chain ends, not the ends themselves, so learning a link says nothing about the chain before it. The key depends on every chain's end, so a guessed link cannot be confirmed until the opener's own chains reach it. Finally, the puzzle has $68 + nb$ bytes regardless of the delay, which depends only on $N$.

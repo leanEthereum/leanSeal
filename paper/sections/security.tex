@@ -8,7 +8,7 @@ Secrecy until the deadline rests on two assumptions about SHA-256 and two about 
   \item[A1. No shortcut.] The chain step and each labelled hash behave like independent random oracles on their whole inputs. We instantiate them heuristically with SHA-256; a chain step is a single compression. If this fails, the delay is lost and the hash must be replaced, which the versioned format allows.
   \item[A2. Speed.] During the delay, no party computes one chain step in less than $\ell$. An error here shrinks the delay in proportion.
   \item[A3. Budget.] The attacker computes at most $R$ hashes per second in total. An error here multiplies the bound of \cref{thm:delay} by the same factor; for the reference puzzle, any factor up to $2^{52}$ keeps it below $2^{-64}$.
-  \item[A4. Encryption.] HMAC-SHA256 is a pseudorandom function.
+  \item[A4. Encryption.] HMAC-SHA256 is a pseudorandom function (\cref{def:prf}).
 \end{description}
 
 \subsection{The delay theorem}\label{sec:theorem}
@@ -42,20 +42,65 @@ The threshold is the round in which $K$ is derived, not the round in which $\Ope
 \Cref{app:proof} gives the proof. It follows the structure of Pietrzak and Reyzin's soundness proof for proofs of sequential work~\cite{PR26}.
 
 \paragraph{Hiding the contents.}
-An attacker in an encrypted mempool also sees the envelopes sealed under $K$, and may only need to tell two candidate transactions apart. In the \emph{encryption game}, $\Adv_1$ receives $Z$ and may then ask, adaptively, for up to $q$ envelopes: for each, it names two messages of equal length and receives the envelope of the one selected by a hidden bit $\beta$, encrypted under $K$ with a fresh nonce as in \cref{sec:costs}. The labelled hashes $\Henc$ and $\Hmk$ that derive the subkeys are random oracles like the others. HMAC is used only under subkeys, and A4 is applied to it under keys that are uniform and independent of the attacker's view.
+An attacker in an encrypted mempool also sees the envelopes sealed under $K$, and may only need to tell two candidate transactions apart. The labelled hashes $\Henc$ and $\Hmk$ that derive an envelope's subkeys are random oracles like the others, but HMAC is computed outside the oracles. This theorem, unlike \cref{thm:delay}, therefore needs the attacker's other computation to be bounded, since an unbounded attacker could evaluate HMAC under every key. We let $\Adv$ make at most $\Qpre$ and $\Qon$ oracle queries, as before, and at most $t$ further computation steps.
 
-Since HMAC is computed outside the oracles, this theorem, unlike \cref{thm:delay}, needs the attacker's other computation to be bounded: an unbounded attacker could evaluate HMAC under every key. Let $\Adv$ make at most $\Qpre$ and $\Qon$ oracle queries, as before, and at most $t$ further computation steps. Let $\delta$ be the largest advantage, over algorithms running in time $t + O(Q + P')$, of distinguishing HMAC-SHA256 under $2q$ independent uniform 32-byte keys from $2q$ independent random functions, with the queries that the $q$ envelopes need.
+\begin{figure}[t]
+\centering\small
+\newcommand{\gamebox}[2]{\fbox{\begin{minipage}[t][3.1cm][t]{#1}#2\end{minipage}}}
+\gamebox{0.27\textwidth}{$\underline{\mathsf{Hide}_\beta(\Adv)}$
+\begin{algorithmic}[1]
+  \State $\sigma \gets \Adv_0^{H}$
+  \State $(Z, K) \gets \Build(n, m, b)$
+  \State $i \gets 0$
+  \State $\beta' \gets \Adv_1^{H, \mathsf{Enc}}(\sigma, Z)$
+  \State \Return $\beta'$
+\end{algorithmic}}\hfill
+\gamebox{0.33\textwidth}{$\underline{\mathsf{Enc}(M_0, M_1)}$
+\begin{algorithmic}[1]
+  \State \algorithmicif\ $i = \Qenc$ \algorithmicthen\ \Return $\bot$
+  \State \algorithmicif\ $|M_0| \neq |M_1|$ \algorithmicthen\ \Return $\bot$
+  \State $i \gets i + 1$
+  \State $\eta \gets$ 16 random bytes
+  \State \Return $\mathsf{Seal}(K, \eta, M_\beta)$
+\end{algorithmic}}\hfill
+\gamebox{0.31\textwidth}{$\underline{\mathsf{PRF}_\beta(\mathcal{B})}$
+\begin{algorithmic}[1]
+  \For{$j = 1, \dots, u$}
+    \State $k_j \gets$ 32 random bytes
+    \State $g_j \gets \HMAC(k_j, \cdot)$
+    \State \algorithmicif\ $\beta = 0$ \algorithmicthen\ $g_j \xleftarrow{\$} \mathcal{F}$
+  \EndFor
+  \State \Return $\mathcal{B}^{g_1, \dots, g_u}$
+\end{algorithmic}}
+\caption{The games of \cref{def:hiding,def:prf}. $H$ denotes all the oracles, and $\mathsf{Seal}(K, \eta, M)$ is the envelope of $M$ under $K$ with nonce $\eta$ (\cref{sec:costs}). $\mathcal{F}$ is the set of functions from byte strings to 32-byte values, and $\xleftarrow{\$}$ samples uniformly.}
+\label{fig:games}
+\end{figure}
+
+\begin{definition}[Encryption game]\label{def:hiding}
+For $\beta \in \{0, 1\}$, the game $\mathsf{Hide}_\beta$ and its envelope oracle $\mathsf{Enc}$ are given in \cref{fig:games}. $\Adv_0$ makes at most $\Qpre$ oracle queries; $\Adv_1$ makes at most $\Qon$ and stops within fewer than $\Tkey$ oracle rounds. The advantage of $\Adv$ is
+\[
+  \Advhide(\Adv) = \bigl|\Pr[\mathsf{Hide}_1(\Adv) = 1] - \Pr[\mathsf{Hide}_0(\Adv) = 1]\bigr|.
+\]
+\end{definition}
+
+\begin{definition}[Pseudorandomness of HMAC]\label{def:prf}
+For $\beta \in \{0, 1\}$ and $u$ keys, the game $\mathsf{PRF}_\beta$ is given in \cref{fig:games}. The advantage of an algorithm $\mathcal{B}$ is
+\[
+  \Advprf_u(\mathcal{B}) = \bigl|\Pr[\mathsf{PRF}_1(\mathcal{B}) = 1] - \Pr[\mathsf{PRF}_0(\mathcal{B}) = 1]\bigr|,
+\]
+and $\Advprf_u(t')$ is the largest advantage of an algorithm running in time $t'$.
+\end{definition}
 
 \begin{theorem}[Hiding]\label{thm:hiding}
-In the encryption game, for every attacker as above that stops within fewer than $\Tkey$ oracle rounds,
+For every attacker as above,
 \[
-  \bigl|\Pr[\Adv_1 \text{ outputs } 1 \mid \beta = 1] - \Pr[\Adv_1 \text{ outputs } 1 \mid \beta = 0]\bigr|
-  \;\le\; 2\Bigl(\frac{\Qon}{2^{8b}} + \frac{\Qpre}{2^{128 + 8b}} + \frac{QP' + P'^2}{2^{256}} + \frac{q^2}{2^{129}} + \delta\Bigr),
+  \Advhide(\Adv)
+  \;\le\; 2\Bigl(\frac{\Qon}{2^{8b}} + \frac{\Qpre}{2^{128 + 8b}} + \frac{QP' + P'^2}{2^{256}} + \frac{\Qenc^2}{2^{129}} + \Advprf_{2\Qenc}\bigl(t + O(Q + P')\bigr)\Bigr),
 \]
-where $P' = P + 2q$, and the first term is absent when $n = 1$.
+where $P' = P + 2\Qenc$, and the first term is absent when $n = 1$.
 \end{theorem}
 
-For the reference puzzle and few envelopes, the doubled link-guessing term is about $2^{-116}$. The bound also includes $q^2/2^{128}$, the extra path-value terms through $P' = P + 2q$, and $2\delta$; the nonce term can dominate when many envelopes share a puzzle. The theorem says nothing from round $\Tkey$ on, when the key can be derived and every envelope under it opens. \Cref{app:hiding} gives the proof.
+The first three terms come from \cref{thm:delay}, with $P'$ path values in place of $P$: each envelope adds two subkeys derived from $K$. The fourth is the chance that two nonces repeat, and the last is the cost of replacing HMAC under the $2\Qenc$ subkeys by random functions. For the reference puzzle and few envelopes, the doubled link-guessing term is about $2^{-116}$; the nonce term can dominate when many envelopes share a puzzle. The theorem says nothing from round $\Tkey$ on, when the key can be derived and every envelope under it opens. \Cref{app:hiding} gives the proof.
 
 \subsection{The hardware assumption}\label{sec:pricing}
 
