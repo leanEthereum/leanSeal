@@ -72,8 +72,11 @@ set +e; "$CS" encrypt -q -m 5 -i msg -o - --secret-out same > same 2>/dev/null; 
 : > case-probe
 if [ -e CASE-PROBE ]; then
   expect_exit 2 "$CS" encrypt -q -m 5 -i msg -o alias.env --secret-out ALIAS.env
-  [ "$(head -c 4 alias.env)" = LSEN ] || fail "encrypt replaced the envelope through a case alias"
+  [ ! -e alias.env ] || fail "encrypt left a file after refusing a case alias"
 fi
+# A secret that cannot be saved leaves no envelope, which only solving could open.
+expect_exit 1 "$CS" encrypt -q -m 5 -i msg -o lost.env --secret-out missing/lost.sec
+[ ! -e lost.env ] || fail "encrypt published an envelope without its secret"
 
 # Several puzzles solved in parallel.
 "$CS" encrypt -q -n 2 -m 50000 -i msg -o p1 --secret-out s1

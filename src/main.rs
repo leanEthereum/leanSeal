@@ -618,15 +618,20 @@ fn gen_or_encrypt(command: &str, args: &[OsString], be: Backend) -> CliResult<i3
     let mut nonce = [0; 16];
     getrandom::getrandom(&mut nonce).map_err(|_| code("encrypting", Error::Rng))?;
     let env = seal(&puzzle, &key, &nonce, &msg).map_err(|e| code("encrypting", e))?;
-    write_file(out, &env, false).map_err(|e| Failure::io(out, e))?;
     if let Some(path) = secret_out {
-        // Check again now that the envelope exists: two names that did not
-        // exist yet may still name one file, for example differing in case.
+        // Save the secret first: an envelope published without it could only
+        // be opened by solving. Then check again, since two names that did not
+        // exist yet may name one file, for example differing in case.
+        let fresh = path != "-" && std::fs::symlink_metadata(path).is_err();
+        save_secret(path, &puzzle, &key)?;
         if secret_is_envelope(out, path) {
+            if fresh {
+                let _ = std::fs::remove_file(path);
+            }
             return Err(usage(SECRET_IS_ENVELOPE));
         }
-        save_secret(path, &puzzle, &key)?;
     }
+    write_file(out, &env, false).map_err(|e| Failure::io(out, e))?;
     if !p.quiet {
         eprintln!(
             "wrote {}: {} bytes (puzzle {} + message {} + 60)",

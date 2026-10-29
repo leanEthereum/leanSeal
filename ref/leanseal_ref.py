@@ -502,13 +502,17 @@ def main():
             generated = generate(args.chains, args.steps, args.link_bytes, os.urandom(16),
                                  [os.urandom(args.link_bytes) for _ in range(args.chains)])
             envelope = encode_envelope(generated["puzzle"], generated["key"], os.urandom(16), message)
-            write_file(args.output, envelope)
             if args.secret_out is not None:
-                # Check again now that the envelope exists: two names that did not
-                # exist yet may still name one file, for example differing in case.
-                require(not same_file(args.output, args.secret_out),
-                        "the secret file is the envelope file; choose another --secret-out")
+                # Save the secret first: an envelope published without it could only
+                # be opened by solving. Then check again, since two names that did
+                # not exist yet may name one file, for example differing in case.
+                fresh = not os.path.lexists(args.secret_out)
                 write_file(args.secret_out, encode_secret(generated["puzzle"], generated["key"]), private=True)
+                if same_file(args.output, args.secret_out):
+                    if fresh:
+                        os.unlink(args.secret_out)
+                    raise Invalid("the secret file is the envelope file; choose another --secret-out")
+            write_file(args.output, envelope)
         elif args.command == "solve":
             raw = read_file(args.file)
             puzzle = decode_envelope(raw)["puzzle"] if raw[:4] == b"LSEN" else decode_puzzle(raw)

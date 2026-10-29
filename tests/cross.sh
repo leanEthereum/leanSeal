@@ -36,6 +36,11 @@ if [ -e CASE-PROBE ]; then
     fail "Python wrote the secret over the envelope through a case alias"
   fi
   grep -q "the secret file is the envelope file" log || fail "Python refused the case alias for another reason"
-  [ "$(head -c 4 alias.env)" = LSEN ] || fail "Python replaced the envelope through a case alias"
+  [ ! -e alias.env ] || fail "Python left a file after refusing a case alias"
 fi
+# A secret that cannot be saved leaves no envelope, which only solving could open.
+if $PY encrypt --chains 2 --steps 10 --link-bytes 24 --in msg --out lost.env --secret-out missing/lost.sec 2> /dev/null; then
+  fail "Python saved a secret into a missing directory"
+fi
+[ ! -e lost.env ] || fail "Python published an envelope without its secret"
 echo "cross tests: ok"
