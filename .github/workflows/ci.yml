@@ -79,3 +79,44 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build all targets with MSRV
         run: cargo build --release --all-targets --locked
+
+  poc:
+    name: Proof of concept
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: poc/node
+      - name: Contract format and tests
+        working-directory: poc/contracts
+        run: |
+          forge fmt --check
+          forge test
+      - name: Node clippy and tests
+        working-directory: poc/node
+        run: |
+          cargo clippy --release --all-targets --locked -- -D warnings
+          cargo test --release --locked
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Core crate
+        run: cargo audit --deny warnings
+      # RUSTSEC-2026-0387 (crypto-bigint 0.5) reaches the node through alloy's
+      # k256 0.13, and alloy 2.5.0, the latest release, has no version without
+      # it. Remove the exception once alloy moves to k256 0.14.
+      - name: Proof-of-concept node
+        run: cargo audit --file poc/node/Cargo.lock --ignore RUSTSEC-2026-0387
