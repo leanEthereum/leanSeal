@@ -2,8 +2,37 @@
 
 This appendix gives the reasoning behind assumption A2 and the advantage factor $A$ of \cref{sec:pricing}.
 
+\paragraph{SHA-256.}
+We recall the parts of SHA-256~\cite{FIPS180-4} that determine the latency of a chain step.
+
+\begin{definition}[SHA-256 compression]\label{def:sha}
+Words are 32 bits, $+$ is addition modulo $2^{32}$, and $x^{\ggg r}$ and $x^{\gg r}$ are $x$ rotated and shifted right by $r$ bits. Let
+\begin{alignat*}{2}
+  \mathrm{Ch}(e,f,g) &= (e \wedge f) \oplus (\neg e \wedge g), &\quad
+  \mathrm{Maj}(a,b,c) &= (a \wedge b) \oplus (a \wedge c) \oplus (b \wedge c),\\
+  \Sigma_0(a) &= a^{\ggg 2} \oplus a^{\ggg 13} \oplus a^{\ggg 22}, &\quad
+  \Sigma_1(e) &= e^{\ggg 6} \oplus e^{\ggg 11} \oplus e^{\ggg 25},\\
+  \sigma_0(x) &= x^{\ggg 7} \oplus x^{\ggg 18} \oplus x^{\gg 3}, &\quad
+  \sigma_1(x) &= x^{\ggg 17} \oplus x^{\ggg 19} \oplus x^{\gg 10}.
+\end{alignat*}
+The compression function maps a state $V$ of eight words and a block $M = W_0 \cat \cdots \cat W_{15}$ of sixteen words to a new state. It extends the block by $W_t = \sigma_1(W_{t-2}) + W_{t-7} + \sigma_0(W_{t-15}) + W_{t-16}$ for $16 \le t < 64$.
+
+The rounds start from $(a,b,c,d,e,f,g,h) = V$. For $t = 0, \ldots, 63$, with fixed round constants $K_t$, round $t$ computes
+\begin{align*}
+  T_1 &= h + \Sigma_1(e) + \mathrm{Ch}(e,f,g) + K_t + W_t, \qquad T_2 = \Sigma_0(a) + \mathrm{Maj}(a,b,c),\\
+  (a,b,c,d,e,f,g,h) &\gets (T_1 + T_2,\ a,\ b,\ c,\ d + T_1,\ e,\ f,\ g).
+\end{align*}
+The output is $V + (a,b,c,d,e,f,g,h)$, added word by word.
+
+For a message $x$ of at most 55 bytes, $\SHA(x)$ is the compression of the fixed initial state with the single block $x \cat \mathtt{0x80} \cat 0^{55-|x|} \cat \mathsf{be64}(8|x|)$.
+\end{definition}
+
+\input{figures/sha-round}
+
+A chain step $F_i$ hashes 52 bytes, so it is one compression. The message words $W_t$ depend only on the step's input and can be computed alongside the rounds, so the latency of a step is that of the 64 rounds.
+
 \paragraph{How SHA-256 is computed in hardware.}
-Assumption A2 can be examined against the structure of SHA-256. One SHA-256 compression is 64 rounds, and each round needs the exact output of the previous one. The new state words are sums of up to five 32-bit terms. Some of them, such as the round constant and the message word, can be added ahead of time, but the next round applies rotations and bitwise functions to the exact bits of the result. Every round must therefore finish at least one 32-bit addition with full carry propagation, plus a few levels of logic. Lee, Chan and Verbauwhede~\cite{LCV07} show that this much is also enough: with carry-save adders and retiming, the loop through one round needs one carry-propagate addition, one carry-save layer and the choice function $\mathrm{Ch}$.
+Assumption A2 can be examined against the structure of SHA-256. One SHA-256 compression is 64 rounds, and each round needs the exact output of the previous one. The new state words are sums of up to five 32-bit terms. Some of them, such as the round constant and the message word, can be added ahead of time, but the next round applies rotations and bitwise functions to the exact bits of the result. Every round must therefore finish at least one 32-bit addition with full carry propagation, plus a few levels of logic. Lee, Chan and Verbauwhede~\cite{LCV07} show that this much is also enough: with carry-save adders and retiming, the loop through one round needs one carry-propagate addition, one carry-save layer and the choice function $\mathrm{Ch}$. \Cref{fig:sha-round} shows both datapaths.
 
 Pipelining raises throughput but not the latency of one chain, since each step starts from the previous step's output. Unrolling removes the registers between rounds, so the relevant floor is the one for logic alone. Hence $\ell$ is roughly 64 times the shortest critical path of one round, measured over many unrolled rounds.
 

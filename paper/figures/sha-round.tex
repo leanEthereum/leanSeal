@@ -1,0 +1,92 @@
+% One SHA-256 round as a circuit: textbook adders vs carry-save + retiming (Appendix C).
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[
+      x=0.75cm, y=1cm, font=\small,
+      fn/.style={draw, rounded corners=2pt, minimum width=1.0cm, minimum height=0.55cm, fill=black!3},
+      add/.style={draw, circle, inner sep=0pt, minimum size=0.5cm, fill=black!3},
+      csa/.style={draw, rounded corners=2pt, align=center, fill=black!3, font=\footnotesize},
+      inp/.style={font=\footnotesize, text=black!70},
+      arr/.style={-{Stealth[length=4pt]}, line width=0.5pt},
+      hot/.style={-{Stealth[length=4.5pt]}, line width=1.2pt, draw=warn},
+      hotbox/.style={draw=warn, line width=1.1pt},
+      pre/.style={draw, dashed, rounded corners=2pt, align=center, text=black!60, font=\footnotesize},
+      capt/.style={font=\footnotesize\bfseries, anchor=west},
+    ]
+    % ---------------- (a) textbook datapath ----------------
+    \node[capt] at (-1.8,2.25) {(a) Carry-propagate adders only};
+    \node[fn, hotbox] (S1) at (0,0) {$\Sigma_1$};
+    \node[fn] (Ch) at (0,-0.85) {$\mathrm{Ch}$};
+    \node[fn] (S0) at (0,-2.0) {$\Sigma_0$};
+    \node[fn] (Mj) at (0,-2.85) {$\mathrm{Maj}$};
+    \node[inp, anchor=east] (ie) at (-1.0,0) {$e$};
+    \node[inp, anchor=east] at (-1.0,-0.85) {$e,f,g$};
+    \node[inp, anchor=east] at (-1.0,-2.0) {$a$};
+    \node[inp, anchor=east] at (-1.0,-2.85) {$a,b,c$};
+    \draw[hot] (ie) -- (S1);
+    \draw[arr] (-1.0,-0.85) -- (Ch);
+    \draw[arr] (-1.0,-2.0) -- (S0);
+    \draw[arr] (-1.0,-2.85) -- (Mj);
+    \node[add, hotbox] (A1) at (1.5,0) {$+$};
+    \node[add, hotbox] (A2) at (2.6,0) {$+$};
+    \node[add, hotbox] (A3) at (3.7,0) {$+$};
+    \node[add, hotbox] (A4) at (4.8,0) {$+$};
+    \node[add] (A5) at (1.5,-2.42) {$+$};
+    \node[add, hotbox] (A6) at (6.3,0) {$+$};
+    \node[add] (A7) at (6.3,0.95) {$+$};
+    \draw[hot] (S1) -- (A1);
+    \draw[arr] (Ch) -| (A1);
+    \draw[hot] (A1) -- (A2);
+    \draw[hot] (A2) -- (A3);
+    \draw[hot] (A3) -- (A4);
+    \draw[arr] (2.6,0.75) node[inp, above] {$h$} -- (A2);
+    \draw[arr] (3.7,0.75) node[inp, above] {$K_t$} -- (A3);
+    \draw[arr] (4.8,0.75) node[inp, above] {$W_t$} -- (A4);
+    \draw[hot] (A4) -- node[inp, below, pos=0.45] {$T_1$} (A6);
+    \draw[arr] (5.5,0) |- (A7);
+    \draw[arr] (6.3,1.7) node[inp, above] {$d$} -- (A7);
+    \draw[arr] (S0) -| (A5);
+    \draw[arr] (Mj) -| (A5);
+    \draw[arr] (A5) -- node[inp, below, pos=0.5] {$T_2$} (6.3,-2.42) -- (A6);
+    \draw[hot] (A6) -- (7.2,0) node[anchor=west, text=warn] {$a'$};
+    \draw[arr] (A7) -- (7.2,0.95) node[anchor=west] {$e'$};
+    \node[font=\footnotesize, text=warn, align=left, anchor=north west] at (2.0,-0.55)
+      {five carry-propagate\\additions in series};
+
+    % ---------------- (b) carry-save + retiming ----------------
+    \begin{scope}[xshift=7.7cm]
+      \node[capt] at (-1.8,2.25) {(b) Carry-save adders and retiming};
+      \node[fn, hotbox] (S1b) at (0,0) {$\Sigma_1$};
+      \node[fn, hotbox] (Chb) at (0,-0.85) {$\mathrm{Ch}$};
+      \node[fn] (S0b) at (0,-2.0) {$\Sigma_0$};
+      \node[fn] (Mjb) at (0,-2.85) {$\mathrm{Maj}$};
+      \node[inp, anchor=east] (ieb) at (-1.0,0) {$e$};
+      \node[inp, anchor=east] (iefg) at (-1.0,-0.85) {$e,f,g$};
+      \node[inp, anchor=east] at (-1.0,-2.0) {$a$};
+      \node[inp, anchor=east] at (-1.0,-2.85) {$a,b,c$};
+      \draw[hot] (ieb) -- (S1b);
+      \draw[hot] (iefg) -- (Chb);
+      \draw[arr] (-1.0,-2.0) -- (S0b);
+      \draw[arr] (-1.0,-2.85) -- (Mjb);
+      \node[pre] (u) at (-0.4,0.95) {$u_t = h{+}K_t{+}W_t$,\\[-2pt]one round early};
+      \node[csa, hotbox, minimum width=1.25cm, minimum height=4.1cm] (C) at (2.75,-1.2)
+        {carry-\\save\\layer};
+      \draw[hot] (S1b) -- (S1b -| C.west);
+      \draw[hot] (Chb) -- (Chb -| C.west);
+      \draw[arr] (S0b) -- (S0b -| C.west);
+      \draw[arr] (Mjb) -- (Mjb -| C.west);
+      \draw[arr, dashed] (u.east) -| (1.75,0.4) -- ($(C.west)+(0,1.6)$);
+      \draw[arr] (2.75,1.35) node[inp, above] {$d$} -- (C.north);
+      \node[csa, hotbox, minimum width=1.6cm, minimum height=0.55cm] (P1) at (5.25,0) {32-bit add};
+      \node[csa, hotbox, minimum width=1.6cm, minimum height=0.55cm] (P2) at (5.25,-2.42) {32-bit add};
+      \draw[hot] ($(C.east)+(0,1.2)$) -- (P1.west);
+      \draw[hot] ($(C.east)+(0,-1.22)$) -- (P2.west);
+      \draw[hot] (P1) -- (6.6,0) node[anchor=west, text=warn] {$e'$};
+      \draw[hot] (P2) -- (6.6,-2.42) node[anchor=west, text=warn] {$a'$};
+      \node[font=\footnotesize, text=warn, align=left, anchor=north west] at (3.85,-0.6)
+        {one carry-save\\layer and one\\32-bit add per\\new word};
+    \end{scope}
+  \end{tikzpicture}
+  \caption{One SHA-256 round as a circuit, with the path that limits a chain's latency in red. Inputs on the left are the current state words; $a'$ and $e'$ return to the state registers for the next round. (a)~A direct implementation adds the terms with 32-bit carry-propagate adders, which puts several of them in series. (b)~With carry-save adders and retiming~\cite{LCV07}, $u_t = h + K_t + W_t$ is computed during the previous round, since $h$ is the previous $g$. The remaining terms are reduced to two numbers in a carry-save layer, whose depth does not depend on the word length, and each new word needs one carry-propagate addition. The drawing is schematic; the retimed datapath of~\cite{LCV07} differs in detail.}
+  \label{fig:sha-round}
+\end{figure}
