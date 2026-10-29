@@ -5,7 +5,10 @@ use std::{
     io::{self, IsTerminal, Write},
     os::unix::ffi::{OsStrExt, OsStringExt},
     path::Path,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Instant,
 };
 const USAGE:&str="usage: leanseal <command> [options]\n\nSender:\n  gen -o SECRET (-m STEPS | -d DELAY) [-n CHAINS] [-b BYTES]\n        build a puzzle in advance and keep it, with its key, in SECRET\n  encrypt -o ENVELOPE (-s SECRET | -m STEPS | -d DELAY) [-i MESSAGE] [--secret-out FILE]\n        encrypt MESSAGE (default stdin) under a stored or freshly built puzzle\n  key SECRET            print the key, to open an envelope early\n\nReceiver:\n  solve FILE...         solve puzzles (envelopes or bare puzzles), one thread each,\n                        saving progress to FILE.ckpt; print each key\n  open ENVELOPE (-k KEY | -s SECRET | --solve) [-o MESSAGE]\n        check the key and the tag, then write the message (default stdout).\n        KEY is 64 hex digits, a file holding them, or - for stdin. Other local\n        users can read command-line arguments, so pass an unpublished key in a\n        file or on stdin\n  info FILE             describe a puzzle, envelope, secret or checkpoint\n\nMeasurement:\n  bench [latency | throughput | build | attack | all]\n  selftest              check every backend against plain SHA-256, then a round trip\n  vectors               print the test vectors as JSON\n\nPuzzle options:\n  -n, --chains N        chains (default 16)\n  -m, --steps M         hash steps per chain, e.g. 2^28\n  -d, --delay T         or: choose m for a delay of T (90, 10m, 2h) ...\n      --step-ns L       ... against a solver taking L ns per step (default: this machine)\n  -b, --link-bytes B    link width (default 24; see SPEC.md section 8)\n  -j, --threads J       build threads (default: all cores)\n  -q, --quiet\n\nBackends: set LEANSEAL_BACKEND=portable|armv8-sha2|x86-sha-ni to override.\n";
@@ -19,6 +22,20 @@ type CliResult<T> = std::result::Result<T, CliError>;
 impl From<Failure> for CliError {
     fn from(e: Failure) -> Self {
         Self::Failure(e)
+    }
+}
+/// A key or plaintext, zeroed when dropped on every return path.
+struct Wiped<T: AsMut<[u8]>>(T);
+impl<T: AsMut<[u8]>> Drop for Wiped<T> {
+    fn drop(&mut self) {
+        self.0.as_mut().fill(0);
+        std::hint::black_box(&mut self.0);
+    }
+}
+impl<T: AsMut<[u8]>> std::ops::Deref for Wiped<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
     }
 }
 fn usage(msg: &str) -> CliError {
@@ -546,9 +563,9 @@ fn gen_or_encrypt(command: &str, args: &[OsString], be: Backend) -> CliResult<i3
         if !parsed.pos.is_empty() {
             return Err(usage("gen needs -o SECRET and no other arguments"));
         }
-        let (puzzle, mut key) = p.build(be)?;
+        let (puzzle, key) = p.build(be)?;
+        let key = Wiped(key);
         save_secret(out, &puzzle, &key)?;
-        key.fill(0);
         if !p.quiet {
             eprintln!(
                 "wrote {} (keep it private until you use it)",
@@ -576,19 +593,12 @@ fn gen_or_encrypt(command: &str, args: &[OsString], be: Backend) -> CliResult<i3
                 "the envelope and the secret cannot both go to stdout; choose a file for --secret-out",
             ));
         }
-        let (first, second) = if path == "-" {
-            (path, out)
-        } else {
-            (out, path)
-        };
-        if is_output(first, second) {
-            return Err(usage(
-                "the secret file is the envelope file; choose another --secret-out",
-            ));
+        if secret_is_envelope(out, path) {
+            return Err(usage(SECRET_IS_ENVELOPE));
         }
     }
     let input = input.unwrap_or(OsStr::new("-"));
-    let mut msg = read_file(input).map_err(|e| Failure::io(input, e))?;
+    let msg = Wiped(read_file(input).map_err(|e| Failure::io(input, e))?);
     if msg.len() > MAX_MSG {
         return Err(code(
             if input == "-" {
@@ -599,16 +609,22 @@ fn gen_or_encrypt(command: &str, args: &[OsString], be: Backend) -> CliResult<i3
             Error::Range,
         ));
     }
-    let (puzzle, mut key) = if let Some(s) = secret {
+    let (puzzle, key) = if let Some(s) = secret {
         load_secret(s)?
     } else {
         p.build(be)?
     };
+    let key = Wiped(key);
     let mut nonce = [0; 16];
     getrandom::getrandom(&mut nonce).map_err(|_| code("encrypting", Error::Rng))?;
     let env = seal(&puzzle, &key, &nonce, &msg).map_err(|e| code("encrypting", e))?;
     write_file(out, &env, false).map_err(|e| Failure::io(out, e))?;
     if let Some(path) = secret_out {
+        // Check again now that the envelope exists: two names that did not
+        // exist yet may still name one file, for example differing in case.
+        if secret_is_envelope(out, path) {
+            return Err(usage(SECRET_IS_ENVELOPE));
+        }
         save_secret(path, &puzzle, &key)?;
     }
     if !p.quiet {
@@ -620,9 +636,16 @@ fn gen_or_encrypt(command: &str, args: &[OsString], be: Backend) -> CliResult<i3
             msg.len()
         );
     }
-    key.fill(0);
-    msg.fill(0);
     Ok(0)
+}
+const SECRET_IS_ENVELOPE: &str =
+    "the secret file is the envelope file; choose another --secret-out";
+fn secret_is_envelope(out: &OsStr, secret: &OsStr) -> bool {
+    if secret == "-" {
+        is_output(secret, out)
+    } else {
+        is_output(out, secret)
+    }
 }
 fn load_job(path: &OsStr, checkpoints: bool) -> CliResult<SolveJob> {
     let job = SolveJob::load(path, checkpoints).map_err(|e| {
@@ -660,13 +683,16 @@ fn run_jobs(
     let count = jobs.len();
     let p = jobs.first().map(|j| (j.puzzle.n(), j.puzzle.m()));
     // The solver checkpoints and stops on SIGINT or SIGTERM. The handlers are
-    // installed before the ready file appears and stay until the process exits.
+    // installed before the ready file appears. Once solving ends, the signals
+    // terminate the process again, so a blocked write stays interruptible.
     let signalled = Arc::new(AtomicBool::new(false));
+    let solved = Arc::new(AtomicBool::new(false));
     for sig in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
-        signal_hook::flag::register(sig, signalled.clone())
+        signal_hook::flag::register_conditional_default(sig, solved.clone())
+            .and_then(|_| signal_hook::flag::register(sig, signalled.clone()))
             .map_err(|e| Failure::io("signal handler", e))?;
     }
-    solve_jobs(jobs, be, &signalled, stop_after, ready, |s| {
+    let result = solve_jobs(jobs, be, &signalled, stop_after, ready, |s| {
         if !show {
             return;
         }
@@ -698,8 +724,9 @@ fn run_jobs(
                 fmt_duration(s.elapsed)
             );
         }
-    })
-    .map_err(|e| {
+    });
+    solved.store(true, Ordering::SeqCst);
+    result.map_err(|e| {
         let message = e.to_string();
         if message != format!("could not start {count} solver threads") {
             return CliError::Failure(Failure::io("solve", e));
@@ -796,6 +823,16 @@ fn solve(args: &[OsString], be: Backend, stop: u64, ready: Option<&Path>) -> Cli
         .iter()
         .map(|p| load_job(p, checkpoint))
         .collect::<CliResult<Vec<_>>>()?;
+    if let Some(ck) = jobs
+        .iter()
+        .filter_map(|j| j.checkpoint.as_ref())
+        .find(|ck| is_output("-", ck))
+    {
+        return Err(usage(&format!(
+            "stdout is the checkpoint file {}; redirect it elsewhere or use --no-checkpoint",
+            ck.display()
+        )));
+    }
     let mut rc = run_jobs(&mut jobs, be, stop, ready, quiet)?;
     for j in jobs {
         if let Some(Ok(key)) = j.result {
@@ -804,7 +841,7 @@ fn solve(args: &[OsString], be: Backend, stop: u64, ready: Option<&Path>) -> Cli
                     eprintln!("leanseal: {e}");
                 }
                 rc = 1;
-            } else if let Some(ck) = j.checkpoint {
+            } else if let Some(ck) = j.checkpoint.filter(|ck| !is_output("-", ck)) {
                 let _ = std::fs::remove_file(ck);
             }
         }
@@ -877,7 +914,7 @@ fn open(args: &[OsString], be: Backend, stop: u64, ready: Option<&Path>) -> CliR
             "the output file is the checkpoint file; choose another -o or use --no-checkpoint",
         ));
     }
-    let mut key = if solve {
+    let key = Wiped(if solve {
         let rc = run_jobs(std::slice::from_mut(&mut j), be, stop, ready, quiet)?;
         if rc != 0 {
             return Ok(rc);
@@ -892,18 +929,18 @@ fn open(args: &[OsString], be: Backend, stop: u64, ready: Option<&Path>) -> CliR
         load_secret(s)?.1
     } else {
         return Err(CliError::Usage(None));
-    };
-    let mut msg = Envelope::decode(&j.data)
-        .and_then(|e| e.open(&key))
-        .map_err(|e| code(&j.path, e))?;
+    });
+    let msg = Wiped(
+        Envelope::decode(&j.data)
+            .and_then(|e| e.open(&key))
+            .map_err(|e| code(&j.path, e))?,
+    );
     write_file(out, &msg, false).map_err(|e| Failure::io(out, e))?;
     if let Some(ck) = j.checkpoint {
         if !is_output(out, &ck) {
             let _ = std::fs::remove_file(ck);
         }
     }
-    key.fill(0);
-    msg.fill(0);
     Ok(0)
 }
 fn print_puzzle(p: &Puzzle, be: Backend) -> CliResult<()> {

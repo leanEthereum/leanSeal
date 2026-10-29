@@ -24,8 +24,18 @@ for b in 1 12 24 32; do
   [ "$($PY key c.sec)" = "$KEY" ] || fail "Python reads a leanseal secret, b=$b"
 done
 # The Python CLI refuses to write the secret over the envelope.
-if $PY encrypt --chains 2 --steps 10 --in msg --out same --secret-out ./same 2>/dev/null; then
+if $PY encrypt --chains 2 --steps 10 --link-bytes 24 --in msg --out same --secret-out ./same 2> log; then
   fail "Python wrote the secret over the envelope"
 fi
+grep -q "the secret file is the envelope file" log || fail "Python refused the secret path for another reason"
 [ ! -e same ] || fail "Python left a file after refusing the secret path"
+# On a case-insensitive file system, two new names can name one file.
+: > case-probe
+if [ -e CASE-PROBE ]; then
+  if $PY encrypt --chains 2 --steps 10 --link-bytes 24 --in msg --out alias.env --secret-out ALIAS.env 2> log; then
+    fail "Python wrote the secret over the envelope through a case alias"
+  fi
+  grep -q "the secret file is the envelope file" log || fail "Python refused the case alias for another reason"
+  [ "$(head -c 4 alias.env)" = LSEN ] || fail "Python replaced the envelope through a case alias"
+fi
 echo "cross tests: ok"

@@ -68,6 +68,12 @@ expect_exit 2 "$CS" encrypt -q -m 5 -i msg -o env3 --secret-out ./env3
 set +e; "$CS" encrypt -q -m 5 -i msg -o - --secret-out same > same 2>/dev/null; code=$?; set -e
 [ "$code" = 2 ] || fail "encrypt with stdout on the secret file exited $code, wanted 2"
 [ ! -s same ] || fail "encrypt wrote to the file that is both envelope and secret"
+# On a case-insensitive file system, two new names can name one file.
+: > case-probe
+if [ -e CASE-PROBE ]; then
+  expect_exit 2 "$CS" encrypt -q -m 5 -i msg -o alias.env --secret-out ALIAS.env
+  [ "$(head -c 4 alias.env)" = LSEN ] || fail "encrypt replaced the envelope through a case alias"
+fi
 
 # Several puzzles solved in parallel.
 "$CS" encrypt -q -n 2 -m 50000 -i msg -o p1 --secret-out s1
@@ -133,10 +139,13 @@ cp long.ckpt saved.ckpt
 set +e; "$CS" open long --solve -q >> long.ckpt 2>/dev/null; code=$?; set -e
 [ "$code" = 2 ] || fail "open with stdout on the checkpoint exited $code, wanted 2"
 cmp -s long.ckpt saved.ckpt || fail "open changed the checkpoint that stdout pointed at"
+set +e; "$CS" solve -q long >> long.ckpt 2>/dev/null; code=$?; set -e
+[ "$code" = 2 ] || fail "solve with stdout on the checkpoint exited $code, wanted 2"
+cmp -s long.ckpt saved.ckpt || fail "solve changed the checkpoint that stdout pointed at"
 # A damaged checkpoint state is not authenticated: the solve fails the key
 # check, and the message must point at the checkpoint, not at the puzzle.
 cp long dmg && cp long.ckpt dmg.ckpt
-printf '\377' | dd of=dmg.ckpt bs=1 seek=60 conv=notrunc 2>/dev/null
+flip dmg.ckpt 60
 set +e; "$CS" solve -q dmg > /dev/null 2> log; code=$?; set -e
 [ "$code" = 1 ] || fail "solve from a damaged checkpoint exited $code, wanted 1"
 grep -q "checkpoint may be damaged" log || fail "damaged checkpoint reported as a malformed puzzle"

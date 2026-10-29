@@ -1,4 +1,5 @@
 //! SHA-256, HMAC-SHA256 and labelled hashing.
+use crate::secret::{Erase, Secret};
 pub(crate) const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -52,6 +53,13 @@ pub struct Sha256 {
     buf: [u8; 64],
     fill: usize,
     len: u64,
+}
+impl Drop for Sha256 {
+    // The state may hold key material, as it does in HMAC.
+    fn drop(&mut self) {
+        self.h.erase();
+        self.buf.erase();
+    }
 }
 impl Default for Sha256 {
     fn default() -> Self {
@@ -109,26 +117,27 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
 }
 /// HMAC-SHA256 with an arbitrary length key.
 pub fn hmac(key: &[u8], msg: &[u8]) -> [u8; 32] {
-    let mut k = [0; 64];
+    // Every buffer derived from the key is erased when it goes out of scope.
+    let mut k = Secret([0; 64]);
     if key.len() > 64 {
-        k[..32].copy_from_slice(&sha256(key));
+        k[..32].copy_from_slice(&*Secret(sha256(key)));
     } else {
         k[..key.len()].copy_from_slice(key);
     }
-    let mut pad = k;
-    for v in &mut pad {
+    let mut pad = Secret(*k);
+    for v in pad.iter_mut() {
         *v ^= 0x36;
     }
     let mut h = Sha256::new();
-    h.update(&pad);
+    h.update(&*pad);
     h.update(msg);
-    let inner = h.finish();
-    for (v, k) in pad.iter_mut().zip(k) {
+    let inner = Secret(h.finish());
+    for (v, k) in pad.iter_mut().zip(k.iter()) {
         *v = k ^ 0x5c;
     }
     let mut h = Sha256::new();
-    h.update(&pad);
-    h.update(&inner);
+    h.update(&*pad);
+    h.update(&*inner);
     h.finish()
 }
 /// Prefix-free labelled hash. Labels must fit in one byte.

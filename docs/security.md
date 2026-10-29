@@ -83,6 +83,6 @@ An attacker `k` times faster than assumed opens a puzzle `k` times sooner. Resto
 - **No control over when the clock starts.** The delay runs from the moment a puzzle becomes public. Keep a secret file private until its first envelope is published.
 - **No shared solving.** Each puzzle needs its own full solve; independent puzzles share no work. The honest solver uses one core per puzzle, and more cores help only to solve several puzzles at once.
 - **No hiding of metadata.** The message length and the puzzle parameters are public.
-- **No side-channel hardening** beyond constant-time comparison of tags and commitments. Keys are wiped from memory on the main paths, but not everywhere.
+- **No side-channel hardening** beyond constant-time comparison of tags and commitments. Keys, plaintexts and HMAC state are zeroed when dropped, on every return path; copies the standard library or the operating system makes are not.
 - **No crash-durable checkpoints.** A checkpoint is replaced atomically, but its directory is not synced, so a power failure can lose the latest checkpoint.
 - **No network protocol.** Who solves puzzles, who pays for solving and how spam is limited are protocol questions. The paper discusses them, and [the prototype](../poc/README.md) implements one answer on an EVM chain.

@@ -504,6 +504,10 @@ def main():
             envelope = encode_envelope(generated["puzzle"], generated["key"], os.urandom(16), message)
             write_file(args.output, envelope)
             if args.secret_out is not None:
+                # Check again now that the envelope exists: two names that did not
+                # exist yet may still name one file, for example differing in case.
+                require(not same_file(args.output, args.secret_out),
+                        "the secret file is the envelope file; choose another --secret-out")
                 write_file(args.secret_out, encode_secret(generated["puzzle"], generated["key"]), private=True)
         elif args.command == "solve":
             raw = read_file(args.file)
