@@ -1,8 +1,8 @@
 # Audit
 
-AI models audited leanSeal (first named chainseal) for security and correctness. OpenAI's GPT-6 Astra at high reasoning effort did rounds 1 to 9 and 11, OpenAI's GPT-5.6 Sol round 10, and Anthropic's Claude Opus 5.5 round 12. Each read the code and the documents and ran the tests. They reproduced most failures with scratch programs, and established the rest from the source or by arithmetic. None had permission to change the code.
+AI models audited leanSeal (first named chainseal) for security and correctness. OpenAI's GPT-6 Astra at high reasoning effort did rounds 1 to 9 and 11, OpenAI's GPT-5.6 Sol rounds 10 and 13, and Anthropic's Claude Opus 5.5 round 12. Each read the code and the documents and ran the tests. They reproduced most failures with scratch programs, and established the rest from the source or by arithmetic. None had permission to change the code.
 
-Rounds 1 to 9 audited the C implementation, whose last commit is `ffde496`. A Rust implementation has since replaced it; the review of the port and rounds 10 to 12, which cover the Rust and Python implementations, the paper and the proof of concept, are at the end of this file.
+Rounds 1 to 9 audited the C implementation, whose last commit is `ffde496`. A Rust implementation has since replaced it; the review of the port and rounds 10 to 13, which cover the Rust and Python implementations, the paper and the proof of concept, are at the end of this file.
 
 | Round | Commit | Report | Verdict |
 |---|---|---|---|
@@ -119,13 +119,14 @@ Three differences from the C tool are deliberate. A broken pipe is reported as a
 
 Beyond the C tool's tests, a property test decodes 480,000 mutated encodings of puzzles, checkpoints and envelopes, and `cargo-fuzz` ran four targets under AddressSanitizer for about 108 million inputs with no failure. The library forbids `unsafe`; it appears only in the two hardware backends, which call the SHA-256 instructions.
 
-## Rounds 10 to 12
+## Rounds 10 to 13
 
 | Round | Commit | Scope | Report | Verdict |
 |---|---|---|---|---|
 | 10 | `7b04dd7` | the whole repository | [round-10.md](round-10.md) | not production-ready: 1 high if deployed, 2 medium, 3 low |
 | 11 | `a90416a` | the Rust and Python implementations | [round-11.md](round-11.md) | fix first: 1 major, 4 minor |
 | 12 | `a90416a` | the proof of concept | [round-12.md](round-12.md) | fix first: 1 major, 3 minor |
+| 13 | `b1bdcd6` | the paper and the whole repository | [round-13.md](round-13.md) | changes before a release: 1 major, 2 low; no error in the construction or the proof |
 
 Round 10 found no break of the construction, no mismatch between the specification and the Rust implementation, and no error in the proved bound. Its findings are in the proof of concept, the erasure of secrets, one sentence of the paper and CI.
 
@@ -154,3 +155,12 @@ Round 10 found no break of the construction, no mismatch between the specificati
 | R12-4 | `sealnet send` reported a reveal without checking that it succeeded. | `send` fails if the reveal reverted, and does not reveal once the window has passed, since the key would become public in a failed transaction. |
 
 The contracts' 32 tests and the node's tests pass, and the demo runs end to end: the plaintext swap loses 9.25%, the sealed swap executes at the fair price, and the withheld key is published while the swap does not run.
+
+Round 13 audited the fixes of rounds 10 to 12 together with the paper. It found the construction, the format, the three implementations and the proof consistent, and recomputed every bound in the paper.
+
+| # | Finding | Change |
+|---|---|---|
+| R13-1 | `encrypt --secret-out` published the envelope before saving the secret, so a secret that could not be saved left an envelope that only solving could open. | Both CLIs save the secret first, check again for an alias, and only then write the envelope. On an alias they remove the secret they created, leaving neither file. The alias tests now require that no file is left, and new tests check that a secret path in a missing directory leaves no envelope. |
+| R13-2 | `sealnet send --expiry` added the offset to the block number with wrapping arithmetic. | The sum is checked, and the offset is rejected before the puzzle is built. A unit test covers `u64::MAX`. |
+| R13-3 | The paper compared queries, each one compression, with Bitcoin hashes, each two. | The paper says so, and gives the bound in compressions: one bit worse, `2^-116` for 30 seconds. The abstract, introduction, README and security guide say "about" the Bitcoin network's hash rate. |
+
