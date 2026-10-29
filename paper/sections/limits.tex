@@ -1,15 +1,12 @@
-\section{Limits, Related Work and Open Questions}\label{sec:related}
+\section{Related Work and Open Questions}\label{sec:related}
 
-\subsection{Limits of hash-only constructions}\label{sec:limits}\label{sec:mmv-limit}\label{sec:delay-encryption}\label{sec:batching}
+\subsection{Lower bounds for hash-only puzzles}\label{sec:limits}\label{sec:mmv-limit}\label{sec:delay-encryption}\label{sec:batching}
 
 \paragraph{The delay is limited by the sender's work.}
 Mahmoody, Moran and Vadhan~\cite{MMV11} proved that if building a puzzle takes $N$ hash calls, an attacker with unlimited parallelism can open it in about $N$ oracle rounds. The chained puzzle needs about $N$ rounds, so it is asymptotically optimal among random-oracle constructions: no hash-only puzzle can make the sender's work grow more slowly than the delay. The attack makes an enormous number of queries, so the result limits what a proof can promise rather than giving a cheap way to open puzzles.
 
 \paragraph{Delay encryption.}
 Suppose a public setup costs $S$ hash calls, after which senders encrypt to a slot with $E$ calls each and one long computation per slot opens everything. Then running the setup and encrypting is itself a puzzle that costs $S + E$ calls, so by the result above it opens in about $S + E$ rounds: with a cheap setup, the delay is limited by the cost of one encryption. A long setup is not covered by this argument, but if each slot then has a unique, quickly checkable key, computing it is a verifiable delay function, which no hash-only construction can give~\cite{MSW20,GRY25,AAKTvC26}. No method is known that opens independent puzzles for less than one full solve each.
-
-\paragraph{Size.}
-Each chain the sender runs in parallel needs its own hidden link, so a chained puzzle that allows the sender $g$-fold parallelism has about $gb$ bytes. Whether a hash-only puzzle can be smaller is open.
 
 \subsection{Related work}\label{sec:prior}
 
@@ -24,6 +21,7 @@ Hash-only puzzles avoid these assumptions. Mahmoody, Moran and Vadhan~\cite{MMV1
 \begin{enumerate}[label=\arabic*.,leftmargin=1.5em]
   \item \textbf{The speed of chained SHA-256.} Every parameter is set relative to $\ell$. A circuit-level estimate by hardware designers would give the assumed advantage of 3.7 an empirical basis.
   \item \textbf{Checking puzzles at submission.} The bond of \cref{sec:bond} prices a malformed puzzle once a forced opening fails, but a protocol still cannot know at submission that a puzzle will open, which is what the proofs of a timed commitment~\cite{BN00} provide. A proof over all $nm$ chain steps would cost far more than building the puzzle, and it is not known whether a cheaper check, such as spot-checking the chains or the links between them, can suffice.
+  \item \textbf{Smaller puzzles.} Each chain the sender runs in parallel needs its own hidden link, so a chained puzzle that allows the sender $g$-fold parallelism has about $gb$ bytes (\cref{sec:size}). Whether a hash-only puzzle can be smaller is open.
   \item \textbf{A quantum bound for the exact encoding.} Extending the analysis of Afshar et al.~\cite{ACHLM23} to truncated links, the accumulator and the commitment would give a quantum counterpart of \cref{thm:delay}.
   \item \textbf{Mechanism design.} Open problems include deposits and bonds that remain effective under fee inversion~\cite{Naraghi26}, solver capacity under deliberate load, the simultaneous release of keys and rules for executing transactions that are opened late in a general mempool, each best evaluated within a protocol such as LUCID. The verification game of \cref{app:bond} is outlined, not specified: it needs exact encodings, gas costs and an analysis of censored moves.
 \end{enumerate}
