@@ -70,6 +70,11 @@ impl Args {
     }
 }
 
+/// The block at which a call expires, `offset` blocks after `head`.
+fn expiry_block(head: u64, offset: u64) -> Result<u64> {
+    head.checked_add(offset).ok_or_else(|| eyre!("--expiry {offset} runs past the last block number"))
+}
+
 /// Integers, also written as powers of two (2^20).
 fn parse_num(v: &str) -> Result<u64> {
     match v.split_once('^') {
@@ -154,11 +159,11 @@ async fn send(a: &Args) -> Result<()> {
     if p.get_code_at(me).await?.as_ref() != [&[0xef, 0x01, 0x00][..], account.as_slice()].concat() {
         bail!("{me} must delegate to {account} first: sealnet delegate --to {account}");
     }
+    let expiry = expiry_block(p.get_block_number().await?, a.num("expiry", 100)?)?;
     let t = Instant::now();
     let (puzzle, key) = leanseal::generate(n, m, 24, &leanseal::GenOptions::default())?;
     log("sender", format!("built a puzzle of {n}x{m} steps in {:.1?}", t.elapsed()));
 
-    let expiry = p.get_block_number().await? + a.num("expiry", 100)?;
     let plain = (to, data, expiry).abi_encode_params();
     let mut nonce = [0u8; 16];
     getrandom::getrandom(&mut nonce)?;
@@ -553,5 +558,7 @@ mod numeric_tests {
         assert!(checked_u32(parse_num("4294967296").unwrap(), "gas").is_err());
         assert_eq!(parse_num("2^26").unwrap(), 1 << 26);
         assert_eq!(checked_u32(u32::MAX.into(), "gas").unwrap(), u32::MAX);
+        assert!(expiry_block(1, u64::MAX).is_err());
+        assert_eq!(expiry_block(1, u64::MAX - 1).unwrap(), u64::MAX);
     }
 }
