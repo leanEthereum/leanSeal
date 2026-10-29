@@ -3,7 +3,7 @@
 #   1. a plaintext swap is sandwiched by a searcher watching the mempool;
 #   2. the same swap sealed with leanSeal is ordered blind, revealed, executed;
 #   3. a sender that withholds its key loses its deposit; a solver publishes the
-#      key and the keeper executes the ticket late, in its new queue position.
+#      key for the bounty, and the swap does not run.
 set -euo pipefail
 cd "$(dirname "$0")"
 PORT=${PORT:-8545}
@@ -29,18 +29,24 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+# sealnet reads each account's key from a file only its owner can read.
+KEYS=$(mktemp -d)
+trap 'cleanup; rm -rf "$KEYS"' EXIT
+for who in ALICE SEARCHER KEEPER SOLVER; do
+  (umask 077; printf '%s\n' "${!who}" > "$KEYS/$who")
+done
 sleep 1
 
 out=$(cd contracts && DEPLOYER=$DEPLOYER ALICE=$ALICE SEARCHER=$SEARCHER \
   forge script script/Deploy.s.sol --rpc-url $RPC --broadcast 2>&1)
 get() { echo "$out" | awk -v k="$1" '$1==k {print $2}'; }
 INBOX=$(get INBOX); ACCOUNT=$(get ACCOUNT); POOL=$(get POOL); TOKEN_B=$(get TOKEN_B)
-$BIN delegate --rpc $RPC --key $ALICE --to $ACCOUNT
+$BIN delegate --rpc $RPC --key-file "$KEYS/ALICE" --to $ACCOUNT
 echo "inbox $INBOX, pool $POOL; alice's account delegates to $ACCOUNT"
 
-$BIN keeper --rpc $RPC --key $KEEPER --inbox $INBOX & PIDS+=($!)
-$BIN solver --rpc $RPC --key $SOLVER --inbox $INBOX & PIDS+=($!)
-$BIN sandwich --rpc $RPC --key $SEARCHER --pool $POOL --inbox $INBOX --size 50 & PIDS+=($!)
+$BIN keeper --rpc $RPC --key-file "$KEYS/KEEPER" --inbox $INBOX & PIDS+=($!)
+$BIN solver --rpc $RPC --key-file "$KEYS/SOLVER" --inbox $INBOX & PIDS+=($!)
+$BIN sandwich --rpc $RPC --key-file "$KEYS/SEARCHER" --pool $POOL --inbox $INBOX --size 50 & PIDS+=($!)
 sleep 2
 
 bal() { cast call --rpc-url $RPC $TOKEN_B "balanceOf(address)(uint256)" $ALICE_ADDR | awk '{print $1}'; }
@@ -51,24 +57,27 @@ report() {
 }
 # Wait until the keeper has executed everything up to the current block.
 settle() { sleep ${1:-10}; }
-# Wait up to $2 seconds for alice's B balance to move from $1.
-await_bal() {
+# Wait up to $1 seconds for a solver to publish a withheld key.
+await_forced() {
   local t0=$SECONDS
-  while [ "$(bal)" = "$1" ] && [ $((SECONDS - t0)) -lt $2 ]; do sleep 2; done
-  echo "   (waited $((SECONDS - t0))s for the late execution)"
+  while [ -z "$(cast logs --rpc-url $RPC --address $INBOX 'Forced(uint256,address,bytes32)' 2>/dev/null)" ] \
+    && [ $((SECONDS - t0)) -lt $1 ]; do sleep 2; done
+  echo "   (waited $((SECONDS - t0))s for the solver)"
 }
 
 echo; echo "== 1. plaintext swap in the public mempool"
 q=$(quote); b0=$(bal)
-$BIN send --rpc $RPC --key $ALICE --to $POOL --data $swap --plain
+$BIN send --rpc $RPC --key-file "$KEYS/ALICE" --to $POOL --data $swap --plain
 settle 4; report $q $b0 $(bal)
 
 echo; echo "== 2. the same swap sealed with leanSeal"
 q=$(quote); b0=$(bal)
-$BIN send --rpc $RPC --key $ALICE --inbox $INBOX --to $POOL --data $swap --chains 8 --steps 2^26
+$BIN send --rpc $RPC --key-file "$KEYS/ALICE" --inbox $INBOX --to $POOL --data $swap --chains 8 --steps 2^26
 settle 8; report $q $b0 $(bal)
 
 echo; echo "== 3. a sealed swap whose sender withholds the key"
 q=$(quote); b0=$(bal)
-$BIN send --rpc $RPC --key $ALICE --inbox $INBOX --to $POOL --data $swap --chains 8 --steps 2^26 --withhold
-await_bal $b0 ${FORCE_WAIT:-300}; report $q $b0 $(bal)
+$BIN send --rpc $RPC --key-file "$KEYS/ALICE" --inbox $INBOX --to $POOL --data $swap --chains 8 --steps 2^26 --withhold
+await_forced ${FORCE_WAIT:-300}
+b1=$(bal)
+python3 -c "print(f'   key published; alice got {($b1-$b0)/1e18:.4f} B: the swap did not run, and she lost 0.008 ETH of her deposit')"

@@ -7,12 +7,15 @@ contract Token {
     uint8 public constant decimals = 18;
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
+    address public immutable owner;
 
     constructor(string memory symbol_) {
         symbol = symbol_;
+        owner = msg.sender;
     }
 
     function mint(address to, uint256 amount) external {
+        require(msg.sender == owner, "owner");
         balanceOf[to] += amount;
     }
 

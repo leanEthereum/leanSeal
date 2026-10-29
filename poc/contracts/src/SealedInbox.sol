@@ -18,12 +18,15 @@ import {SealedAccount} from "./SealedAccount.sol";
 ///
 /// Guarded pools refuse direct calls while the queue holds an unprocessed
 /// ticket, from its submission until its slot executes, so a key read from a
-/// pending reveal cannot buy a position ahead of its ticket. A late opening
-/// joins the queue at the block of `forceOpen`, behind every earlier ticket.
+/// pending reveal cannot buy a position ahead of its ticket. A ticket whose
+/// reveal misses the window never runs: a builder that kept a pending reveal
+/// out of the window already holds its key, and could trade around the ticket
+/// if it ran later. `forceOpen` only publishes such a key. An honest sender
+/// whose reveal is censored for `revealWindow` blocks loses deposit - bounty.
 /// A sealed call ordered ahead of a victim could still adapt to the victim's
-/// revealed plaintext if it read state that someone wrote after the reveal;
-/// `restrictTo` limits sealed calls to non-adaptive targets such as the pool,
-/// which closes this for the demo market. General programs, and removing the
+/// revealed plaintext if it read state that someone wrote after the reveal, so
+/// sealed calls go only to the targets fixed by `restrictTo`, such as the pool,
+/// and submissions open once those are set. General programs, and removing the
 /// cancellation option above, need execution right after key release, as
 /// LUCID provides at the protocol level.
 contract SealedInbox {
@@ -97,7 +100,7 @@ contract SealedInbox {
 
     event Sealed(uint256 indexed id, uint64 indexed slot, address indexed sender, uint32 gasLimit, bytes envelope);
     event Revealed(uint256 indexed id, bytes32 key);
-    event Executed(uint256 indexed id, bool ok, bool late);
+    event Executed(uint256 indexed id, bool ok);
     event Missed(uint256 indexed id);
     event Forced(uint256 indexed id, address solver, bytes32 key);
 
@@ -113,6 +116,7 @@ contract SealedInbox {
     error WrongKey();
     error WrongEnvelope();
     error NotDelegated();
+    error NotRestricted();
 
     constructor(
         uint256 deposit_,
@@ -134,7 +138,8 @@ contract SealedInbox {
         delegation = keccak256(abi.encodePacked(hex"ef0100", account));
     }
 
-    /// Limit sealed calls to `targets`, once. A call to any other target fails.
+    /// Limit sealed calls to `targets`, once; submissions are refused until then.
+    /// A call to any other target fails.
     function restrictTo(address[] calldata targets) external {
         require(msg.sender == admin && !restricted, "admin, once");
         restricted = true;
@@ -144,6 +149,7 @@ contract SealedInbox {
     }
 
     function submit(bytes calldata envelope, uint32 gasLimit) external payable returns (uint256 id) {
+        if (!restricted) revert NotRestricted();
         if (msg.value != deposit) revert BadDeposit();
         if (envelope.length > maxEnvelope) revert EnvelopeTooLarge();
         if (gasLimit > maxTicketGas) revert GasTooHigh();
@@ -173,9 +179,9 @@ contract SealedInbox {
         _pay(t.sender, deposit);
     }
 
-    /// Process a prefix of the head slot. Envelopes start at cursor; missed
-    /// tickets may use empty bytes. Revealed and forced tickets run in queue
-    /// order. Stop before a ticket whose gas cannot be delivered in full,
+    /// Process a prefix of the head slot. Envelopes start at cursor; unrevealed
+    /// tickets may use empty bytes and are marked missed. Revealed tickets run in
+    /// queue order. Stop before a ticket whose gas cannot be delivered in full,
     /// retaining any progress already made.
     function execute(bytes[] calldata envelopes) external serial returns (uint256 processed) {
         if (head == slots.length) revert OutsideWindow();
@@ -191,10 +197,8 @@ contract SealedInbox {
                 burned += deposit - bounty;
                 emit Missed(id);
             } else {
-                // Revealed in its window, or forced open and queued late.
-                bool late = t.state == State.Forced;
                 t.state = State.Executed;
-                emit Executed(id, _run(t, envelopes[processed]), late);
+                emit Executed(id, _run(t, envelopes[processed]));
             }
             cursor++;
             processed++;
@@ -208,22 +212,15 @@ contract SealedInbox {
         emit Progress(head, cursor);
     }
 
-    /// Publish a missed ticket's key late. The ticket joins the current block's
-    /// slot and `execute` runs it in that order, behind every earlier ticket,
-    /// so it never trades ahead of a revealed one. Its gas counts toward the
-    /// slot's budget, which never refuses it. The caller receives only bounty;
-    /// deposit - bounty remains locked forever, including when the sender
-    /// claims. A late call's position is fixed only once its key is public:
-    /// use slippage limits and expiry.
+    /// Publish a missed ticket's key, solved from its puzzle. The ticket does
+    /// not run. The caller receives only bounty; deposit - bounty remains locked
+    /// forever, including when the sender claims.
     function forceOpen(uint256 id, bytes32 key) external {
         Ticket storage t = tickets[id];
         if (t.state != State.Missed) revert WrongState();
         if (LeanSeal.commitment(t.context, key) != t.commitment) revert WrongKey();
         t.key = key;
         t.state = State.Forced;
-        uint64 slot = uint64(block.number);
-        slotGas[slot] += t.gasLimit;
-        _enqueue(slot, id);
         emit Forced(id, msg.sender, key);
         _pay(msg.sender, bounty);
     }
@@ -266,7 +263,7 @@ contract SealedInbox {
             return false;
         }
         if (block.number > expiry) return false;
-        if (restricted && !allowedTarget[target]) return false;
+        if (!allowedTarget[target]) return false;
         bytes memory input = abi.encodeCall(SealedAccount.run, (target, data));
         uint256 allowance = t.gasLimit;
         bool ok;

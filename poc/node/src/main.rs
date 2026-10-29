@@ -2,8 +2,8 @@
 //! timed commitments and the SealedInbox contract.
 //!
 //!   send      seal a call, submit it, and reveal the key once it is ordered
-//!   keeper    execute each slot's revealed and forced transactions after its window
-//!   solver    solve the puzzles of withheld keys and publish them for late execution
+//!   keeper    execute each slot's revealed transactions after its window
+//!   solver    solve the puzzles of withheld keys and publish them for the bounty
 //!   delegate  point the sender's account at the inbox's SealedAccount (EIP-7702)
 //!   sandwich  a searcher that front-runs plaintext swaps and keys it sees pending
 
@@ -33,6 +33,8 @@ sol!(
 const POLL: Duration = Duration::from_millis(250);
 /// EIP-7825 caps a transaction's gas at 2^24.
 const TX_GAS_CAP: u64 = 1 << 24;
+/// geth and reth refuse transactions over 128 KiB; keep execute's calldata below.
+const TX_BYTES: usize = 120 * 1024;
 
 struct Args(HashMap<String, String>);
 
@@ -80,8 +82,27 @@ fn checked_u32(value: u64, name: &str) -> Result<u32> {
     u32::try_from(value).map_err(|_| eyre!("--{name} exceeds uint32 range"))
 }
 
+/// Read the account key from --key-file, which only its owner may read, so the
+/// key stays out of argument lists, shell history and process listings.
+fn signer(a: &Args) -> Result<PrivateKeySigner> {
+    use std::os::unix::fs::PermissionsExt;
+    let path = a.get("key-file")?;
+    if std::fs::metadata(path)?.permissions().mode() & 0o077 != 0 {
+        bail!("{path} is readable by others; chmod 600 it");
+    }
+    let text = std::fs::read_to_string(path)?;
+    let signer = text.trim().parse::<PrivateKeySigner>();
+    let mut bytes = text.into_bytes();
+    bytes.fill(0);
+    std::hint::black_box(&bytes);
+    Ok(signer?)
+}
+
 async fn connect(a: &Args) -> Result<(DynProvider, Address)> {
-    let signer: PrivateKeySigner = a.get("key")?.parse()?;
+    connect_as(a, signer(a)?).await
+}
+
+async fn connect_as(a: &Args, signer: PrivateKeySigner) -> Result<(DynProvider, Address)> {
     let me = signer.address();
     let p = ProviderBuilder::new()
         .wallet(EthereumWallet::from(signer))
@@ -165,17 +186,27 @@ async fn send(a: &Args) -> Result<()> {
         log("sender", format!("withholding the key of #{id}"));
         return Ok(());
     }
-    wait_block_above(&p, slot).await?;
+    // A reveal mined after slot + window reverts but leaves the key public, so
+    // send it only while it can still land in the next block.
+    let window = inbox.revealWindow().call().await?;
+    let now = wait_block_above(&p, slot).await?;
+    if now >= slot + window {
+        bail!("block {now} is too late to reveal #{id} (window ends at {}); the key stays private", slot + window);
+    }
     let r = inbox.reveal(id, key.into()).send().await?.get_receipt().await?;
-    log("sender", format!("revealed the key of #{id} in block {}", r.block_number.unwrap_or_default()));
+    let block = r.block_number.unwrap_or_default();
+    if !r.status() {
+        bail!("the reveal of #{id} reverted in block {block}; its key is public but the ticket will miss");
+    }
+    log("sender", format!("revealed the key of #{id} in block {block}"));
     Ok(())
 }
 
 async fn delegate(a: &Args) -> Result<()> {
     use alloy::eips::eip7702::Authorization;
     use alloy::signers::SignerSync;
-    let (p, me) = connect(a).await?;
-    let signer: PrivateKeySigner = a.get("key")?.parse()?;
+    let signer = signer(a)?;
+    let (p, me) = connect_as(a, signer.clone()).await?;
     // The sender pays for this transaction too, so the authorization uses the next nonce.
     let nonce = p.get_transaction_count(me).await?;
     let auth = Authorization { chain_id: U256::from(p.get_chain_id().await?), address: a.addr("to")?, nonce: nonce + 1 };
@@ -222,7 +253,9 @@ async fn keeper(a: &Args) -> Result<()> {
     if gas > TX_GAS_CAP {
         bail!("--gas {gas} exceeds the EIP-7825 transaction cap of {TX_GAS_CAP}");
     }
-    let batch = a.num("batch", 32)?;
+    let batch = a.num("batch", 32)?.max(1);
+    // After a failed transaction the next batch is half as long, down to one ticket.
+    let mut size = batch;
     let inbox = SealedInbox::new(addr, p.clone());
     let window = inbox.revealWindow().call().await?;
     log("keeper", format!("reconciling on-chain queue, window {window} blocks, {gas} gas per call"));
@@ -233,10 +266,9 @@ async fn keeper(a: &Args) -> Result<()> {
                 if head == inbox.queueLength().call().await? { break; }
                 let slot = inbox.slotAt(head).call().await?;
                 if slot + window >= p.get_block_number().await? { break; }
-                // A slot holds its own submissions and any tickets forced open in that block.
                 let cursor = inbox.cursor().call().await?;
                 let len = inbox.slotLength(slot).call().await?;
-                let end = len.min(cursor + U256::from(batch));
+                let end = len.min(cursor + U256::from(size));
                 let mut ids = Vec::new();
                 let mut i = cursor;
                 while i < end {
@@ -244,16 +276,41 @@ async fn keeper(a: &Args) -> Result<()> {
                     i += U256::from(1);
                 }
                 if ids.is_empty() { bail!("empty slot {slot}"); }
-                let envs = envelopes_of(&p, addr, &ids).await?;
+                // An unrevealed ticket only needs empty bytes to be marked missed.
+                let mut revealed = Vec::new();
+                for id in &ids {
+                    if inbox.tickets(*id).call().await?.state == 2 { revealed.push(*id); }
+                }
+                let mut by_id: HashMap<U256, Bytes> =
+                    revealed.iter().copied().zip(envelopes_of(&p, addr, &revealed).await?).collect();
+                // Each entry costs its length, padded, plus an offset and a length word.
+                let mut envs = Vec::new();
+                let mut bytes = 0;
+                for id in &ids {
+                    let env = by_id.remove(id).unwrap_or_default();
+                    bytes += env.len().div_ceil(32) * 32 + 64;
+                    if !envs.is_empty() && bytes > TX_BYTES { break; }
+                    envs.push(env);
+                }
                 // execute may process only a prefix; the loop then resumes from the new cursor.
-                let r = inbox.execute(envs).gas(gas).send().await?.get_receipt().await?;
-                if !r.status() { bail!("execute reverted; will reconcile again"); }
+                let sent = envs.len() as u64;
+                let r = match inbox.execute(envs).gas(gas).send().await {
+                    Ok(pending) => pending.get_receipt().await?,
+                    Err(e) => {
+                        size = (sent / 2).max(1);
+                        bail!("execute of {sent} tickets refused ({e}); retrying with {size}");
+                    }
+                };
+                if !r.status() {
+                    size = (sent / 2).max(1);
+                    bail!("execute of {sent} tickets reverted; retrying with {size}");
+                }
+                size = batch;
                 for l in r.inner.logs() {
                     if let Ok(e) = SealedInbox::Executed::decode_log(&l.inner) {
-                        let how = if e.late { "late, after its forced opening" } else { "in order" };
-                        log("keeper", format!("slot {slot}: executed #{} {how} (ok: {})", e.id, e.ok));
+                        log("keeper", format!("slot {slot}: executed #{} in order (ok: {})", e.id, e.ok));
                     } else if let Ok(e) = SealedInbox::Missed::decode_log(&l.inner) {
-                        log("keeper", format!("slot {slot}: #{} missed its reveal, penalty burned", e.id));
+                        log("keeper", format!("slot {slot}: #{} missed its reveal, penalty burned; it will not run", e.id));
                     }
                 }
             }
@@ -293,12 +350,12 @@ async fn solve_ticket(p: &DynProvider, addr: Address, id: U256, max_steps: u64) 
         log("solver", format!("#{id}: lost race before claiming"));
         return Ok(());
     }
-    // Publishing the key queues the ticket behind every earlier one; the keeper executes it.
+    // Publishing the key settles the ticket and pays the bounty; the ticket does not run.
     let claim = async {
         let r = inbox.forceOpen(id, key.into()).send().await?.get_receipt().await?;
         if !r.status() { bail!("claim reverted"); }
         let block = r.block_number.unwrap_or_default();
-        log("solver", format!("published the key of #{id} in block {block}; queued in slot {block} for the keeper"));
+        log("solver", format!("published the key of #{id} in block {block}; the bounty is paid and the call stays cancelled"));
         Ok(())
     }.await;
     if let Err(e) = claim {
