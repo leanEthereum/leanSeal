@@ -1,8 +1,8 @@
 # Audit
 
-An AI model, OpenAI's GPT-6 Astra at high reasoning effort, audited leanSeal (then named chainseal) for security and correctness. It read the code and the documents and ran the tests. It reproduced most failures with scratch programs, and established the rest from the source or by arithmetic. It had no permission to change the code.
+AI models audited leanSeal (first named chainseal) for security and correctness. OpenAI's GPT-6 Astra at high reasoning effort did rounds 1 to 9 and 11, OpenAI's GPT-5.6 Sol round 10, and Anthropic's Claude Opus 5.5 round 12. Each read the code and the documents and ran the tests. They reproduced most failures with scratch programs, and established the rest from the source or by arithmetic. None had permission to change the code.
 
-These rounds audited the C implementation, whose last commit is `ffde496`. A Rust implementation has since replaced it; the review of the port is summarised at the end of this file.
+Rounds 1 to 9 audited the C implementation, whose last commit is `ffde496`. A Rust implementation has since replaced it; the review of the port and rounds 10 to 12, which cover the Rust and Python implementations, the paper and the proof of concept, are at the end of this file.
 
 | Round | Commit | Report | Verdict |
 |---|---|---|---|
@@ -118,3 +118,39 @@ The Rust implementation replaced the C one at `ffde496`. Its output, file format
 Three differences from the C tool are deliberate. A broken pipe is reported as an error with exit status 1, where the C tool was killed by SIGPIPE. A key file with a NUL byte is rejected. A number with a leading vertical tab, or the exponent in `2^-00`, is rejected.
 
 Beyond the C tool's tests, a property test decodes 480,000 mutated encodings of puzzles, checkpoints and envelopes, and `cargo-fuzz` ran four targets under AddressSanitizer for about 108 million inputs with no failure. The library forbids `unsafe`; it appears only in the two hardware backends, which call the SHA-256 instructions.
+
+## Rounds 10 to 12
+
+| Round | Commit | Scope | Report | Verdict |
+|---|---|---|---|---|
+| 10 | `7b04dd7` | the whole repository | [round-10.md](round-10.md) | not production-ready: 1 high if deployed, 2 medium, 3 low |
+| 11 | `a90416a` | the Rust and Python implementations | [round-11.md](round-11.md) | fix first: 1 major, 4 minor |
+| 12 | `a90416a` | the proof of concept | [round-12.md](round-12.md) | fix first: 1 major, 3 minor |
+
+Round 10 found no break of the construction, no mismatch between the specification and the Rust implementation, and no error in the proved bound. Its findings are in the proof of concept, the erasure of secrets, one sentence of the paper and CI.
+
+| # | Finding | Change |
+|---|---|---|
+| R10-1 | `sealnet` took private keys on the command line, where shell history and process listings expose them. | Every role reads its key from `--key-file`, which must not be readable by group or others; the bytes are zeroed after parsing. `demo.sh` writes the keys into a private temporary directory and removes it on exit. |
+| R10-2 | The node's signer depends on crypto-bigint 0.5, subject to the timing advisory RUSTSEC-2026-0387. | Not fixed: alloy 2.5.0, the latest release, still uses k256 0.13 and with it crypto-bigint 0.5. The PoC README names the advisory under its limits, and CI audits the node with this one advisory ignored by ID. |
+| R10-3 | The inbox accepted submissions before its target allowlist was fixed, and ran calls to any target while it was not. | `submit` reverts with `NotRestricted` until `restrictTo` has run, and an account call to a target off the list fails. No unrestricted path remains. |
+| R10-4 | HMAC left its key copies, pads and SHA-256 state unerased, and CLI keys and plaintexts were zeroed only on the success path. | HMAC keeps its buffers in zeroing wrappers, and SHA-256 state is zeroed when dropped. CLI keys and plaintexts are held in a wrapper that zeroes them on every return path. `docs/security.md` says which copies remain. |
+| R10-5 | Assumption A3 stated the `2^52` margin for the bound in general, though it holds only for the reference puzzle. | A3 and the sentence that uses it now say "the reference puzzle". |
+| R10-6 | CI ran only the core crate. | CI now checks the contracts' format and tests, builds, lints and tests the node, and audits both dependency trees. A weekly workflow fuzzes the four decoders under AddressSanitizer for ten minutes each. |
+
+| # | Finding | Change |
+|---|---|---|
+| R11-1 | On a case-insensitive file system, `--secret-out` could name the new envelope file in another case, and the secret replaced the envelope, in both the Rust CLI and the Python reference. | Both check again once the envelope exists, by file identity, and refuse before writing the secret. CLI and cross tests cover the alias when the file system is case-insensitive. |
+| R11-2 | `solve` with stdout appended to the checkpoint deleted the file holding the key. | `solve` refuses that before solving, as `open` does, and never deletes a checkpoint that stdout points at. A CLI test checks the refusal and that the checkpoint is unchanged. |
+| R11-3 | After a solve finished, SIGINT and SIGTERM no longer stopped a process blocked on its output. | Once solving ends, both signals take their default action again. |
+| R11-4 | The Python alias test failed on a parameter check before reaching the alias check. | It passes valid parameters and checks for the alias error message. |
+| R11-5 | The damaged-checkpoint test sometimes wrote the byte that was already there. | It flips a bit, so the checkpoint always changes. |
+
+| # | Finding | Change |
+|---|---|---|
+| R12-1 | A builder that kept an honest sender's pending reveal out of the window held the key while the ticket missed, and could trade around the ticket when a forced opening queued it later. | A missed ticket never runs: `forceOpen` publishes the key and pays the bounty, and the call stays cancelled. The README and the paper state the remaining censorship assumption: the window must exceed the number of consecutive blocks one builder controls. |
+| R12-2 | The demo token's `mint` was public, so anyone could freeze the pool or drain it. | Only the deployer can mint. |
+| R12-3 | The keeper's default batch could exceed the 128 KiB transaction size limit and was then retried unchanged. | Batches stay under 120 KiB of calldata, unrevealed tickets get empty bytes, and the keeper halves the batch after a refusal or a revert. |
+| R12-4 | `sealnet send` reported a reveal without checking that it succeeded. | `send` fails if the reveal reverted, and does not reveal once the window has passed, since the key would become public in a failed transaction. |
+
+The contracts' 32 tests and the node's tests pass, and the demo runs end to end: the plaintext swap loses 9.25%, the sealed swap executes at the fair price, and the withheld key is published while the swap does not run.

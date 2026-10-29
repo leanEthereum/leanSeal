@@ -165,6 +165,6 @@ fn main() -> Result<(), leanseal::Error> {
 | `paper/` | LaTeX source of the paper |
 | `poc/` | The encrypted-mempool prototype: Solidity contracts and Rust daemons |
 | `docs/` | The project site, the paper PDF and these documents |
-| `audit/` | AI audit reports on the earlier C implementation, and the fixes |
+| `audit/` | AI audit reports on the C and Rust implementations, the paper and the proof of concept, and the fixes |
 
-leanSeal was developed under the name chainseal. The reports in `audit/` and the logs in `bench-results/` predate the rename and use the old name, labels and magic bytes. The format was renamed before any release, so v1 uses the `leanseal/v1/` labels and the `LS` magic bytes throughout.
+leanSeal was developed under the name chainseal. The first nine reports in `audit/` and the logs in `bench-results/` predate the rename and use the old name, labels and magic bytes. The format was renamed before any release, so v1 uses the `leanseal/v1/` labels and the `LS` magic bytes throughout.
