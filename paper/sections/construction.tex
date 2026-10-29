@@ -1,9 +1,6 @@
 \section{The Puzzle}\label{sec:construction}
 
-A \emph{hash chain} starts from a value and hashes it many times in a row. Each step needs the previous output, so even unlimited parallel hardware must compute the steps one after another. A single chain of $N$ steps would serve as a lock, except that its builder also needs $N$ sequential steps. The construction of Mahmoody, Moran and Vadhan~\cite{MMV11} avoids this: the sender builds $n$ short chains of $m$ steps at the same time and links them so that an opener can only run them in order. The opener's delay is $N = nm$ steps; the sender's wall time is $m$ steps on $n$ cores.
-
-\subsection{Notation and model}\label{sec:prelims}\label{sec:notation}
-
+% The algorithms come first so that they can take the top of the next page; the barrier keeps them in this section.
 \begin{algorithm}[t]
   \caption{$\Build(n, m, b)$, run by the sender}\label{alg:build}
   \begin{algorithmic}[1]
@@ -39,6 +36,10 @@ A \emph{hash chain} starts from a value and hashes it many times in a row. Each 
   \end{algorithmic}
 \end{algorithm}
 
+A \emph{hash chain} starts from a value and hashes it many times in a row. Each step needs the previous output, so even unlimited parallel hardware must compute the steps one after another. A single chain of $N$ steps would serve as a lock, except that its builder also needs $N$ sequential steps. The construction of Mahmoody, Moran and Vadhan~\cite{MMV11} avoids this: the sender builds $n$ short chains of $m$ steps at the same time and links them so that an opener can only run them in order. The opener's delay is $N = nm$ steps; the sender's wall time is $m$ steps on $n$ cores.
+
+\subsection{Notation and model}\label{sec:prelims}\label{sec:notation}
+
 The notation follows the specification (\texttt{SPEC.md} in the repository~\cite{leanSealRepo}). Integers are encoded big-endian, $a \cat b$ is concatenation, $\trunc{v}{b}$ is the first $b$ bytes of $v$, and $\oplus$ is bytewise XOR. A \emph{labelled hash} is $\THash(\mathit{label}, x) = \SHA(\mathsf{u8}(|\mathit{label}|) \cat \mathit{label} \cat x)$, and we write $\Hstart, \Hmask, \Hacc, \Hkey, \Hcommit$ for labelled hashes with the labels \hashlabel{start}, \hashlabel{mask} and so on. The \emph{chain step} for chain $i$ is
 \[
   F_i(s) = \SHA\bigl(s \cat \salt \cat \mathsf{be32}(i)\bigr),
@@ -56,3 +57,5 @@ A puzzle has $n$ chains of $m$ steps and $b$-byte links; the specification bound
 The sender knows every link, so it runs the $n$ chains of \cref{alg:build} in parallel. Each link after the first is published only masked, under a hash of the end of the chain before it. The key is a hash of all chain ends in order, and the commitment $C$ lets anyone check a claimed key with one hash. An opener without the key has only $x_1$: it runs chain~1, uses its end to unhide $x_2$, runs chain~2, and so on, $nm$ steps in sequence (\cref{fig:schedules}). The only way to start a chain early is to guess its link. The sender encrypts the transaction under $K$ with HMAC-SHA256 (\cref{sec:costs}) and keeps the puzzle and key until it needs them.
 
 Four choices in the encoding matter for security. Every hash depends on its puzzle's context or salt, and chain starts and steps also name their chain, so work on another puzzle does not help. Masks are hashes of chain ends, not the ends themselves, so learning a link says nothing about the chain before it. The key depends on every chain's end, so a guessed link cannot be confirmed until the opener's own chains reach it. Finally, the puzzle has $68 + nb$ bytes regardless of the delay, which depends only on $N$.
+
+\FloatBarrier
