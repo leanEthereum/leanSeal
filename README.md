@@ -48,7 +48,7 @@ The figures below are for the reference puzzle: a 30-second lock with `n = 16` c
 | Quantity | Value | Basis |
 |---|---|---|
 | Delay against the assumed attacker | 30 s | Assumes one chained SHA-256 every 3.5 ns, 3.7 times faster than the fastest published hardware design |
-| Chance that an attacker with the Bitcoin network's hash rate derives the key early | at most about 2<sup>−117</sup> | Proved in the random-oracle model |
+| Chance that an attacker with about the Bitcoin network's hash rate derives the key early | at most about 2<sup>−117</sup> | Proved in the random-oracle model |
 | Building the puzzle, all CPU cores | about 21 s | Scaled from measurement; can be done before the transaction exists |
 | Opening with the revealed key | 12 ms | Measured; command-line tool, end to end |
 | Opening without the key, one CPU core | about 3 min 21 s | Scaled from measurement |
