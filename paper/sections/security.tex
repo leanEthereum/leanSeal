@@ -7,7 +7,7 @@ Secrecy until the deadline rests on two assumptions about SHA-256 and two about 
 \begin{description}[leftmargin=1.5em,font=\normalfont\bfseries]
   \item[A1. No shortcut.] The chain step and each labelled hash behave like independent random oracles on their whole inputs. We instantiate them heuristically with SHA-256; a chain step is a single compression. If this fails, the delay is lost and the hash must be replaced, which the versioned format allows.
   \item[A2. Speed.] During the delay, no party computes one chain step in less than $\ell$. An error here shrinks the delay in proportion.
-  \item[A3. Budget.] The attacker computes at most $R$ hashes per second in total. An error here multiplies the bound of \cref{thm:delay} by the same factor, which keeps it below $2^{-64}$ for any factor up to $2^{52}$.
+  \item[A3. Budget.] The attacker computes at most $R$ hashes per second in total. An error here multiplies the bound of \cref{thm:delay} by the same factor; for the reference puzzle, any factor up to $2^{52}$ keeps it below $2^{-64}$.
   \item[A4. Encryption.] HMAC-SHA256 is a pseudorandom function.
 \end{description}
 
@@ -66,7 +66,7 @@ The speed $\ell$ is the assumption that most needs hardware evidence. \Cref{tab:
 \end{table}
 
 \paragraph{Sensitivity.}
-Only A1 fails abruptly. An attacker $k$ times faster than assumed opens a 30-second puzzle in $30/k$ seconds; restoring the margin costs $k$ times more sender work and no extra bytes. An attacker with $k$ times the budget multiplies the bound by $k$, which stays below $2^{-64}$ unless $k$ exceeds $2^{52}$. Slower honest hardware costs time, never secrecy. The secrecy is also temporary: a sealed transaction becomes public in any case, so only hardware that exists during its delay matters, and $\ell$ can be repriced as hardware improves.
+Only A1 fails abruptly. An attacker $k$ times faster than assumed opens a 30-second puzzle in $30/k$ seconds; restoring the margin costs $k$ times more sender work and no extra bytes. An attacker with $k$ times the budget multiplies the bound by $k$, which for the reference puzzle stays below $2^{-64}$ unless $k$ exceeds $2^{52}$. Slower honest hardware costs time, never secrecy. The secrecy is also temporary: a sealed transaction becomes public in any case, so only hardware that exists during its delay matters, and $\ell$ can be repriced as hardware improves.
 
 \subsection{Attacks and link width}\label{sec:attacks}
 
