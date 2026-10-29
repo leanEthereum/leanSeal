@@ -1,6 +1,6 @@
 # Audit
 
-AI models audited leanSeal (first named chainseal) for security and correctness. OpenAI's GPT-6 Astra at high reasoning effort did rounds 1 to 9 and 11, OpenAI's GPT-5.6 Sol rounds 10 and 13, and Anthropic's Claude Opus 5.5 round 12. Each read the code and the documents and ran the tests. They reproduced most failures with scratch programs, and established the rest from the source or by arithmetic. None had permission to change the code.
+AI models audited leanSeal (first named chainseal) for security and correctness. OpenAI's GPT-6 Astra at high reasoning effort did rounds 1 to 9, 11 and 14, OpenAI's GPT-5.6 Sol rounds 10 and 13, and Anthropic's Claude Opus 5.5 round 12. Each read the code and the documents and ran the tests. They reproduced most failures with scratch programs, and established the rest from the source or by arithmetic. None had permission to change the code.
 
 Rounds 1 to 9 audited the C implementation, whose last commit is `ffde496`. A Rust implementation has since replaced it; the review of the port and rounds 10 to 13, which cover the Rust and Python implementations, the paper and the proof of concept, are at the end of this file.
 
@@ -119,7 +119,7 @@ Three differences from the C tool are deliberate. A broken pipe is reported as a
 
 Beyond the C tool's tests, a property test decodes 480,000 mutated encodings of puzzles, checkpoints and envelopes, and `cargo-fuzz` ran four targets under AddressSanitizer for about 108 million inputs with no failure. The library forbids `unsafe`; it appears only in the two hardware backends, which call the SHA-256 instructions.
 
-## Rounds 10 to 13
+## Rounds 10 to 14
 
 | Round | Commit | Scope | Report | Verdict |
 |---|---|---|---|---|
@@ -127,6 +127,7 @@ Beyond the C tool's tests, a property test decodes 480,000 mutated encodings of 
 | 11 | `a90416a` | the Rust and Python implementations | [round-11.md](round-11.md) | fix first: 1 major, 4 minor |
 | 12 | `a90416a` | the proof of concept | [round-12.md](round-12.md) | fix first: 1 major, 3 minor |
 | 13 | `b1bdcd6` | the paper and the whole repository | [round-13.md](round-13.md) | changes before a release: 1 major, 2 low; no error in the construction or the proof |
+| 14 | `d125bd9` and an uncommitted revision | the paper's answer to an outside critique | [round-14.md](round-14.md) | approved on the third pass; 9 major and 4 minor, then 4 major and 3 minor, then 2 minor |
 
 Round 10 found no break of the construction, no mismatch between the specification and the Rust implementation, and no error in the proved bound. Its findings are in the proof of concept, the erasure of secrets, one sentence of the paper and CI.
 
@@ -164,3 +165,15 @@ Round 13 audited the fixes of rounds 10 to 12 together with the paper. It found 
 | R13-2 | `sealnet send --expiry` added the offset to the block number with wrapping arithmetic. | The sum is checked, and the offset is rejected before the puzzle is built. A unit test covers `u64::MAX`. |
 | R13-3 | The paper compared queries, each one compression, with Bitcoin hashes, each two. | The paper says so, and gives the bound in compressions: one bit worse, `2^-116` for 30 seconds. The abstract, introduction, README and security guide say "about" the Bitcoin network's hash rate. |
 
+Round 14 reviewed a revision of the paper that answers an outside critique, before it was committed, in three passes. The revision is the commit that adds this report.
+
+| Pass | Findings | Change |
+|---|---|---|
+| 1 | Theorem 2 let the attacker compute without limit outside the oracles, where HMAC is. | The theorem bounds that computation by `t`, and `δ` is a PRF advantage for that time; the appendix gives the reduction's simulation cost. |
+| 1 | The bisection game, its deadlines and the solvers' pay were not specified, and designation did not stop a sender from paying itself. | The paper outlines the game: the initial state comes from the puzzle, the claimant posts the final state, each challenger plays its own game, and every move has a deadline. Solvers come from a staked registry, are paid for a timely outcome, and the penalty is stated net of every payment the sender's coalition can recover. |
+| 1 | The auction lacked a bid format, a clearing rule, admission limits and an exposure rule, and a late key let a sender induce a full solve for the deposit alone. | The auction specifies supply per batch, a validity predicate, limits on work and length, exposure tied to finality, exclusion of invalid bids and a uniform-price clearing rule. The denial-of-service text prices a solve against the net deposit. |
+| 1 | The abstract said the auction removes the option to withhold; the commit–reveal baseline used the whole escrow; the hiding summary dropped `q`; exactly 2.5 times faster does not open before 12 s; other documents were stale. | The abstract and introduction say what the bond does and does not do; the baseline is a deposit `d + B`; the summary keeps the nonce and `P'` terms; the example is 11.2 s at 1.3 ns; SPEC, the security guide, the README and the shipped PDF are updated. |
+| 2 | The solver deadline ended before a claim could stand; a failing tag was not a payable outcome; the last step compared a hash the challenger never posts; keys could be revealed before the bids were final; admission did not fix the work or the link width; the theorem summaries misplaced the factor two. | The deadline is for submission, and a timely claim keeps the assignment; a failing tag is payable; the last step compares only with the claimant's hash; reveals start at finality; admission requires `nm = 2^33`, `n ≤ 16` and `b = 24`; SPEC gives the bound in full. Settlement takes at most 10, 20 or 158 minutes from assignment. |
+| 3 | The compression count needed a bid length; the table did not say when the settlement clock starts. | Bids are 96 bytes, checked in at most 17 compressions; the table measures from the first assignment. |
+
+The game remains an outline: its encodings, gas costs and behavior under censored moves are open (paper, Section 8). The proof of concept implements neither the bond nor the game.

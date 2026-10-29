@@ -67,19 +67,19 @@ A one-year lock needs at least 33 chains, because the format limits `m` to 2<sup
 
 ### The hardware assumption
 
-The delay in seconds is `n·m·ℓ`, where `ℓ` is the fastest time in which anyone computes one chained SHA-256 step. leanSeal's reference parameters assume `ℓ = 3.5 ns`, 3.7 times faster than the fastest published SHA-256 design (13.0 ns, a synthesized 7 nm core) and 6.6 times faster than one Apple M4 core. This is an estimate, not a lower bound; the paper's Appendix B gives the circuit model behind it.
+The delay in seconds is `n·m·ℓ`, where `ℓ` is the fastest time in which anyone computes one chained SHA-256 step. leanSeal's reference parameters assume `ℓ = 3.5 ns`, 3.7 times faster than the fastest published SHA-256 design (13.0 ns, a synthesized 7 nm core) and 6.6 times faster than one Apple M4 core. This is an estimate, not a lower bound; the paper's Appendix C gives the circuit model behind it.
 
 An attacker `k` times faster than assumed opens a puzzle `k` times sooner. Restoring the delay costs `k` times more work for every sender, and no extra bytes. Choose `m` against the fastest attacker you assume, not against your own machine.
 
 ### Other assumptions
 
-- HMAC-SHA256 is a pseudorandom function. The encryption layer is intended to hide the contents of equal-length messages, but a reduction from distinguishing envelopes to the events of the delay proof has not been written.
+- HMAC-SHA256 is a pseudorandom function. Under this assumption and the random-oracle model, the paper's Theorem 2 shows that envelopes hide the contents of equal-length messages until the key can be derived, against an attacker whose computation outside the oracles is bounded.
 - The sender's random number generator is sound.
 - The bound is classical. Afshar et al. prove that the idealized chained puzzle keeps its delay against quantum attackers; no analysis covers leanSeal's exact encoding.
 
 ## What leanSeal does not do
 
-- **No proof that a puzzle is well formed.** A malformed puzzle wastes the solver's time, and the solver learns this only when the final key fails the commitment check.
+- **No proof that a puzzle is well formed.** A malformed puzzle wastes the solver's time, and the solver learns this only when the final key fails the commitment check. The paper describes a bond that a protocol can charge when a forced opening fails; this implementation does not include it.
 - **No control over when the clock starts.** The delay runs from the moment a puzzle becomes public. Keep a secret file private until its first envelope is published.
 - **No shared solving.** Each puzzle needs its own full solve; independent puzzles share no work. The honest solver uses one core per puzzle, and more cores help only to solve several puzzles at once.
 - **No hiding of metadata.** The message length and the puzzle parameters are public.

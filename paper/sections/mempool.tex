@@ -11,7 +11,7 @@ This section treats the puzzle as a black box and describes how it supports an e
     \colhead{Property} & \colhead{\leanseal} \\
     \midrule
     Contents hidden until the order is fixed & yes, for $T$ after exposure, under the hardware assumption \\
-    Every included transaction opens & yes, without the sender or anyone else, if the puzzle is well formed, which is not checked (\cref{sec:withholding}) \\
+    Every included transaction opens & yes, without the sender or anyone else, if the puzzle is well formed; this is not checked, but a failed opening can forfeit a bond (\cref{sec:bond}) \\
     No free cancellation after seeing the order & no: withholding still delays or, with expiry, cancels execution; a deposit must deter it (\cref{sec:withholding}) \\
     Excluded transactions stay private & no: they open after $T$ like any other (\cref{sec:noninclusion}) \\
     Sender, fee and size hidden & no; the envelope is public and the size can be padded \\
@@ -24,12 +24,12 @@ This section treats the puzzle as a black box and describes how it supports an e
 
 \subsection{The flow}\label{sec:flow}
 
-\leanseal is used as a timed commitment~\cite{BN00}; \cref{fig:commit-reveal} shows the flow.
+\leanseal is used like a timed commitment~\cite{BN00}, but without its proof that a forced opening recovers the committed key; \cref{fig:commit-reveal} shows the flow.
 \begin{enumerate}[leftmargin=1.5em]
   \item \textbf{Submit.} The sender takes a puzzle from its stock and encrypts its signed transaction under $K$. It sends the sealed transaction together with a plaintext envelope: the account that pays, a nonce, a gas limit, a fee and a deposit (\cref{sec:admission}).
   \item \textbf{Order.} The builder orders sealed transactions without reading them. The ordering commits to the hash of each whole sealed transaction, not only to $C$: once $K$ is known, anyone could seal a different transaction under the same puzzle.
   \item \textbf{Reveal.} Once the ordering is fixed, the sender publishes $K$. Nodes check it against $C$, decrypt in milliseconds and execute the transaction in its committed position. No puzzle is solved.
-  \item \textbf{Fallback.} If the sender has not revealed $K$ by the reveal deadline, its deposit is forfeited, and anyone can solve the puzzle and publish $K$. We call a puzzle \emph{well formed} if its chains lead to the key committed in $C$ and its transaction is encrypted under that key. A well-formed puzzle therefore opens without its sender, but its transaction can only run late or not at all.
+  \item \textbf{Fallback.} If the sender has not revealed $K$ by the reveal deadline, its deposit is forfeited, and anyone can solve the puzzle and publish $K$. We call a puzzle \emph{well formed} if its chains lead to the key committed in $C$ and its transaction is encrypted under that key. A well-formed puzzle therefore opens without its sender, but its transaction can only run late or not at all. A protocol can also hold a bond that the sender forfeits if the forced opening fails (\cref{sec:bond}).
 \end{enumerate}
 
 
@@ -63,7 +63,7 @@ The delay should be the smallest that covers the time from exposure to the fixed
     \midrule
     Rollup with a sequencer & 1--2\,s & 15\,s & 11\,s & 1.7\,min \\
     Ethereum with enshrined PBS; puzzle sent to the builder, or published after a commitment & up to one slot, 12\,s & \textbf{30\,s} & 21\,s & 3.3\,min \\
-    Sealed-bid auction; bid committed, then posted near the close & about one slot & 30\,s & 21\,s & 3.3\,min \\
+    Sealed-bid auction with fast finality; bid sent to the builders of its slot & about one slot & 30\,s & 21\,s & 3.3\,min \\
     Public gossip, waiting $w$ slots & $12(w+1)$\,s & $24(w+1)$\,s & $17(w+1)$\,s & $2.7(w+1)$\,min \\
     Order fixed only at finality, Ethereum today & about 13\,min & 30\,min & 21\,min & 3.3\,h \\
     \bottomrule
@@ -80,6 +80,6 @@ Two further rules make the committed order binding for a market. First, a guarde
 
 A missed reveal burns most of the deposit: the solver who posts the key receives a smaller bounty, which the sender, who knows its key, could claim itself, so the net penalty is the deposit minus the bounty. The deposit prices only the missed reveal: a sender that reveals on time and then revokes its approval or moves its funds makes its own trade fail without penalty, a cancellation that also only immediate execution removes. A forced opening publishes the key and pays the bounty, but the transaction does not run. Its key may already have been public: a builder that reads a pending reveal and keeps it out of the two blocks makes the ticket miss while holding the key, and could trade around the transaction if it ran later. Such a builder can still make an honest sender forfeit its deposit, so the window must exceed the number of consecutive blocks that one builder controls.
 
-On a local chain with 2-second blocks, a searcher watching the mempool sandwiched a plaintext swap, which lost 9.25\% against the fair price. The same swap, sealed, executed at the fair price: the searcher read the key from the pending reveal, decrypted the swap and placed a trade ahead of the reveal in the same block, and the pool rejected it. With its key withheld, a demonstration puzzle of $2^{29}$ steps, 1/16 of the reference work, was solved on one core in 13\,s; the key was published, and the swap did not run.
+On a local chain with 2-second blocks, a searcher watching the mempool sandwiched a plaintext swap, which lost 9.25\% against the fair price. The same swap, sealed, executed at the fair price: the searcher read the key from the pending reveal, decrypted the swap and placed a trade ahead of the reveal in the same block, and the pool rejected it. The puzzle plays no part in this result: no puzzle is solved on that path, and the same contract with plain commit--reveal would reject the trade as well. The second experiment shows that an honestly built puzzle opens without its sender. With its key withheld, a demonstration puzzle of $2^{29}$ steps, 1/16 of the reference work, was solved on one core in 13\,s; the key was published, and the swap did not run. The prototype does not implement the bond of \cref{sec:bond}, so a sender that attaches a malformed puzzle loses only its deposit.
 
 The keeper splits a batch into transactions within the gas cap of EIP-7825. In the contract's unit tests, with a 128-byte test puzzle and 256-byte swaps, submitting costs 194{,}000 to 270{,}000 gas, revealing about 74{,}500, executing a batch of two swaps about 357{,}000, and a forced opening about 67{,}000. These are contract-call costs; calldata and intrinsic costs come on top and grow with the envelope.

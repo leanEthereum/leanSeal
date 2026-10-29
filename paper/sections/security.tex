@@ -36,10 +36,26 @@ and the first term is absent when $n = 1$.
 Assumptions A2 and A3 turn oracle rounds and queries into time. Write $T = n m \ell$, and let the attacker make $\Qon = R \cdot T$ queries after publication. Against $R = 10^{21}$ queries per second, about the hash rate of the whole Bitcoin network (\cref{sec:pricing}), the bound is about $2^{-117}$ for a 30-second lock and $2^{-97}$ for a one-year lock. Precomputation changes this only slightly: a full year of queries at the same rate before a 30-second puzzle is published adds about $2^{-128}$. With 24-byte links the first term, the chance of guessing a link, dominates; for a 30-second lock the full-width terms are smaller by a factor of about $2^{31}$. At a fixed delay the bound depends on the number of chains only weakly, through $P \approx N$, except that the first term is absent when $n = 1$. The bound covers every speed-up, however small: except with this probability, the attacker does not derive the key even one oracle round before the honest opener.
 
 \paragraph{Scope.}
-The threshold is the round in which $K$ is derived, not the round in which $\Open$ returns: an attacker that skips the check against $C$ finishes one round before $\Open$ does, with certainty. The precomputation term is needed even when $n = 1$, where the only link is public: an attacker that guesses the salt and the link in advance and computes the key opens the puzzle in zero rounds with probability $2^{-(128 + 8b)}$. The theorem concerns recovery of the key. The encryption layer is intended to hide the contents of equal-length messages under A1 and A4, but a reduction from distinguishing envelopes to the events of the proof, which must also count queries on the derivation of the encryption and authentication keys, nonce collisions and several envelopes under one puzzle, has not been written. The bound is classical; extending it to this instantiation against quantum attackers is outside the scope of this paper.
+The threshold is the round in which $K$ is derived, not the round in which $\Open$ returns: an attacker that skips the check against $C$ finishes one round before $\Open$ does, with certainty. The precomputation term is needed even when $n = 1$, where the only link is public: an attacker that guesses the salt and the link in advance and computes the key opens the puzzle in zero rounds with probability $2^{-(128 + 8b)}$. The theorem concerns recovery of the key; \cref{thm:hiding} below extends it to the contents. The bounds are classical; extending them to this instantiation against quantum attackers is outside the scope of this paper.
 
 
 \Cref{app:proof} gives the proof. It follows the structure of Pietrzak and Reyzin's soundness proof for proofs of sequential work~\cite{PR26}.
+
+\paragraph{Hiding the contents.}
+An attacker in an encrypted mempool also sees the envelopes sealed under $K$, and may only need to tell two candidate transactions apart. In the \emph{encryption game}, $\Adv_1$ receives $Z$ and may then ask, adaptively, for up to $q$ envelopes: for each, it names two messages of equal length and receives the envelope of the one selected by a hidden bit $\beta$, encrypted under $K$ with a fresh nonce as in \cref{sec:costs}. The labelled hashes $\Henc$ and $\Hmk$ that derive the subkeys are random oracles like the others. HMAC is used only under subkeys, and A4 is applied to it under keys that are uniform and independent of the attacker's view.
+
+Since HMAC is computed outside the oracles, this theorem, unlike \cref{thm:delay}, needs the attacker's other computation to be bounded: an unbounded attacker could evaluate HMAC under every key. Let $\Adv$ make at most $\Qpre$ and $\Qon$ oracle queries, as before, and at most $t$ further computation steps. Let $\delta$ be the largest advantage, over algorithms running in time $t + O(Q + P')$, of distinguishing HMAC-SHA256 under $2q$ independent uniform 32-byte keys from $2q$ independent random functions, with the queries that the $q$ envelopes need.
+
+\begin{theorem}[Hiding]\label{thm:hiding}
+In the encryption game, for every attacker as above that stops within fewer than $\Tkey$ oracle rounds,
+\[
+  \bigl|\Pr[\Adv_1 \text{ outputs } 1 \mid \beta = 1] - \Pr[\Adv_1 \text{ outputs } 1 \mid \beta = 0]\bigr|
+  \;\le\; 2\Bigl(\frac{\Qon}{2^{8b}} + \frac{\Qpre}{2^{128 + 8b}} + \frac{QP' + P'^2}{2^{256}} + \frac{q^2}{2^{129}} + \delta\Bigr),
+\]
+where $P' = P + 2q$, and the first term is absent when $n = 1$.
+\end{theorem}
+
+For the reference puzzle and few envelopes, the doubled link-guessing term is about $2^{-116}$. The bound also includes $q^2/2^{128}$, the extra path-value terms through $P' = P + 2q$, and $2\delta$; the nonce term can dominate when many envelopes share a puzzle. The theorem says nothing from round $\Tkey$ on, when the key can be derived and every envelope under it opens. \Cref{app:hiding} gives the proof.
 
 \subsection{The hardware assumption}\label{sec:pricing}
 
@@ -66,7 +82,7 @@ The speed $\ell$ is the assumption that most needs hardware evidence. \Cref{tab:
 \end{table}
 
 \paragraph{Sensitivity.}
-Only A1 fails abruptly. An attacker $k$ times faster than assumed opens a 30-second puzzle in $30/k$ seconds; restoring the margin costs $k$ times more sender work and no extra bytes. An attacker with $k$ times the budget multiplies the bound by $k$, which for the reference puzzle stays below $2^{-64}$ unless $k$ exceeds $2^{52}$. Slower honest hardware costs time, never secrecy. The secrecy is also temporary: a sealed transaction becomes public in any case, so only hardware that exists during its delay matters, and $\ell$ can be repriced as hardware improves.
+Only A1 fails abruptly. An attacker $k$ times faster than assumed opens a 30-second puzzle in $30/k$ seconds; restoring the margin costs $k$ times more sender work and no extra bytes. An attacker with $k$ times the budget multiplies the bound by $k$, which for the reference puzzle stays below $2^{-64}$ unless $k$ exceeds $2^{52}$. Slower honest hardware costs time, never secrecy. For the reference setting the margin is a factor of about 2.5: a 30-second puzzle covers a 12-second window only while one step takes more than $12\,\mathrm{s}/2^{33} \approx 1.4$\,ns. At 1.3\,ns, the advantage $A = 10$ that \cref{app:hardware} does not rule out, it opens in 11.2\,s, before the deadline. The bound of \cref{thm:delay} is negligible next to this; the hardware estimate is what limits the reference parameters. The secrecy is also temporary: a sealed transaction becomes public in any case, so only hardware that exists during its delay matters, and $\ell$ can be repriced as hardware improves.
 
 \subsection{Attacks and link width}\label{sec:attacks}
 

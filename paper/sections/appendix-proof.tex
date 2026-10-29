@@ -64,3 +64,18 @@ In $\Ideal$, if $\Adv_1$ stops before round $\Tkey$, then $K$ is not revealed by
 \end{proof}
 
 The proof follows the structure of Pietrzak and Reyzin's soundness proof for proofs of sequential work (their Lemmas 6 and~9)~\cite{PR26}.
+
+\section{Proof of the Hiding Theorem}\label{app:hiding}
+
+\begin{proof}[Proof of \cref{thm:hiding}]
+We extend the proof of \cref{thm:delay}. Draw the $q$ nonces $\eta_1, \dots, \eta_q$ at the start, and add $2q$ path values: for envelope $j$, the subkeys $e_j = \Henc(K \cat \eta_j)$ and $t_j = \Hmk(K \cat \eta_j)$. The only predecessor of each is $K$, so $\rho(e_j) = \rho(t_j) = \Tkey + 1$, and there are now $P' = P + 2q$ path values. In $\Real$, the challenger computes the subkeys by querying the oracles, as $\Build$ computes $C$; in $\Ideal$, it makes no queries and uses $\nu(e_j)$ and $\nu(t_j)$. In both, it computes the keystream and the tag with HMAC, which we treat as a function outside the oracles (A4).
+
+\Cref{claim:sequential} holds unchanged, so in $\Ideal$ neither $K$ nor any subkey is revealed while $\Adv_1$ runs. The proof of \cref{claim:hybrid} shows that the runs of $\Real$ and $\Ideal$ agree unless a bad event happens; here it needs one more: (c)~two nonces are equal. Off (a) and (c), the subkey inputs differ from each other, since their nonces or labels differ, and from every other path input, since their labels differ; so $H$ answers them with $\nu(e_j)$ and $\nu(t_j)$, and the envelopes of the two experiments agree.
+
+Event (c) has probability at most $q^2/2^{129}$, since the nonces are 16 random bytes. In the proof of \cref{claim:bad}, the envelopes are a new part of the attacker's view, but they depend only on the messages, the puzzle, the nonces and the subkeys, and no path input contains a subkey, so the argument applies as before with $P'$ in place of $P$; in particular, a query that equals a subkey input contains $K$, which is not revealed. Hence, for each value of $\beta$, the probability that $\Adv_1$ outputs 1 differs between $\Real$ and $\Ideal$ by at most
+\[
+  \frac{\Qon}{2^{8b}} + \frac{\Qpre}{2^{128 + 8b}} + \frac{QP' + P'^2}{2^{256}} + \frac{q^2}{2^{129}}.
+\]
+
+In $\Ideal$, the $2q$ subkeys are never revealed. They are independent uniform values, independent of the salt, the links, the other path values and $H'$, and the attacker's view depends on them only through the envelopes. Replacing HMAC under each subkey by an independent random function therefore changes the probability that $\Adv_1$ outputs 1 by at most $\delta$: a distinguisher runs $\Ideal$ itself, answering the attacker's queries by lazy sampling in time $O(Q + P')$, and computes the envelopes with its own functions. After the replacement, each envelope has its own encryption function, whose keystream blocks are values at distinct points, so each ciphertext is uniform given its length, which does not depend on $\beta$; and each tag is the value of its own random function at one point, so it is uniform and independent of the rest. The attacker's view is then independent of $\beta$. Adding the two differences for $\beta = 0$ and for $\beta = 1$ gives the theorem.
+\end{proof}

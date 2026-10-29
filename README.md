@@ -20,16 +20,16 @@ leanSeal is designed as a decryption fallback for **encrypted mempools**. In an 
 
 leanSeal keeps the sender as the normal decryption path and adds a puzzle as a fallback that needs no third party. After ordering, the sender reveals its key, nodes check it against a commitment, and the transaction decrypts in milliseconds; no puzzle is solved. If the sender withholds its key, anyone can solve the puzzle to recover it.
 
-The same mechanism is a *timed commitment*, so leanSeal also fits applications that can wait for every commitment to open, such as sealed-bid auctions.
+leanSeal also fits applications that can wait for every commitment to open, such as sealed-bid auctions. It is used there like a *timed commitment*, but without a proof, checked at submission, that the forced opening will succeed.
 
 ### What the fallback guarantees
 
 - **Disclosure for honestly built puzzles.** A withheld transaction becomes public even if its sender goes offline or changes its mind.
 - **Not execution.** A transaction recovered minutes later may have expired or may revert. Withholding can still delay or cancel execution, so a protocol needs a deposit forfeited on a missed reveal, as with plain commit–reveal.
-- **Not puzzle validity.** No efficient check is known that a puzzle opens to its key. A sender that plans to withhold from the start can attach a malformed puzzle, and the deposit is then the only deterrent.
+- **Not puzzle validity.** No efficient check is known that a puzzle opens to its key, and a malformed puzzle costs less to make than a well-formed one, so a strategic sender can keep its option to withhold. The paper adds a bond, forfeited when a forced opening is shown on chain to fail, if necessary by a bisection game, and outlines that game; the proof of concept implements neither.
 - **Not lasting confidentiality.** A puzzle opens whether or not its transaction is included, so excluded transactions become readable too. leanSeal protects against front-running; it does not provide the long-term confidentiality that shielded transfers need.
 
-[The paper](docs/leanseal.pdf) analyses these points, and what the puzzle adds over commit–reveal with the same deposit, in Section 6.
+[The paper](docs/leanseal.pdf) analyses these points, and what the puzzle adds over commit–reveal with the same deposit, in Section 6, which also specifies a sealed-bid batch auction and compares it with commit–reveal.
 
 ## How it works
 
