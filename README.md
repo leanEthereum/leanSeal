@@ -85,6 +85,7 @@ The examples assume `target/release` is on your `PATH`. The [usage guide](docs/u
 | [Paper](docs/leanseal.pdf) ([source](paper/)) | The design as an encrypted-mempool fallback, the security proof, costs, trade-offs and comparison with other designs |
 | [SPEC.md](SPEC.md) | The normative byte format, with test vectors |
 | [Usage](docs/usage.md) | Building, testing, the command-line tool, the library and the repository layout |
+| [Lean formalization](https://github.com/Verified-zkEVM/VCVio/tree/58c743b/VCVio/Schemes/PointerChainPuzzle) | Machine-checked proofs of the delay and hiding theorems in the VCVio library, for the byte format of SPEC.md as well |
 | [Security model](docs/security.md) | What leanSeal guarantees, what the delay rests on and what it does not do |
 | [Benchmarks](docs/benchmarks.md) | Measurements on Apple M4 laptops and an x86 server |
 | [Prototype mempool](poc/README.md) | An encrypted mempool on an EVM chain: sealed submission, ordered execution and forced opening |

@@ -31,7 +31,7 @@ Q_on / 2^(8b)  +  Q_pre / 2^(128 + 8b)  +  (Q·P + P² + 1) / 2^256
 
 where `Q = Q_pre + Q_on`, `P = n(m + 3) + 1` and `b` is the link width in bytes. The first term is absent when `n = 1`.
 
-Against an attacker making `R = 10^21` queries per second, about the Bitcoin network's hash rate, for the whole delay `T` (so `Q_on = R·T`), the bound with 24-byte links is about 2<sup>−117</sup> for a 30-second puzzle and 2<sup>−97</sup> for a one-year puzzle. A query is one SHA-256 compression and a Bitcoin hash costs two, so matching the network exactly costs one bit (2<sup>−116</sup> for 30 seconds). The proof is written out but has not been machine-checked or independently reviewed.
+Against an attacker making `R = 10^21` queries per second, about the Bitcoin network's hash rate, for the whole delay `T` (so `Q_on = R·T`), the bound with 24-byte links is about 2<sup>−117</sup> for a 30-second puzzle and 2<sup>−97</sup> for a one-year puzzle. A query is one SHA-256 compression and a Bitcoin hash costs two, so matching the network exactly costs one bit (2<sup>−116</sup> for 30 seconds). The proof is machine-checked in Lean 4, for leanSeal's byte format as well, in the [VCVio library](https://github.com/Verified-zkEVM/VCVio/tree/58c743b/VCVio/Schemes/PointerChainPuzzle); it has not been independently reviewed.
 
 ### Round counts: an example with three chains
 
